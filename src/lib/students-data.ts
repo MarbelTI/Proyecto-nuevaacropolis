@@ -202,6 +202,32 @@ export const CATEGORIAS_GASTO = [
 // Categorías consideradas "principales" en el resumen mensual (subtotales aparte).
 export const INGRESO_PRINCIPALES = ["MIEMBROS", "PROBAS", "CLASE"] as const;
 
+// Mapa de nombres de columnas del Excel matriz → categoría canónica + tipo
+export const MATRIZ_CATEGORY_MAP: Record<string, { categoria: string; tipo: "Ingreso" | "Gasto"; banco: string }> = {
+  "MIEMBROS": { categoria: "MIEMBROS", tipo: "Ingreso", banco: "Efectivo USD" },
+  "PROBAS": { categoria: "PROBAS", tipo: "Ingreso", banco: "Efectivo USD" },
+  "INSCRIPICION FILOSOFIA": { categoria: "INSC FILOS", tipo: "Ingreso", banco: "Efectivo USD" },
+  "MTC KARINA": { categoria: "MTC", tipo: "Ingreso", banco: "Efectivo USD" },
+  "CLASE": { categoria: "CLASE", tipo: "Ingreso", banco: "Efectivo USD" },
+  "taichi": { categoria: "TAICHI", tipo: "Ingreso", banco: "Efectivo USD" },
+  "DIFUSION": { categoria: "DIFUSION", tipo: "Ingreso", banco: "Efectivo USD" },
+  "F.CAFEarte terapia": { categoria: "TERAPIA MTC", tipo: "Ingreso", banco: "Efectivo USD" },
+  "MTC consulta (11,25) terapias (5,62)": { categoria: "MTC", tipo: "Ingreso", banco: "Efectivo USD" },
+  "MTC  herbolaria": { categoria: "HERBOLARIA", tipo: "Ingreso", banco: "Efectivo USD" },
+  "MITOLOGIA 15$-10$acrop": { categoria: "MITOLOGIA", tipo: "Ingreso", banco: "Efectivo USD" },
+  "F.CAFE EVENTOS": { categoria: "EVENTOS F.C.", tipo: "Ingreso", banco: "Efectivo USD" },
+  "PROFESOR": { categoria: "HONORARIOS PROFESIONALES", tipo: "Gasto", banco: "Efectivo USD" },
+  "ALQUI": { categoria: "ALQUILER", tipo: "Gasto", banco: "Efectivo Bs" },
+  "integracon": { categoria: "INTEGRACON", tipo: "Gasto", banco: "Efectivo Bs" },
+  "servicios publicos": { categoria: "SERVICIOS PUBLICOS", tipo: "Gasto", banco: "Efectivo Bs" },
+  "HONORARIOS": { categoria: "HONORARIOS PROFESIONALES", tipo: "Gasto", banco: "Efectivo Bs" },
+  "MANTENIMI": { categoria: "MANTENIMI", tipo: "Gasto", banco: "Efectivo Bs" },
+  "INTERNET": { categoria: "INTERNET", tipo: "Gasto", banco: "Efectivo Bs" },
+  "comision bco": { categoria: "COMISIONES BANCARIAS", tipo: "Gasto", banco: "Efectivo Bs" },
+  "PRESTAMOS": { categoria: "PRESTAMO", tipo: "Gasto", banco: "Efectivo USD" },
+  "impuestos": { categoria: "SERVICIOS", tipo: "Gasto", banco: "Efectivo Bs" },
+};
+
 export function studentListForPrompt(): string {
   return STUDENTS.filter((s) => s.actividad !== "Retirado")
     .map((s) => `- ${s.nombre} → ${s.aulas.join(", ")}`)

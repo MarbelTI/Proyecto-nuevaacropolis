@@ -4,6 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import * as XLSX from "xlsx";
 import { analyzeJournalImage, type Entry } from "@/lib/ocr.functions";
 import { fetchBcvForDate, fetchBcvQuarter } from "@/lib/bcv.functions";
+import { MATRIZ_CATEGORY_MAP } from "@/lib/students-data";
 import {
   bcvRateFor,
   useBcvRates,
@@ -454,7 +455,7 @@ function Index() {
                 <TabsTrigger value="bcv">Tasas BCV</TabsTrigger>
               </TabsList>
               <TabsContent value="resumen">
-                <ResumenTab tx={transactions.list} ingresos={ingresos} gastos={gastos} bancos={bancos} bcvRates={bcv.rates} />
+                <ResumenTab tx={transactions} ingresos={ingresos} gastos={gastos} bancos={bancos} bcvRates={bcv.rates} />
               </TabsContent>
               <TabsContent value="analisis">
                 <AnalisisTab tx={transactions.list} ingresos={ingresos} gastos={gastos} bcvRates={bcv.rates} />
@@ -1153,7 +1154,8 @@ function AnalisisTab({
 
 const EGRESOS_PRINCIPALES = ["ALQUILER","SERVICIOS PUBLICOS","INTERNET","CONTADORA","PRESTAMO"];
 
-function ResumenTab({ tx, ingresos, gastos, bancos, bcvRates }: { tx: Transaction[]; ingresos: string[]; gastos: string[]; bancos: string[]; bcvRates: Record<string,number> }) {
+function ResumenTab({ tx: txObj, ingresos, gastos, bancos, bcvRates }: { tx: ReturnType<typeof useTransactions>; ingresos: string[]; gastos: string[]; bancos: string[]; bcvRates: Record<string,number> }) {
+  const tx = txObj.list;
   const [ym, setYm] = useState<string>(currentYm());
   const [selectedIngCats, setSelectedIngCats] = useState<Set<string>>(new Set());
   const [selectedGasCats, setSelectedGasCats] = useState<Set<string>>(new Set());
@@ -1273,6 +1275,57 @@ function ResumenTab({ tx, ingresos, gastos, bancos, bcvRates }: { tx: Transactio
     return Math.max(Math.ceil(maxLen / 2) * 32, 96);
   }, [ingresos, gastos]);
 
+  const importMatrizXls = async (file: File) => {
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(ws, { header: 1 }) as (string | number | null)[][];
+      if (rows.length < 2) { toast.error("El archivo está vacío"); return; }
+      const headers = rows[0].map((h) => String(h ?? "").trim());
+      // mes/año desde nombre o prompt
+      const nameMatch = file.name.match(/(\w+)\s*(\d{4})/i);
+      const mesNombre = nameMatch?.[1]?.toLowerCase() || "";
+      const year = nameMatch?.[2] || String(y);
+      const meses: Record<string,string> = { enero:"01",febrero:"02",marzo:"03",abril:"04",mayo:"05",junio:"06",julio:"07",agosto:"08",septiembre:"09",octubre:"10",noviembre:"11",diciembre:"12" };
+      const mesNum = meses[mesNombre] || meses[mesNombre.slice(0,5)] || String(m).padStart(2,"0");
+      const first = `${year}-${mesNum}-01`;
+      const mesLabel = new Date(first).toLocaleString("es",{month:"long",year:"numeric"});
+      const newTx: Omit<Transaction, "id">[] = [];
+      for (let ri = 1; ri < rows.length; ri++) {
+        const row = rows[ri];
+        if (!row || row.every((c) => c == null || c === "")) continue;
+        for (let ci = 0; ci < headers.length; ci++) {
+          const val = row[ci];
+          if (val == null || val === "" || val === 0) continue;
+          const header = headers[ci];
+          const map = MATRIZ_CATEGORY_MAP[header];
+          if (!map) continue;
+          const monto = Number(val);
+          if (isNaN(monto) || monto === 0) continue;
+          newTx.push({
+            fecha: `01/${mesNum}/${year}`,
+            mes: mesLabel,
+            tipo: map.tipo,
+            categoria: map.categoria,
+            descripcion: `Fila ${ri}`,
+            mensualidad: `${mesNombre}${year}`,
+            moneda: "USD",
+            monto: String(monto),
+            tasa: "",
+            montoUsd: String(monto),
+            banco: map.banco,
+          });
+        }
+      }
+      if (!newTx.length) { toast.error("No se encontraron datos para importar"); return; }
+      txObj.append(newTx);
+      toast.success(`${newTx.length} registros importados desde ${file.name}`);
+    } catch (err) {
+      toast.error(`Error al importar: ${(err as Error).message}`);
+    }
+  };
+
   const exportExcelResumen = () => {
     const wb = XLSX.utils.book_new();
     const monthTx = tx.filter(t => {
@@ -1357,6 +1410,14 @@ function ResumenTab({ tx, ingresos, gastos, bancos, bcvRates }: { tx: Transactio
             <h2 className="text-lg font-semibold">Resumen mensual</h2>
             <Button variant="outline" size="sm" onClick={exportExcelResumen}>
               <Download className="mr-2 h-4 w-4" /> Excel
+            </Button>
+            <input type="file" id="importMatrizXls" accept=".xlsx,.xls" style={{display:"none"}}
+              onChange={async (e) => {
+                const f = e.target.files?.[0]; if (f) await importMatrizXls(f);
+                e.target.value = "";
+              }} />
+            <Button variant="outline" size="sm" onClick={() => document.getElementById("importMatrizXls")?.click()}>
+              <Upload className="mr-2 h-4 w-4" /> Importar
             </Button>
           </div>
           <div className="flex items-center gap-2">
