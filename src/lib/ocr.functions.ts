@@ -131,7 +131,7 @@ CAMPOS A DEVOLVER POR ENTRADA:
 Devuelve SOLO JSON válido, sin markdown.`;
 
     const { text } = await generateText({
-      model: gateway("gemini-2.0-flash"),
+      model: gateway("gemini-1.5-flash"),
       messages: [
         { role: "system", content: systemPrompt },
         {
