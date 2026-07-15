@@ -145,6 +145,7 @@ const CATEGORIAS_INGRESO = [
   "Otros Ingresos",
   "PRESTAMO",
   "TAICHI",
+  "CONVERSIÓN",
   "TERAPIA MTC",
   "TERAPIAS MTC",
   "VENTA DE LIBRO"
@@ -162,6 +163,7 @@ const CATEGORIAS_GASTO = [
   "PUBLICIDAD",
   "SECRETARIAS",
   "SERVICIOS",
+  "CONVERSIÓN",
   "SERVICIOS PUBLICOS"
 ];
 function studentListForPrompt() {

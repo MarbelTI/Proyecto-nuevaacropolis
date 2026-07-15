@@ -1,9 +1,9 @@
 import process from "node:process";
-import { c as createServerRpc } from "./createServerRpc-BozI-sf8.mjs";
-import { a as createServerFn } from "./server-CzQV3pgX.mjs";
+import { c as createServerRpc } from "./createServerRpc-phzdTA2h.mjs";
+import { a as createServerFn } from "./server-C1RJKh7z.mjs";
 import { g as generateText } from "../_libs/ai.mjs";
 import { c as createOpenAICompatible } from "../_libs/ai-sdk__openai-compatible.mjs";
-import { C as CATEGORIAS_INGRESO, a as CATEGORIAS_GASTO, s as studentListForPrompt } from "./students-data-BBPPruln.mjs";
+import { C as CATEGORIAS_INGRESO, a as CATEGORIAS_GASTO, s as studentListForPrompt } from "./students-data-CxTLa4wP.mjs";
 
 import "../_libs/seroval.mjs";
 import "../_libs/react.mjs";
@@ -36,11 +36,11 @@ import "../_libs/@vercel/oidc.mjs";
 
 
 import "../_libs/opentelemetry__api.mjs";
-function createLovableAiGatewayProvider(apiKey) {
+function createGoogleGeminiProvider(apiKey) {
   return createOpenAICompatible({
-    name: "lovable-ai-gateway",
-    baseURL: "https://ai.gateway.lovable.dev/v1",
-    headers: { "Lovable-API-Key": apiKey }
+    name: "google-gemini",
+    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    headers: { Authorization: `Bearer ${apiKey}` }
   });
 }
 const Input = objectType({
@@ -105,9 +105,9 @@ const analyzeJournalImage = createServerFn({
 }).inputValidator((d) => Input.parse(d)).handler(analyzeJournalImage_createServerFn_handler, async ({
   data
 }) => {
-  const key = process.env.LOVABLE_API_KEY;
-  if (!key) throw new Error("Missing LOVABLE_API_KEY");
-  const gateway = createLovableAiGatewayProvider(key);
+  const key = process.env.GOOGLE_API_KEY;
+  if (!key) throw new Error("Missing GOOGLE_API_KEY");
+  const gateway = createGoogleGeminiProvider(key);
   const ingresos = data.ingresos?.length ? data.ingresos : [...CATEGORIAS_INGRESO];
   const gastos = data.gastos?.length ? data.gastos : [...CATEGORIAS_GASTO];
   const studentsList = data.students?.length ? data.students.map((s) => `- ${s.nombre} → ${s.aulas.join(", ")}`).join("\n") : studentListForPrompt();
@@ -148,7 +148,7 @@ Devuelve SOLO JSON válido, sin markdown.`;
   const {
     text
   } = await generateText({
-    model: gateway("google/gemini-3-flash-preview"),
+    model: gateway("gemini-1.5-flash"),
     messages: [{
       role: "system",
       content: systemPrompt

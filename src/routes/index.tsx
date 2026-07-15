@@ -4,7 +4,6 @@ import { useServerFn } from "@tanstack/react-start";
 import * as XLSX from "xlsx";
 import { analyzeJournalImage, type Entry } from "@/lib/ocr.functions";
 import { fetchBcvForDate, fetchBcvQuarter } from "@/lib/bcv.functions";
-import { MATRIZ_CATEGORY_MAP } from "@/lib/students-data";
 import {
   bcvRateFor,
   useBcvRates,
@@ -1275,131 +1274,162 @@ function ResumenTab({ tx: txObj, ingresos, gastos, bancos, bcvRates }: { tx: Ret
     return Math.max(Math.ceil(maxLen / 2) * 32, 96);
   }, [ingresos, gastos]);
 
-  const importMatrizXls = async (file: File) => {
-    try {
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(ws, { header: 1 }) as (string | number | null)[][];
-      if (rows.length < 2) { toast.error("El archivo está vacío"); return; }
-      const headers = rows[0].map((h) => String(h ?? "").trim());
-      // mes/año desde nombre o prompt
-      const nameMatch = file.name.match(/(\w+)\s*(\d{4})/i);
-      const mesNombre = nameMatch?.[1]?.toLowerCase() || "";
-      const year = nameMatch?.[2] || String(y);
-      const meses: Record<string,string> = { enero:"01",febrero:"02",marzo:"03",abril:"04",mayo:"05",junio:"06",julio:"07",agosto:"08",septiembre:"09",octubre:"10",noviembre:"11",diciembre:"12" };
-      const mesNum = meses[mesNombre] || meses[mesNombre.slice(0,5)] || String(m).padStart(2,"0");
-      const first = `${year}-${mesNum}-01`;
-      const mesLabel = new Date(first).toLocaleString("es",{month:"long",year:"numeric"});
-      const newTx: Omit<Transaction, "id">[] = [];
-      for (let ri = 1; ri < rows.length; ri++) {
-        const row = rows[ri];
-        if (!row || row.every((c) => c == null || c === "")) continue;
-        for (let ci = 0; ci < headers.length; ci++) {
-          const val = row[ci];
-          if (val == null || val === "" || val === 0) continue;
-          const header = headers[ci];
-          const map = MATRIZ_CATEGORY_MAP[header];
-          if (!map) continue;
-          const monto = Number(val);
-          if (isNaN(monto) || monto === 0) continue;
-          newTx.push({
-            fecha: `01/${mesNum}/${year}`,
-            mes: mesLabel,
-            tipo: map.tipo,
-            categoria: map.categoria,
-            descripcion: `Fila ${ri}`,
-            mensualidad: `${mesNombre}${year}`,
-            moneda: "USD",
-            monto: String(monto),
-            tasa: "",
-            montoUsd: String(monto),
-            banco: map.banco,
-          });
-        }
-      }
-      if (!newTx.length) { toast.error("No se encontraron datos para importar"); return; }
-      txObj.append(newTx);
-      toast.success(`${newTx.length} registros importados desde ${file.name}`);
-    } catch (err) {
-      toast.error(`Error al importar: ${(err as Error).message}`);
-    }
-  };
-
   const exportExcelResumen = () => {
     const wb = XLSX.utils.book_new();
-    const monthTx = tx.filter(t => {
+    const allTx = tx;
+    const year = String(y);
+    const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+    // -------- HOJA 1: TRANSACCIONES (detalle) --------
+    const txHeader = ["Fecha","Mes Contable","Tipo","Categoría","Nombre / Descripción","Mes Mensualidad","Moneda","Monto Original","Tasa Bs/$","Monto USD"];
+    const txRows: any[][] = [];
+    txRows.push([`📋  TRANSACCIONES  |  Nueva Acrópolis SC  |  ${year}-${y+1}`]);
+    txRows.push(txHeader);
+    for (const t of allTx) {
+      const iso = fechaToIso(t.fecha);
+      if (!iso || iso.slice(0,4) !== year) continue;
+      txRows.push([
+        iso ? serialDate(iso) : "",
+        t.mes || "",
+        t.tipo || "",
+        t.categoria || "",
+        t.descripcion || "",
+        t.mensualidad || "",
+        t.moneda || "USD",
+        Number(t.monto) || 0,
+        Number(t.tasa) || "",
+        Number(t.montoUsd) || 0,
+      ]);
+    }
+    const wsTx = XLSX.utils.aoa_to_sheet(txRows);
+    wsTx["!cols"] = [{wch:12},{wch:14},{wch:10},{wch:16},{wch:42},{wch:16},{wch:10},{wch:14},{wch:12},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, wsTx, "TRANSACCIONES");
+
+    // -------- HOJA 2: ANÁLISIS FINANCIERO (categorías × meses) --------
+    const allCats = [...new Set([...ingresos, ...gastos])];
+    const ingCats = ingresos.sort();
+    const gasCats = gastos.sort();
+    const af: any[][] = [];
+
+    af.push([`📊  ANÁLISIS FINANCIERO POR CATEGORÍA  |  Nueva Acrópolis SC  |  ${year}`]);
+    af.push(["Tipo","Categoría",...meses,"TOTAL","PROMEDIO/MES","VARIACIÓN E→Últ."]);
+    af.push([null,null,...meses]);
+
+    // helper: suma USD por categoria y mes
+    const sumaCatMes = (cat: string, mesIdx: number): number => {
+      let total = 0;
+      for (const t of allTx) {
+        const iso = fechaToIso(t.fecha);
+        if (!iso || iso.slice(0,4) !== year) continue;
+        const tm = parseInt(iso.slice(5,7),10);
+        if (tm !== mesIdx + 1) continue;
+        if (t.categoria !== cat) continue;
+        total += Number(t.montoUsd) || 0;
+      }
+      return total;
+    };
+
+    // Ingresos
+    for (const c of ingCats) {
+      const vals = meses.map((_,i) => sumaCatMes(c, i));
+      const total = vals.reduce((a,b) => a + b, 0);
+      const prom = total / 12;
+      const firstNonZero = vals.find(v => v > 0) ?? 0;
+      const lastNonZero = [...vals].reverse().find(v => v > 0) ?? 0;
+      const varE = firstNonZero && lastNonZero ? ((lastNonZero - firstNonZero) / firstNonZero * 100).toFixed(1) : "";
+      af.push(["Ingreso", c, ...vals, total, prom, varE]);
+    }
+    // Total Ingresos
+    const totalIngVals = meses.map((_,i) => ingCats.reduce((s,c) => s + sumaCatMes(c,i), 0));
+    const totalIngSum = totalIngVals.reduce((a,b)=>a+b,0);
+    af.push(["","TOTAL INGRESOS", ...totalIngVals, totalIngSum, totalIngSum/12, ""]);
+    af.push([]);
+
+    // Egresos
+    for (const c of gasCats) {
+      const vals = meses.map((_,i) => sumaCatMes(c, i));
+      const total = vals.reduce((a,b) => a + b, 0);
+      const prom = total / 12;
+      const firstNonZero = vals.find(v => v > 0) ?? 0;
+      const lastNonZero = [...vals].reverse().find(v => v > 0) ?? 0;
+      const varE = firstNonZero && lastNonZero ? ((lastNonZero - firstNonZero) / firstNonZero * 100).toFixed(1) : "";
+      af.push(["Egreso", c, ...vals, total, prom, varE]);
+    }
+    // Total Egresos
+    const totalGasVals = meses.map((_,i) => gasCats.reduce((s,c) => s + sumaCatMes(c,i), 0));
+    const totalGasSum = totalGasVals.reduce((a,b)=>a+b,0);
+    af.push(["","TOTAL EGRESOS", ...totalGasVals, totalGasSum, totalGasSum/12, ""]);
+
+    const wsAf = XLSX.utils.aoa_to_sheet(af);
+    wsAf["!cols"] = [{wch:10},{wch:22},...meses.map(()=>({wch:12})),{wch:10},{wch:12},{wch:16}];
+    XLSX.utils.book_append_sheet(wb, wsAf, "ANÁLISIS FINANCIERO");
+
+    // -------- HOJA 3: RESUMEN MENSUAL (mes seleccionado) --------
+    const monthTx = allTx.filter(t => {
       const iso = fechaToIso(t.fecha);
       return iso && iso.slice(0,7) === ym;
     });
+    const mesLabel = meses[m-1];
+    const rm: any[][] = [];
+    rm.push([`📅  RESUMEN MENSUAL  |  ${mesLabel} ${year}`]);
+    rm.push([]);
+    rm.push(["MES SELECCIONADO →", mesLabel]);
+    rm.push([]);
+    rm.push(["INDICADORES DEL MES"]);
+    rm.push(["Total Ingresos","Total Egresos","Margen Neto","Alquiler","Cuotas M+P"]);
+    const rmIngTotal = ingCats.reduce((s,c) => s + sumaCatMes(c, m-1), 0);
+    const rmGasTotal = gasCats.reduce((s,c) => s + sumaCatMes(c, m-1), 0);
+    const alquiler = sumaCatMes("ALQUILER", m-1);
+    const cuotasMP = sumaCatMes("MIEMBROS", m-1) + sumaCatMes("PROBAS", m-1);
+    rm.push([rmIngTotal, rmGasTotal, rmIngTotal - rmGasTotal, alquiler, cuotasMP]);
+    rm.push([]);
 
-    // -------- HOJA 1: MOVIMIENTOS --------
-    // Formato matriz: cada categoría es una columna, una fila por transacción.
-    // Con el conteo visible (ej. "MIEMBROS (29)") la fila de totales queda justo
-    // después del último registro de la categoría con más datos.
-    const allCats = [...new Set([...ingresos, ...gastos])];
-    const numCats = allCats.length;
-    const sheetData: any[][] = [[...allCats]];
-    for (const t of monthTx) {
-      const row: any[] = Array(numCats).fill(0);
-      const ci = allCats.indexOf(t.categoria || "");
-      if (ci >= 0) {
-        let val = Number(t.montoUsd) || 0;
-        if (t.tipo === "Gasto") val = -val;
-        row[ci] = val;
-      }
-      sheetData.push(row);
-    }
-    const lastDataRow = monthTx.length + 1;
-    const totalRow: any[] = [];
-    for (let c = 0; c < numCats; c++) {
-      const col = XLSX.utils.encode_col(c + 1);
-      totalRow.push(`=SUMA(${col}2:${col}${lastDataRow})`);
-    }
-    sheetData.push(totalRow);
+    const nPagos = (cat: string, mesIdx: number): number =>
+      allTx.filter(t => {
+        const iso = fechaToIso(t.fecha);
+        if (!iso || parseInt(iso.slice(5,7),10) !== mesIdx+1) return false;
+        if (t.categoria !== cat) return false;
+        return true;
+      }).length;
 
-    const ws = XLSX.utils.aoa_to_sheet(sheetData);
-    ws["!comments"] = [];
-    for (let i = 0; i < monthTx.length; i++) {
-      const t = monthTx[i];
-      const ci = allCats.indexOf(t.categoria || "");
-      const note = [t.descripcion, t.mensualidad].filter(Boolean).join(" · ");
-      if (ci >= 0 && note) {
-        ws["!comments"].push({
-          ref: XLSX.utils.encode_cell({ r: i + 1, c: ci }),
-          cell: { a: "SISFIA", t: note },
-        });
-      }
+    rm.push(["↑  INGRESOS DEL MES"]);
+    rm.push(["Categoría","Monto USD","N° Pagos","% del Total Ing.","% Acum. hasta este mes"]);
+    let acumPct = 0;
+    for (const c of ingCats) {
+      const val = sumaCatMes(c, m-1);
+      if (val === 0) continue;
+      const np = nPagos(c, m-1);
+      const pct = rmIngTotal ? (val / rmIngTotal * 100).toFixed(1) : "0";
+      acumPct += Number(pct);
+      rm.push([c, val, np, pct, acumPct.toFixed(1)]);
     }
-    ws["!cols"] = allCats.map(() => ({ wch: 18 }));
-    XLSX.utils.book_append_sheet(wb, ws, "MOVIMIENTOS");
-
-    // -------- HOJA 2: RESUMEN (DEBE | HABER | SALDO) --------
-    const resTotalRow = monthTx.length + 2;
-    const resumenData: any[][] = [["Categoría", "DEBE (ingresos)", "HABER (egresos)", "SALDO"]];
-    for (let c = 0; c < numCats; c++) {
-      const col = XLSX.utils.encode_col(c + 1);
-      resumenData.push([
-        allCats[c],
-        `=MOVIMIENTOS!${col}${resTotalRow}`,
-        "",
-        "",
-      ]);
+    rm.push([]);
+    rm.push(["↓  EGRESOS DEL MES"]);
+    rm.push(["Categoría","Monto USD","N° Pagos","% del Total Eg.","% Acum. hasta este mes"]);
+    let acumPctE = 0;
+    for (const c of gasCats) {
+      const val = sumaCatMes(c, m-1);
+      if (val === 0) continue;
+      const np = nPagos(c, m-1);
+      const pct = rmGasTotal ? (val / rmGasTotal * 100).toFixed(1) : "0";
+      acumPctE += Number(pct);
+      rm.push([c, val, np, pct, acumPctE.toFixed(1)]);
     }
-    resumenData.push(["", "", "", ""]);
-    const totalFilaRes = numCats + 2;
-    resumenData.push(["TOTAL GENERAL",
-      `=SUMA(B2:B${totalFilaRes})`,
-      `=SUMA(C2:C${totalFilaRes})`,
-      `=SUMA(D2:D${totalFilaRes})`,
-    ]);
 
-    const ws2 = XLSX.utils.aoa_to_sheet(resumenData);
-    ws2["!cols"] = [{ wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
-    XLSX.utils.book_append_sheet(wb, ws2, "RESUMEN");
+    const wsRm = XLSX.utils.aoa_to_sheet(rm);
+    wsRm["!cols"] = [{wch:24},{wch:12},{wch:10},{wch:18},{wch:22}];
+    XLSX.utils.book_append_sheet(wb, wsRm, "RESUMEN MENSUAL");
 
     XLSX.writeFile(wb, `RESUMEN_${ym}_${todayIso()}.xlsx`);
     toast.success("Excel descargado");
+  };
+
+  // convertir ISO a serial date number de Excel
+  const serialDate = (iso: string): number => {
+    const d = new Date(iso);
+    // epoch de Excel = 1900-01-01 (días)
+    const excelEpoch = new Date(1899, 11, 30);
+    return (d.getTime() - excelEpoch.getTime()) / (24 * 60 * 60 * 1000);
   };
 
   return (
@@ -1410,14 +1440,6 @@ function ResumenTab({ tx: txObj, ingresos, gastos, bancos, bcvRates }: { tx: Ret
             <h2 className="text-lg font-semibold">Resumen mensual</h2>
             <Button variant="outline" size="sm" onClick={exportExcelResumen}>
               <Download className="mr-2 h-4 w-4" /> Excel
-            </Button>
-            <input type="file" id="importMatrizXls" accept=".xlsx,.xls" style={{display:"none"}}
-              onChange={async (e) => {
-                const f = e.target.files?.[0]; if (f) await importMatrizXls(f);
-                e.target.value = "";
-              }} />
-            <Button variant="outline" size="sm" onClick={() => document.getElementById("importMatrizXls")?.click()}>
-              <Upload className="mr-2 h-4 w-4" /> Importar
             </Button>
           </div>
           <div className="flex items-center gap-2">

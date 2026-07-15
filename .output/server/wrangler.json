@@ -1,11 +1,11 @@
 {
-  "compatibility_date": "2026-07-08",
+  "compatibility_date": "2026-07-12",
   "main": "index.mjs",
   "assets": {
     "binding": "ASSETS",
     "directory": "..\\public"
   },
-  "name": "tanstack-start-ts",
+  "name": "marbelti-proyecto-nuevaacropolis",
   "compatibility_flags": [
     "nodejs_compat"
   ],

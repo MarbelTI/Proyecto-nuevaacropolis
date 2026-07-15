@@ -31,40 +31,40 @@ const services = {
 };
 globalThis.__nitro_vite_envs__ = services;
 const assets = {
-  "/assets/index-BW9-JRg2.js": {
+  "/favicon.jpg": {
+    "type": "image/jpeg",
+    "etag": '"32d3-S++fosJKJoxEinOIUCdJfjbuhKY"',
+    "mtime": "2026-07-13T23:42:47.397Z",
+    "size": 13011,
+    "path": "../public/favicon.jpg"
+  },
+  "/assets/index-C-07PwyV.js": {
     "type": "text/javascript; charset=utf-8",
-    "etag": '"5dc33-HFQG9Y7NqXmL8ZUlG/KG38I1rVk"',
-    "mtime": "2026-07-11T12:39:26.035Z",
+    "etag": '"5dc33-Vw4qErz64dGcze3GCRcu2zsw0Wk"',
+    "mtime": "2026-07-15T17:21:16.013Z",
     "size": 384051,
-    "path": "../public/assets/index-BW9-JRg2.js"
+    "path": "../public/assets/index-C-07PwyV.js"
   },
   "/logo.jpg": {
     "type": "image/jpeg",
     "etag": '"32d3-S++fosJKJoxEinOIUCdJfjbuhKY"',
-    "mtime": "2026-07-10T11:46:50.416Z",
+    "mtime": "2026-07-13T23:42:47.397Z",
     "size": 13011,
     "path": "../public/logo.jpg"
   },
-  "/favicon.jpg": {
-    "type": "image/jpeg",
-    "etag": '"32d3-S++fosJKJoxEinOIUCdJfjbuhKY"',
-    "mtime": "2026-07-10T11:46:50.416Z",
-    "size": 13011,
-    "path": "../public/favicon.jpg"
-  },
-  "/assets/styles-DmvWv-n0.css": {
+  "/assets/styles-Bml87bv_.css": {
     "type": "text/css; charset=utf-8",
-    "etag": '"13203-Ded12/LwyX+xL/yrPVyn2TxrmmI"',
-    "mtime": "2026-07-11T12:39:26.035Z",
-    "size": 78339,
-    "path": "../public/assets/styles-DmvWv-n0.css"
+    "etag": '"16310-x+0lwXl6SUCURbiNVoetUohGWVU"',
+    "mtime": "2026-07-15T17:21:16.013Z",
+    "size": 90896,
+    "path": "../public/assets/styles-Bml87bv_.css"
   },
-  "/assets/index-DcxyNJ2g.js": {
+  "/assets/index-CoxKmsy0.js": {
     "type": "text/javascript; charset=utf-8",
-    "etag": '"9a58e-SLiuJDjkrY9RieqCQF3gVmBEGgk"',
-    "mtime": "2026-07-11T12:39:26.037Z",
-    "size": 632206,
-    "path": "../public/assets/index-DcxyNJ2g.js"
+    "etag": '"a53c8-QIiok7JBMIDiV5+wO0iBa/ybzo4"',
+    "mtime": "2026-07-15T17:21:16.013Z",
+    "size": 676808,
+    "path": "../public/assets/index-CoxKmsy0.js"
   }
 };
 const publicAssetBases = {};
