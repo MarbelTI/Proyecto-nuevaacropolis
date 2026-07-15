@@ -1384,14 +1384,14 @@ function ResumenTab({ tx, ingresos, gastos, bancos, bcvRates }: { tx: Transactio
         </div>
         <div className="mb-2 flex flex-wrap items-center gap-1">
           <button onClick={()=>setShowAllCats(!showAllCats)}
-            className={"rounded-full px-4 py-px text-[13px] font-medium leading-none "+(showAllCats?"bg-primary text-primary-foreground":"bg-muted")}>
+            className={"rounded-full px-3 py-0 text-[12px] font-medium leading-tight "+(showAllCats?"bg-primary text-primary-foreground":"bg-muted")}>
             {showAllCats ? "Todas" : "Solo datos"}
           </button>
         </div>
-        <div className="mb-4 flex flex-wrap gap-x-1.5 gap-y-1" style={{ minHeight: pillsHeight }}>
+        <div className="mb-4 flex flex-wrap gap-x-1.5 gap-y-0.5">
           {ingresos.sort().map(c => (
             <button key={c} onClick={() => toggleIngCat(c)}
-              className={`rounded-full px-4 py-px text-[13px] font-medium leading-none border transition ${selectedIngCats.has(c) ? "bg-primary text-primary-foreground border-primary" : "bg-background border-muted-foreground/30 text-muted-foreground"}`}>
+              className={`rounded-full px-3 py-0 text-[12px] font-medium leading-tight border transition ${selectedIngCats.has(c) ? "bg-primary text-primary-foreground border-primary" : "bg-background border-muted-foreground/30 text-muted-foreground"}`}>
               {c}
             </button>
           ))}
@@ -1440,14 +1440,14 @@ function ResumenTab({ tx, ingresos, gastos, bancos, bcvRates }: { tx: Transactio
         </div>
         <div className="mb-2 flex flex-wrap items-center gap-1">
           <button onClick={()=>setShowAllCats(!showAllCats)}
-            className={"rounded-full px-4 py-px text-[13px] font-medium leading-none "+(showAllCats?"bg-primary text-primary-foreground":"bg-muted")}>
+            className={"rounded-full px-3 py-0 text-[12px] font-medium leading-tight "+(showAllCats?"bg-primary text-primary-foreground":"bg-muted")}>
             {showAllCats ? "Todas" : "Solo datos"}
           </button>
         </div>
-        <div className="mb-4 flex flex-wrap gap-x-1.5 gap-y-1" style={{ minHeight: pillsHeight }}>
+        <div className="mb-4 flex flex-wrap gap-x-1.5 gap-y-0.5">
           {gastos.sort().map(c => (
             <button key={c} onClick={() => toggleGasCat(c)}
-              className={`rounded-full px-4 py-px text-[13px] font-medium leading-none border transition ${selectedGasCats.has(c) ? "bg-destructive text-destructive-foreground border-destructive" : "bg-background border-muted-foreground/30 text-muted-foreground"}`}>
+              className={`rounded-full px-3 py-0 text-[12px] font-medium leading-tight border transition ${selectedGasCats.has(c) ? "bg-destructive text-destructive-foreground border-destructive" : "bg-background border-muted-foreground/30 text-muted-foreground"}`}>
               {c}
             </button>
           ))}
