@@ -7,3 +7,11 @@ export function createLovableAiGatewayProvider(apiKey: string) {
     headers: { "Lovable-API-Key": apiKey },
   });
 }
+
+export function createGoogleGeminiProvider(apiKey: string) {
+  return createOpenAICompatible({
+    name: "google-gemini",
+    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+}

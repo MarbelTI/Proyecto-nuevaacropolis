@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { generateText } from "ai";
 import { z } from "zod";
-import { createLovableAiGatewayProvider } from "./ai-gateway.server";
+import { createGoogleGeminiProvider } from "./ai-gateway.server";
 import {
   CATEGORIAS_GASTO,
   CATEGORIAS_INGRESO,
@@ -85,9 +85,9 @@ function extractJson(text: string): unknown {
 export const analyzeJournalImage = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data }) => {
-    const key = process.env.LOVABLE_API_KEY;
-    if (!key) throw new Error("Missing LOVABLE_API_KEY");
-    const gateway = createLovableAiGatewayProvider(key);
+    const key = process.env.GOOGLE_API_KEY;
+    if (!key) throw new Error("Missing GOOGLE_API_KEY");
+    const gateway = createGoogleGeminiProvider(key);
 
     const ingresos = data.ingresos?.length ? data.ingresos : [...CATEGORIAS_INGRESO];
     const gastos = data.gastos?.length ? data.gastos : [...CATEGORIAS_GASTO];
@@ -131,7 +131,7 @@ CAMPOS A DEVOLVER POR ENTRADA:
 Devuelve SOLO JSON válido, sin markdown.`;
 
     const { text } = await generateText({
-      model: gateway("google/gemini-3-flash-preview"),
+      model: gateway("gemini-2.0-flash"),
       messages: [
         { role: "system", content: systemPrompt },
         {
