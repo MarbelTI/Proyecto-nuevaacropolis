@@ -73,8 +73,6 @@ export function exportResumenExcel(
   }
 
   const maxRecords = Math.max(0, ...allCats.map(c => catData[c].length));
-  const totalRowIdx = maxRecords + 1; // 0-indexed, +1 por header
-  const lastDataRow = totalRowIdx;    // última fila de datos (0-indexed)
 
   const rm: any[][] = [];
 
@@ -86,13 +84,8 @@ export function exportResumenExcel(
     rm.push(allCats.map(cat => (r < catData[cat].length ? catData[cat][r].monto : null)));
   }
 
-  // Fila de totales con fórmula SUM
-  rm.push(allCats.map((cat, ci) => {
-    const hasData = catData[cat].length > 0;
-    if (!hasData) return null;
-    const colLetter = XLSX.utils.encode_col(ci);
-    return { f: `SUM(${colLetter}2:${colLetter}${lastDataRow + 1})` };
-  }));
+  // Fila de totales (valores null, se reemplazan por fórmula después)
+  rm.push(allCats.map(() => null));
 
   // 5 filas en blanco
   for (let i = 0; i < 5; i++) rm.push([]);
@@ -119,7 +112,17 @@ export function exportResumenExcel(
   rm.push([]);
   rm.push([null, null, null, null, totalIngMes, Math.abs(totalGasMes)]);
 
+  const totalExcelRow = maxRecords + 2; // 1-indexed (fila 1 = header, filas 2.. = datos, siguiente = totales)
+
   const wsRm = XLSX.utils.aoa_to_sheet(rm);
+
+  // Asignar fórmula SUM a la fila de totales
+  for (let ci = 0; ci < allCats.length; ci++) {
+    if (catData[allCats[ci]].length === 0) continue;
+    const colLetter = XLSX.utils.encode_col(ci);
+    const addr = XLSX.utils.encode_cell({ c: ci, r: totalExcelRow - 1 });
+    wsRm[addr] = { f: `SUM(${colLetter}2:${colLetter}${totalExcelRow - 1})` };
+  }
 
   // Añadir notas (comentarios) con fecha + descripción en cada celda de dato
   for (let c = 0; c < allCats.length; c++) {
