@@ -132,7 +132,7 @@ export function exportResumenExcel(
         const lines = [entries[r].fecha];
         if (entries[r].mes) lines.push(entries[r].mes);
         if (entries[r].desc) lines.push(entries[r].desc);
-        cell.c = [{ a: "Nueva Acrópolis", t: lines.join("\n") }];
+        cell.c = [{ a: "Nueva Acrópolis", t: lines.join("\n"), hidden: true }];
       }
     }
   }
