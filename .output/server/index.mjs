@@ -31,12 +31,12 @@ const services = {
 };
 globalThis.__nitro_vite_envs__ = services;
 const assets = {
-  "/assets/index-G233W34n.js": {
-    "type": "text/javascript; charset=utf-8",
-    "etag": '"5dc33-UoGwShqI3ONyQv1P1h0IBB2o8M0"',
-    "mtime": "2026-07-16T02:14:20.291Z",
-    "size": 384051,
-    "path": "../public/assets/index-G233W34n.js"
+  "/logo.jpg": {
+    "type": "image/jpeg",
+    "etag": '"32d3-S++fosJKJoxEinOIUCdJfjbuhKY"',
+    "mtime": "2026-07-13T23:42:47.397Z",
+    "size": 13011,
+    "path": "../public/logo.jpg"
   },
   "/favicon.jpg": {
     "type": "image/jpeg",
@@ -45,26 +45,26 @@ const assets = {
     "size": 13011,
     "path": "../public/favicon.jpg"
   },
-  "/logo.jpg": {
-    "type": "image/jpeg",
-    "etag": '"32d3-S++fosJKJoxEinOIUCdJfjbuhKY"',
-    "mtime": "2026-07-13T23:42:47.397Z",
-    "size": 13011,
-    "path": "../public/logo.jpg"
-  },
-  "/assets/styles-Bml87bv_.css": {
+  "/assets/styles-CK6OWja1.css": {
     "type": "text/css; charset=utf-8",
-    "etag": '"16310-x+0lwXl6SUCURbiNVoetUohGWVU"',
-    "mtime": "2026-07-16T02:14:20.289Z",
-    "size": 90896,
-    "path": "../public/assets/styles-Bml87bv_.css"
+    "etag": '"1678f-wdPeeNFxuL9kpa20GTsVIC+R/ak"',
+    "mtime": "2026-07-16T02:22:26.307Z",
+    "size": 92047,
+    "path": "../public/assets/styles-CK6OWja1.css"
   },
-  "/assets/index-C0vhzz52.js": {
+  "/assets/index-Ckgcjc3W.js": {
     "type": "text/javascript; charset=utf-8",
-    "etag": '"a5c92-Rhze3uYoK85nUG1zh3UbZHUsHck"',
-    "mtime": "2026-07-16T02:14:20.291Z",
-    "size": 679058,
-    "path": "../public/assets/index-C0vhzz52.js"
+    "etag": '"5dc33-ju9uguEnObpCb4Q0dAJZ265rW28"',
+    "mtime": "2026-07-16T02:22:26.307Z",
+    "size": 384051,
+    "path": "../public/assets/index-Ckgcjc3W.js"
+  },
+  "/assets/index-DCxqyom4.js": {
+    "type": "text/javascript; charset=utf-8",
+    "etag": '"a6185-GY5bj713IUovZDTf3kdOxrGBgN0"',
+    "mtime": "2026-07-16T02:22:26.308Z",
+    "size": 680325,
+    "path": "../public/assets/index-DCxqyom4.js"
   }
 };
 const publicAssetBases = {};

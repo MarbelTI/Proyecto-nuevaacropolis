@@ -67,12 +67,29 @@ async function readXlsRates(buf: Uint8Array): Promise<BcvRow[]> {
   return rows.sort((a, b) => a.isoDate.localeCompare(b.isoDate));
 }
 
+// Cache en memoria de la URL que funcionó para cada trimestre.
+const workingUrlCache = new Map<string, string>(); // key: "${year}-${quarter}"
+
 async function fetchQuarterRows(year: number, quarter: number): Promise<{ rows: BcvRow[]; source: string } | null> {
+  const cacheKey = `${year}-${quarter}`;
+  const cachedUrl = workingUrlCache.get(cacheKey);
+  if (cachedUrl) {
+    const buf = await fetchXlsBuffer(cachedUrl);
+    if (buf) {
+      const rows = await readXlsRates(buf);
+      if (rows.length) return { rows, source: cachedUrl };
+    }
+    workingUrlCache.delete(cacheKey);
+  }
   for (const url of bcvUrlCandidates(year, quarter)) {
+    if (url === cachedUrl) continue;
     const buf = await fetchXlsBuffer(url);
     if (!buf) continue;
     const rows = await readXlsRates(buf);
-    if (rows.length) return { rows, source: url };
+    if (rows.length) {
+      workingUrlCache.set(cacheKey, url);
+      return { rows, source: url };
+    }
   }
   return null;
 }

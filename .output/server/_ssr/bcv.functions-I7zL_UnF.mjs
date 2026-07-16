@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
-import { c as createServerRpc } from "./createServerRpc-CT8luNMV.mjs";
-import { a as createServerFn } from "./server-Cp8pASRS.mjs";
+import { c as createServerRpc } from "./createServerRpc-BLVVv7uQ.mjs";
+import { a as createServerFn } from "./server-CQbShmfX.mjs";
 import https from "node:https";
 
 import "../_libs/seroval.mjs";
@@ -88,15 +88,33 @@ async function readXlsRates(buf) {
   }
   return rows.sort((a, b) => a.isoDate.localeCompare(b.isoDate));
 }
+const workingUrlCache = /* @__PURE__ */ new Map();
 async function fetchQuarterRows(year, quarter) {
+  const cacheKey = `${year}-${quarter}`;
+  const cachedUrl = workingUrlCache.get(cacheKey);
+  if (cachedUrl) {
+    const buf = await fetchXlsBuffer(cachedUrl);
+    if (buf) {
+      const rows = await readXlsRates(buf);
+      if (rows.length) return {
+        rows,
+        source: cachedUrl
+      };
+    }
+    workingUrlCache.delete(cacheKey);
+  }
   for (const url of bcvUrlCandidates(year, quarter)) {
+    if (url === cachedUrl) continue;
     const buf = await fetchXlsBuffer(url);
     if (!buf) continue;
     const rows = await readXlsRates(buf);
-    if (rows.length) return {
-      rows,
-      source: url
-    };
+    if (rows.length) {
+      workingUrlCache.set(cacheKey, url);
+      return {
+        rows,
+        source: url
+      };
+    }
   }
   return null;
 }

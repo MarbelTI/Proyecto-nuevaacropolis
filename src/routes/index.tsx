@@ -178,6 +178,8 @@ function Index() {
   const bcv = useBcvRates();
   const [headerDate, setHeaderDate] = useState<string>(todayIso());
   const [headerLoading, setHeaderLoading] = useState(false);
+  const [headerFetchFailed, setHeaderFetchFailed] = useState(false);
+  const [bcvSources, setBcvSources] = useState<Record<string, string>>({});
   const fetchForDate = useServerFn(fetchBcvForDate);
 
   const [currentUser, setCurrentUser] = useCurrentUser();
@@ -191,14 +193,18 @@ function Index() {
     if (bcvRateFor(bcv.rates, headerDate) != null) return;
     let cancelled = false;
     setHeaderLoading(true);
+    setHeaderFetchFailed(false);
     fetchForDate({ data: { isoDate: headerDate } })
       .then((res) => {
-        if (cancelled || !res) return;
+        if (cancelled) return;
+        if (!res) { setHeaderFetchFailed(true); toast.warning("No se pudo obtener la tasa BCV automáticamente — ingrésala manualmente"); return; }
         const map: Record<string, number> = {};
-        for (const r of res.rows) map[r.isoDate] = r.rate;
+        const smap: Record<string, string> = {};
+        for (const r of res.rows) { map[r.isoDate] = r.rate; smap[r.isoDate] = res.source; }
         bcv.merge(map);
+        setBcvSources((prev) => ({ ...prev, ...smap }));
       })
-      .catch(() => { /* silencioso, se puede cargar manual */ })
+      .catch(() => { if (!cancelled) setHeaderFetchFailed(true); })
       .finally(() => { if (!cancelled) setHeaderLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -335,6 +341,16 @@ function Index() {
                 {headerLoading ? <Loader2 className="inline h-3 w-3 animate-spin" /> :
                   headerRate != null ? `${$(headerRate)} Bs/$` : "—"}
               </span>
+              {(() => {
+                const src = bcvSources[headerDate];
+                if (src?.includes("bcv.org.ve"))
+                  return <span className="rounded bg-green-700/30 px-1.5 py-0.5 text-[10px] text-green-300">BCV oficial</span>;
+                if (src === "dolarapi.com")
+                  return <span className="rounded bg-amber-700/30 px-1.5 py-0.5 text-[10px] text-amber-300">Respaldo</span>;
+                if (headerFetchFailed)
+                  return <span className="rounded bg-red-700/30 px-1.5 py-0.5 text-[10px] text-red-300">No disponible — ingresa manual</span>;
+                return null;
+              })()}
             </div>
             <button onClick={()=>setWaLogOpen(true)} className="rounded-lg bg-primary-foreground/10 px-2.5 py-1.5 text-xs hover:bg-primary-foreground/20" title="Historial de mensajes WhatsApp">
               <MessageCircle className="mr-1 inline h-3.5 w-3.5" />Log
@@ -870,6 +886,7 @@ function TransactionsTab({
       <TransactionEditDialog
         editing={editing} onClose={()=>setEditing(null)}
         ingresos={ingresos} gastos={gastos} bancos={bancos} bcvRates={bcvRates}
+        bcvSources={bcvSources}
         onSave={(next) => {
           if (next.id === "__new__") {
             const { id, ...rest } = next;
@@ -923,10 +940,11 @@ function TransactionsTab({
 }
 
 function TransactionEditDialog({
-  editing, onClose, onSave, ingresos, gastos, bancos, bcvRates,
+  editing, onClose, onSave, ingresos, gastos, bancos, bcvRates, bcvSources,
 }: {
   editing: Transaction | null; onClose: () => void; onSave: (t: Transaction) => void;
   ingresos: string[]; gastos: string[]; bancos: string[]; bcvRates: Record<string, number>;
+  bcvSources: Record<string, string>;
 }) {
   const [draft, setDraft] = useState<Transaction | null>(null);
   useEffect(() => { setDraft(editing ? { ...editing } : null); }, [editing]);
@@ -985,7 +1003,22 @@ function TransactionEditDialog({
             </Select>
           </Field>
           <Field label="Monto"><Input value={String(draft.monto || "")} onChange={(e)=>update("monto", Number(e.target.value) || 0)} /></Field>
-          <Field label="Tasa"><Input value={draft.tasa != null ? String(draft.tasa) : ""} onChange={(e)=>update("tasa", e.target.value ? Number(e.target.value) : null)} /></Field>
+          <Field label="Tasa">
+            <div className="flex items-center gap-1">
+              <Input value={draft.tasa != null ? String(draft.tasa) : ""} onChange={(e)=>update("tasa", e.target.value ? Number(e.target.value) : null)} />
+              {(() => {
+                const iso = fechaToIso(draft.fecha);
+                const src = iso ? bcvSources[iso] : undefined;
+                if (src?.includes("bcv.org.ve"))
+                  return <span className="shrink-0 rounded bg-green-700/30 px-1.5 py-0.5 text-[10px] text-green-300">BCV oficial</span>;
+                if (src === "dolarapi.com")
+                  return <span className="shrink-0 rounded bg-amber-700/30 px-1.5 py-0.5 text-[10px] text-amber-300">Respaldo</span>;
+                if (draft.moneda === "Bolívares" && (draft.tasa == null || draft.tasa === 0))
+                  return <span className="shrink-0 text-[10px] text-red-400">Sin tasa — ingresa manual</span>;
+                return null;
+              })()}
+            </div>
+          </Field>
           <Field label="USD">
             <Input value={String(draft.montoUsd || "")} onChange={(e)=>{
               const v = Number(e.target.value) || 0;

@@ -2,7 +2,7 @@ import { r as reactExports, j as jsxRuntimeExports } from "../_libs/react.mjs";
 import { u as useRouter } from "../_libs/tanstack__react-router.mjs";
 import { m as isRedirect } from "../_libs/tanstack__router-core.mjs";
 import { read as readSync, utils, writeFile as writeFileSync } from "../_libs/xlsx.mjs";
-import { a as createServerFn, T as TSS_SERVER_FUNCTION, g as getServerFnById } from "./server-Cp8pASRS.mjs";
+import { a as createServerFn, T as TSS_SERVER_FUNCTION, g as getServerFnById } from "./server-CQbShmfX.mjs";
 import { C as CATEGORIAS_INGRESO, a as CATEGORIAS_GASTO, A as AULAS_DEFAULT, S as STUDENTS } from "./students-data-CpFY5TPz.mjs";
 import { S as Slot } from "../_libs/radix-ui__react-slot.mjs";
 import { c as cva } from "../_libs/class-variance-authority.mjs";
@@ -1854,6 +1854,8 @@ function Index() {
   const bcv = useBcvRates();
   const [headerDate, setHeaderDate] = reactExports.useState(todayIso());
   const [headerLoading, setHeaderLoading] = reactExports.useState(false);
+  const [headerFetchFailed, setHeaderFetchFailed] = reactExports.useState(false);
+  const [bcvSources2, setBcvSources] = reactExports.useState({});
   const fetchForDate = useServerFn(fetchBcvForDate);
   const [currentUser, setCurrentUser] = useCurrentUser();
   const [aulasMeta, setAulasMeta] = useAulasMeta();
@@ -1864,16 +1866,31 @@ function Index() {
     if (bcvRateFor(bcv.rates, headerDate) != null) return;
     let cancelled = false;
     setHeaderLoading(true);
+    setHeaderFetchFailed(false);
     fetchForDate({
       data: {
         isoDate: headerDate
       }
     }).then((res) => {
-      if (cancelled || !res) return;
+      if (cancelled) return;
+      if (!res) {
+        setHeaderFetchFailed(true);
+        toast.warning("No se pudo obtener la tasa BCV automáticamente — ingrésala manualmente");
+        return;
+      }
       const map = {};
-      for (const r of res.rows) map[r.isoDate] = r.rate;
+      const smap = {};
+      for (const r of res.rows) {
+        map[r.isoDate] = r.rate;
+        smap[r.isoDate] = res.source;
+      }
       bcv.merge(map);
+      setBcvSources((prev) => ({
+        ...prev,
+        ...smap
+      }));
     }).catch(() => {
+      if (!cancelled) setHeaderFetchFailed(true);
     }).finally(() => {
       if (!cancelled) setHeaderLoading(false);
     });
@@ -2038,7 +2055,14 @@ function Index() {
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 rounded-lg bg-primary-foreground/10 px-3 py-2", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs opacity-90", children: "Tasa BCV" }),
           /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "date", value: headerDate, onChange: (e) => setHeaderDate(e.target.value), className: "rounded bg-primary-foreground/20 px-2 py-1 text-xs" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "rounded bg-accent px-2 py-1 text-sm font-semibold text-accent-foreground min-w-[80px] text-center", children: headerLoading ? /* @__PURE__ */ jsxRuntimeExports.jsx(LoaderCircle, { className: "inline h-3 w-3 animate-spin" }) : headerRate != null ? `${$(headerRate)} Bs/$` : "—" })
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "rounded bg-accent px-2 py-1 text-sm font-semibold text-accent-foreground min-w-[80px] text-center", children: headerLoading ? /* @__PURE__ */ jsxRuntimeExports.jsx(LoaderCircle, { className: "inline h-3 w-3 animate-spin" }) : headerRate != null ? `${$(headerRate)} Bs/$` : "—" }),
+          (() => {
+            const src = bcvSources2[headerDate];
+            if (src?.includes("bcv.org.ve")) return /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "rounded bg-green-700/30 px-1.5 py-0.5 text-[10px] text-green-300", children: "BCV oficial" });
+            if (src === "dolarapi.com") return /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "rounded bg-amber-700/30 px-1.5 py-0.5 text-[10px] text-amber-300", children: "Respaldo" });
+            if (headerFetchFailed) return /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "rounded bg-red-700/30 px-1.5 py-0.5 text-[10px] text-red-300", children: "No disponible — ingresa manual" });
+            return null;
+          })()
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => setWaLogOpen(true), className: "rounded-lg bg-primary-foreground/10 px-2.5 py-1.5 text-xs hover:bg-primary-foreground/20", title: "Historial de mensajes WhatsApp", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx(MessageCircle, { className: "mr-1 inline h-3.5 w-3.5" }),
@@ -2534,7 +2558,7 @@ function TransactionsTab({
         ] })
       ] })
     ] }) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(TransactionEditDialog, { editing, onClose: () => setEditing(null), ingresos, gastos, bancos, bcvRates, onSave: (next) => {
+    /* @__PURE__ */ jsxRuntimeExports.jsx(TransactionEditDialog, { editing, onClose: () => setEditing(null), ingresos, gastos, bancos, bcvRates, bcvSources, onSave: (next) => {
       if (next.id === "__new__") {
         const {
           id,
@@ -2576,7 +2600,8 @@ function TransactionEditDialog({
   ingresos,
   gastos,
   bancos,
-  bcvRates
+  bcvRates,
+  bcvSources: bcvSources2
 }) {
   const [draft, setDraft] = reactExports.useState(null);
   reactExports.useEffect(() => {
@@ -2633,7 +2658,17 @@ function TransactionEditDialog({
         ] })
       ] }) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx(Field, { label: "Monto", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Input, { value: String(draft.monto || ""), onChange: (e) => update("monto", Number(e.target.value) || 0) }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(Field, { label: "Tasa", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Input, { value: draft.tasa != null ? String(draft.tasa) : "", onChange: (e) => update("tasa", e.target.value ? Number(e.target.value) : null) }) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(Field, { label: "Tasa", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Input, { value: draft.tasa != null ? String(draft.tasa) : "", onChange: (e) => update("tasa", e.target.value ? Number(e.target.value) : null) }),
+        (() => {
+          const iso = fechaToIso(draft.fecha);
+          const src = iso ? bcvSources2[iso] : void 0;
+          if (src?.includes("bcv.org.ve")) return /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "shrink-0 rounded bg-green-700/30 px-1.5 py-0.5 text-[10px] text-green-300", children: "BCV oficial" });
+          if (src === "dolarapi.com") return /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "shrink-0 rounded bg-amber-700/30 px-1.5 py-0.5 text-[10px] text-amber-300", children: "Respaldo" });
+          if (draft.moneda === "Bolívares" && (draft.tasa == null || draft.tasa === 0)) return /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "shrink-0 text-[10px] text-red-400", children: "Sin tasa — ingresa manual" });
+          return null;
+        })()
+      ] }) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx(Field, { label: "USD", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Input, { value: String(draft.montoUsd || ""), onChange: (e) => {
         const v = Number(e.target.value) || 0;
         update("montoUsd", v);
