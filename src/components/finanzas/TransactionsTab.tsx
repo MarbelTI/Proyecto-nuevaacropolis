@@ -549,8 +549,9 @@ export function TransactionsTab({
             variant="outline"
             size="sm"
             onClick={() => {
+              function hoy(): string { const d=new Date(); return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`; }
               const empty: Transaction = {
-                fecha: "",
+                fecha: hoy(),
                 mes: "",
                 id: "__new__",
                 tipo: "Ingreso",

@@ -32,7 +32,8 @@ function fechaToIso(fecha: string): string | null {
 }
 
 function emptyEntry(): Entry {
-  return { fecha:"", mes:"", tipo:"Ingreso", categoria:"", descripcion:"",
+  const d=new Date(); const h=`${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;
+  return { fecha:h, mes:"", tipo:"Ingreso", categoria:"", descripcion:"",
     mensualidad:"", moneda:"USD", monto:"", tasa:"", montoUsd:"" };
 }
 function fileToDataUrl(file: File): Promise<string> {
