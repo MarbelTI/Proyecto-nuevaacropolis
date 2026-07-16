@@ -31,19 +31,19 @@ const services = {
 };
 globalThis.__nitro_vite_envs__ = services;
 const assets = {
+  "/assets/index-G233W34n.js": {
+    "type": "text/javascript; charset=utf-8",
+    "etag": '"5dc33-UoGwShqI3ONyQv1P1h0IBB2o8M0"',
+    "mtime": "2026-07-16T02:14:20.291Z",
+    "size": 384051,
+    "path": "../public/assets/index-G233W34n.js"
+  },
   "/favicon.jpg": {
     "type": "image/jpeg",
     "etag": '"32d3-S++fosJKJoxEinOIUCdJfjbuhKY"',
     "mtime": "2026-07-13T23:42:47.397Z",
     "size": 13011,
     "path": "../public/favicon.jpg"
-  },
-  "/assets/index-DDFmVqM7.js": {
-    "type": "text/javascript; charset=utf-8",
-    "etag": '"5dc33-YetVW20HseOXEHFiXHU9VsiNolI"',
-    "mtime": "2026-07-16T02:12:09.321Z",
-    "size": 384051,
-    "path": "../public/assets/index-DDFmVqM7.js"
   },
   "/logo.jpg": {
     "type": "image/jpeg",
@@ -55,16 +55,16 @@ const assets = {
   "/assets/styles-Bml87bv_.css": {
     "type": "text/css; charset=utf-8",
     "etag": '"16310-x+0lwXl6SUCURbiNVoetUohGWVU"',
-    "mtime": "2026-07-16T02:12:09.321Z",
+    "mtime": "2026-07-16T02:14:20.289Z",
     "size": 90896,
     "path": "../public/assets/styles-Bml87bv_.css"
   },
-  "/assets/index-DpfiTIjC.js": {
+  "/assets/index-C0vhzz52.js": {
     "type": "text/javascript; charset=utf-8",
-    "etag": '"a586c-s8xtyvKUMrloyFRmcyzUhaSvtTs"',
-    "mtime": "2026-07-16T02:12:09.321Z",
-    "size": 677996,
-    "path": "../public/assets/index-DpfiTIjC.js"
+    "etag": '"a5c92-Rhze3uYoK85nUG1zh3UbZHUsHck"',
+    "mtime": "2026-07-16T02:14:20.291Z",
+    "size": 679058,
+    "path": "../public/assets/index-C0vhzz52.js"
   }
 };
 const publicAssetBases = {};

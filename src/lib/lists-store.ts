@@ -6,6 +6,7 @@ import {
   STUDENTS,
   type Actividad,
   type Condicion,
+  type CuotaOverrideTemporal,
 } from "./students-data";
 
 const K_ING = "lector_ocr_ingresos";
@@ -23,11 +24,12 @@ export type Student = {
   nombre: string;
   aulas: string[];
   condicion?: Condicion;
-  actividad?: Actividad; // default "Activo"
+  actividad?: Actividad;
   celador?: boolean;
   cuotaOverride?: number;
-  telefono?: string; // para enviar WhatsApp
-  fechaIngreso?: string; // YYYY-MM-DD, default "2026-01-01"
+  cuotaOverridesTemporales?: CuotaOverrideTemporal[];
+  telefono?: string;
+  fechaIngreso?: string;
 };
 
 export type Transaction = {
@@ -141,6 +143,7 @@ function seedFromDefault(): Student[] {
     actividad: s.actividad ?? "Activo",
     celador: s.celador ?? false,
     cuotaOverride: s.cuotaOverride,
+    cuotaOverridesTemporales: s.cuotaOverridesTemporales ? [...s.cuotaOverridesTemporales] : undefined,
     fechaIngreso: s.fechaIngreso ?? defaultFechaIngreso(s.aulas),
   }));
 }
@@ -229,6 +232,25 @@ export function useEditableStudents(): [Student[], (next: Student[]) => void] {
         const fix = fixes.get(s.nombre);
         return fix ? { ...s, ...fix } : s;
       });
+
+      // Migrar cuotaOverridesTemporales desde la seed a alumnos en localStorage que no los tengan
+      const TEMP_OVERRIDE_DONE = "lector_ocr_temp_override_v1_done";
+      if (!localStorage.getItem(TEMP_OVERRIDE_DONE)) {
+        const seedOverrides = new Map<string, Student["cuotaOverridesTemporales"]>();
+        for (const s of seed) {
+          if (s.cuotaOverridesTemporales?.length) seedOverrides.set(s.nombre.toLowerCase(), s.cuotaOverridesTemporales);
+        }
+        if (seedOverrides.size) {
+          base = base.map((s) => {
+            const key = s.nombre.toLowerCase();
+            if (!s.cuotaOverridesTemporales?.length && seedOverrides.has(key)) {
+              return { ...s, cuotaOverridesTemporales: seedOverrides.get(key) };
+            }
+            return s;
+          });
+        }
+        localStorage.setItem(TEMP_OVERRIDE_DONE, "1");
+      }
 
       setItems(base);
       save(K_STU, base);

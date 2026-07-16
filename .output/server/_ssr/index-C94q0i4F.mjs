@@ -2,8 +2,8 @@ import { r as reactExports, j as jsxRuntimeExports } from "../_libs/react.mjs";
 import { u as useRouter } from "../_libs/tanstack__react-router.mjs";
 import { m as isRedirect } from "../_libs/tanstack__router-core.mjs";
 import { read as readSync, utils, writeFile as writeFileSync } from "../_libs/xlsx.mjs";
-import { a as createServerFn, T as TSS_SERVER_FUNCTION, g as getServerFnById } from "./server-CSlMKufa.mjs";
-import { C as CATEGORIAS_INGRESO, a as CATEGORIAS_GASTO, A as AULAS_DEFAULT, S as STUDENTS } from "./students-data-CxTLa4wP.mjs";
+import { a as createServerFn, T as TSS_SERVER_FUNCTION, g as getServerFnById } from "./server-Cp8pASRS.mjs";
+import { C as CATEGORIAS_INGRESO, a as CATEGORIAS_GASTO, A as AULAS_DEFAULT, S as STUDENTS } from "./students-data-CpFY5TPz.mjs";
 import { S as Slot } from "../_libs/radix-ui__react-slot.mjs";
 import { c as cva } from "../_libs/class-variance-authority.mjs";
 import { c as clsx } from "../_libs/clsx.mjs";
@@ -215,6 +215,7 @@ function seedFromDefault() {
     actividad: s.actividad ?? "Activo",
     celador: s.celador ?? false,
     cuotaOverride: s.cuotaOverride,
+    cuotaOverridesTemporales: s.cuotaOverridesTemporales ? [...s.cuotaOverridesTemporales] : void 0,
     fechaIngreso: s.fechaIngreso ?? defaultFechaIngreso(s.aulas)
   }));
 }
@@ -293,6 +294,23 @@ function useEditableStudents() {
         const fix = fixes.get(s.nombre);
         return fix ? { ...s, ...fix } : s;
       });
+      const TEMP_OVERRIDE_DONE = "lector_ocr_temp_override_v1_done";
+      if (!localStorage.getItem(TEMP_OVERRIDE_DONE)) {
+        const seedOverrides = /* @__PURE__ */ new Map();
+        for (const s of seed) {
+          if (s.cuotaOverridesTemporales?.length) seedOverrides.set(s.nombre.toLowerCase(), s.cuotaOverridesTemporales);
+        }
+        if (seedOverrides.size) {
+          base = base.map((s) => {
+            const key = s.nombre.toLowerCase();
+            if (!s.cuotaOverridesTemporales?.length && seedOverrides.has(key)) {
+              return { ...s, cuotaOverridesTemporales: seedOverrides.get(key) };
+            }
+            return s;
+          });
+        }
+        localStorage.setItem(TEMP_OVERRIDE_DONE, "1");
+      }
       setItems(base);
       save$1(K_STU, base);
     } catch {
@@ -1646,26 +1664,6 @@ function DiagnosticoGlobal({
     ] }, c.nombre);
   }) });
 }
-const BAJAS_HASTA_2025 = /* @__PURE__ */ new Map([
-  ["Carlos Angel Jimenez Bermeo", 15],
-  ["Elmer Rincon", 15],
-  ["Manuela Zambrano", 15],
-  ["Lourdes Josefina Moreno Márquez", 13.5]
-]);
-const SUBEN_25_DESDE_MAYO_2026 = /* @__PURE__ */ new Set([
-  "Rosana Escalante",
-  "Victor Jaimes",
-  "Jacqueline Salazar",
-  "Laura Sanchez",
-  "Mariana Isabella Barajas"
-]);
-function normalize(name) {
-  return name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-}
-const BAJAS_NORM = new Map(
-  Array.from(BAJAS_HASTA_2025.entries()).map(([k, v]) => [normalize(k), v])
-);
-const SUBEN_NORM = new Set(Array.from(SUBEN_25_DESDE_MAYO_2026).map(normalize));
 function precioClase(yearMonth) {
   const [y, m] = yearMonth.split("-").map(Number);
   const ym = y * 100 + m;
@@ -1681,14 +1679,15 @@ function cuotaMensualUSD(student, yearMonth) {
   if (typeof student.cuotaOverride === "number") return student.cuotaOverride;
   if (student.condicion === "ClasePorClase") return 0;
   if (student.condicion === "Probacionista") return 0;
-  const name = normalize(student.nombre);
-  const [y, m] = yearMonth.split("-").map(Number);
-  const ym = y * 100 + m;
-  if (ym <= 202512) {
-    return BAJAS_NORM.get(name) ?? 18;
-  }
+  const ym = Number(yearMonth.replace("-", ""));
+  const overrideTemporal = (student.cuotaOverridesTemporales ?? []).find((o) => {
+    const desde = Number(o.desde.replace("-", ""));
+    const hasta = o.hasta ? Number(o.hasta.replace("-", "")) : Infinity;
+    return ym >= desde && ym <= hasta;
+  });
+  if (overrideTemporal) return overrideTemporal.cuotaUsd;
+  if (ym <= 202512) return 18;
   if (ym <= 202604) return 20;
-  if (SUBEN_NORM.has(name)) return 25;
   return 20;
 }
 function calcularCuotasDebidas(student, lastPaidYm, currentYm2, lastPayAmount) {

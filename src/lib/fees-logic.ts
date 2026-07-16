@@ -9,34 +9,6 @@ import type { Student } from "./lists-store";
 // ClasePorClase: no cuota mensual, pagan por asistencia.
 // cuotaOverride del alumno gana siempre (0 = becado sin cuota).
 
-const BAJAS_HASTA_2025 = new Map<string, number>([
-  ["Carlos Angel Jimenez Bermeo", 15],
-  ["Elmer Rincon", 15],
-  ["Manuela Zambrano", 15],
-  ["Lourdes Josefina Moreno Márquez", 13.5],
-]);
-
-const SUBEN_25_DESDE_MAYO_2026 = new Set<string>([
-  "Rosana Escalante",
-  "Victor Jaimes",
-  "Jacqueline Salazar",
-  "Laura Sanchez",
-  "Mariana Isabella Barajas",
-]);
-
-function normalize(name: string) {
-  return name
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
-}
-
-const BAJAS_NORM = new Map(
-  Array.from(BAJAS_HASTA_2025.entries()).map(([k, v]) => [normalize(k), v]),
-);
-const SUBEN_NORM = new Set(Array.from(SUBEN_25_DESDE_MAYO_2026).map(normalize));
-
 /** Precio por clase para "ClasePorClase" según el mes (referencial, no genera deuda). */
 export function precioClase(yearMonth: string): number {
   const [y, m] = yearMonth.split("-").map(Number);
@@ -58,15 +30,17 @@ export function cuotaMensualUSD(student: Student, yearMonth: string): number {
   if (student.condicion === "ClasePorClase") return 0;
   if (student.condicion === "Probacionista") return 0;
 
-  const name = normalize(student.nombre);
-  const [y, m] = yearMonth.split("-").map(Number);
-  const ym = y * 100 + m;
+  const ym = Number(yearMonth.replace("-", ""));
 
-  if (ym <= 202512) {
-    return BAJAS_NORM.get(name) ?? 18;
-  }
+  const overrideTemporal = (student.cuotaOverridesTemporales ?? []).find((o) => {
+    const desde = Number(o.desde.replace("-", ""));
+    const hasta = o.hasta ? Number(o.hasta.replace("-", "")) : Infinity;
+    return ym >= desde && ym <= hasta;
+  });
+  if (overrideTemporal) return overrideTemporal.cuotaUsd;
+
+  if (ym <= 202512) return 18;
   if (ym <= 202604) return 20;
-  if (SUBEN_NORM.has(name)) return 25;
   return 20;
 }
 

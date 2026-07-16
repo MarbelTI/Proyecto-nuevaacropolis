@@ -4,6 +4,13 @@
 export type Condicion = "Miembro" | "Probacionista" | "ClasePorClase";
 export type Actividad = "Activo" | "Retirado";
 
+export type CuotaOverrideTemporal = {
+  cuotaUsd: number;
+  desde: string;      // "YYYY-MM", inclusive
+  hasta?: string;      // "YYYY-MM", inclusive; si falta, no tiene fecha de fin
+  nota?: string;
+};
+
 export type StudentSeed = {
   nombre: string;
   aulas: string[];
@@ -12,6 +19,7 @@ export type StudentSeed = {
   celador?: boolean;
   /** Cuota mensual override en USD (si es distinta de la regla general). */
   cuotaOverride?: number;
+  cuotaOverridesTemporales?: CuotaOverrideTemporal[];
   fechaIngreso?: string; // YYYY-MM-DD, si falta se asigna según aula
 };
 
@@ -87,18 +95,18 @@ export const STUDENTS: StudentSeed[] = [
 
   // Krishna I
   { nombre: "Alejandro Jimenez", aulas: ["Krishna I"], condicion: "Miembro", celador: true },
-  { nombre: "Carlos Angel Jimenez Bermeo", aulas: ["Krishna I"], condicion: "Miembro" },
+  { nombre: "Carlos Angel Jimenez Bermeo", aulas: ["Krishna I"], condicion: "Miembro", cuotaOverridesTemporales: [{ cuotaUsd: 15, desde: "2000-01", hasta: "2025-12", nota: "migrado de BAJAS_HASTA_2025" }] },
   { nombre: "Claudia Zambrano", aulas: ["Krishna I"], condicion: "Miembro" },
   { nombre: "Estefany Hernandez", aulas: ["Krishna I"], condicion: "Miembro" },
   { nombre: "Jesus Rodriguez", aulas: ["Krishna I"], condicion: "Miembro" },
   { nombre: "Jose Gregorio Maldonado", aulas: ["Krishna I"], condicion: "Miembro" },
   { nombre: "Juan Victor Jaimes", aulas: ["Krishna I"], condicion: "Miembro" },
-  { nombre: "Manuela Zambrano", aulas: ["Krishna I"], condicion: "Miembro" },
+  { nombre: "Manuela Zambrano", aulas: ["Krishna I"], condicion: "Miembro", cuotaOverridesTemporales: [{ cuotaUsd: 15, desde: "2000-01", hasta: "2025-12", nota: "migrado de BAJAS_HASTA_2025" }] },
   { nombre: "Maria Yormary Roa", aulas: ["Krishna I"], condicion: "Miembro" },
 
   // Krishna II
   { nombre: "Jesús Santiago Dominguez Pérez", aulas: ["Krishna II"], condicion: "Miembro" },
-  { nombre: "Lourdes Josefina Moreno Márquez", aulas: ["Krishna II"], condicion: "Miembro" },
+  { nombre: "Lourdes Josefina Moreno Márquez", aulas: ["Krishna II"], condicion: "Miembro", cuotaOverridesTemporales: [{ cuotaUsd: 13.5, desde: "2000-01", hasta: "2025-12", nota: "migrado de BAJAS_HASTA_2025" }] },
   { nombre: "Lysbeth Consuelo Terranova Vacca", aulas: ["Krishna II"], condicion: "Miembro" },
   { nombre: "Manuel Enrique Medina Buenaño", aulas: ["Krishna II"], condicion: "Miembro" },
   { nombre: "Milagro Elizabeth Contreras Márquez", aulas: ["Krishna II"], condicion: "Miembro" },
@@ -106,7 +114,7 @@ export const STUDENTS: StudentSeed[] = [
   // Krishna III
   { nombre: "Angel Altuve", aulas: ["Krishna III"], condicion: "Miembro" },
   { nombre: "Carlos Jesus Jimenez", aulas: ["Krishna III"], condicion: "Miembro", celador: true },
-  { nombre: "Elmer Rincon", aulas: ["Krishna III", "Krishna IV"], condicion: "Miembro", celador: true },
+  { nombre: "Elmer Rincon", aulas: ["Krishna III", "Krishna IV"], condicion: "Miembro", celador: true, cuotaOverridesTemporales: [{ cuotaUsd: 15, desde: "2000-01", hasta: "2025-12", nota: "migrado de BAJAS_HASTA_2025" }] },
   { nombre: "Isrrael Molina", aulas: ["Krishna III"], condicion: "Miembro" },
   { nombre: "Luis Castillo", aulas: ["Krishna III"], condicion: "Miembro" },
   { nombre: "Luis Cortes", aulas: ["Krishna III"], condicion: "Miembro" },
@@ -128,8 +136,8 @@ export const STUDENTS: StudentSeed[] = [
   { nombre: "Leunan Roa", aulas: ["Krishna V"], condicion: "Miembro" },
   { nombre: "Marlyn Chacon", aulas: ["Krishna V"], condicion: "Miembro" },
   { nombre: "Mauricio Rivera", aulas: ["Krishna V"], condicion: "Miembro" },
-  { nombre: "Rosana Escalante", aulas: ["Krishna V"], condicion: "Miembro" },
-  { nombre: "Victor Jaimes", aulas: ["Krishna V"], condicion: "Miembro" },
+  { nombre: "Rosana Escalante", aulas: ["Krishna V"], condicion: "Miembro", cuotaOverridesTemporales: [{ cuotaUsd: 25, desde: "2026-05", nota: "migrado de SUBEN_25_DESDE_MAYO_2026" }] },
+  { nombre: "Victor Jaimes", aulas: ["Krishna V"], condicion: "Miembro", cuotaOverridesTemporales: [{ cuotaUsd: 25, desde: "2026-05", nota: "migrado de SUBEN_25_DESDE_MAYO_2026" }] },
   { nombre: "Viktor Peñaloza", aulas: ["Krishna V"], condicion: "Miembro" },
   { nombre: "Ariana Patiño", aulas: ["Krishna V"], condicion: "Miembro", actividad: "Retirado" },
 
@@ -140,14 +148,14 @@ export const STUDENTS: StudentSeed[] = [
   { nombre: "Claudia Quintero", aulas: ["Krishna VI"], condicion: "Probacionista", actividad: "Retirado" },
   { nombre: "Gabina Useche", aulas: ["Krishna VI"], condicion: "Miembro" },
   { nombre: "Isdrey Bazo", aulas: ["Krishna VI"], condicion: "Miembro" },
-  { nombre: "Jacqueline Salazar", aulas: ["Krishna VI"], condicion: "Miembro" },
+  { nombre: "Jacqueline Salazar", aulas: ["Krishna VI"], condicion: "Miembro", cuotaOverridesTemporales: [{ cuotaUsd: 25, desde: "2026-05", nota: "migrado de SUBEN_25_DESDE_MAYO_2026" }] },
   { nombre: "Jose Figueroa", aulas: ["Krishna VI"], condicion: "Miembro" },
   { nombre: "Juan Carlos Ramirez", aulas: ["Krishna VI"], condicion: "Miembro" },
   { nombre: "Juan Rodriguez", aulas: ["Krishna VI"], condicion: "Probacionista", actividad: "Retirado" },
   { nombre: "Kairo Belisario", aulas: ["Krishna VI"], condicion: "Miembro", celador: true },
   { nombre: "Karla Marquez", aulas: ["Krishna VI"], condicion: "Miembro" },
-  { nombre: "Laura Sanchez", aulas: ["Krishna VI"], condicion: "Miembro" },
-  { nombre: "Mariana Isabella Barajas", aulas: ["Krishna VI"], condicion: "Miembro" },
+  { nombre: "Laura Sanchez", aulas: ["Krishna VI"], condicion: "Miembro", cuotaOverridesTemporales: [{ cuotaUsd: 25, desde: "2026-05", nota: "migrado de SUBEN_25_DESDE_MAYO_2026" }] },
+  { nombre: "Mariana Isabella Barajas", aulas: ["Krishna VI"], condicion: "Miembro", cuotaOverridesTemporales: [{ cuotaUsd: 25, desde: "2026-05", nota: "migrado de SUBEN_25_DESDE_MAYO_2026" }] },
   { nombre: "Marta Ruda", aulas: ["Krishna VI"], condicion: "Miembro" },
   { nombre: "Neicy Fortoul", aulas: ["Krishna VI"], condicion: "Miembro" },
   { nombre: "Nelson Garcia", aulas: ["Krishna VI"], condicion: "Probacionista", actividad: "Retirado" },
