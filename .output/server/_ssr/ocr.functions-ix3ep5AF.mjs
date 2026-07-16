@@ -1,6 +1,6 @@
 import process from "node:process";
-import { c as createServerRpc } from "./createServerRpc-BLVVv7uQ.mjs";
-import { a as createServerFn } from "./server-CQbShmfX.mjs";
+import { c as createServerRpc } from "./createServerRpc-DQbfVDwd.mjs";
+import { a as createServerFn } from "./server-xXyTc1pn.mjs";
 import { g as generateText } from "../_libs/ai.mjs";
 import { c as createOpenAICompatible } from "../_libs/ai-sdk__openai-compatible.mjs";
 import { C as CATEGORIAS_INGRESO, a as CATEGORIAS_GASTO, s as studentListForPrompt } from "./students-data-CpFY5TPz.mjs";
