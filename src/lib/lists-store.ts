@@ -39,11 +39,33 @@ export type Transaction = {
   descripcion: string;
   mensualidad: string;
   moneda: "USD" | "Bolívares" | "Pesos" | "";
-  monto: string;
-  tasa: string;
-  montoUsd: string;
-  banco: string; // banco/cuenta: Efectivo USD, Binance, Bancolombia, Bco Venezuela, Bco Mercantil, etc.
+  monto: number;
+  tasa: number | null;
+  montoUsd: number;
+  banco: string;
 };
+
+function parseMoney(s: unknown): number {
+  if (typeof s === "number" && isFinite(s)) return s;
+  if (typeof s !== "string") return 0;
+  let clean = s.trim().replace(/[^0-9,\-\.]/g, "");
+  if (clean.includes(",") && clean.includes(".")) {
+    const lastDot = clean.lastIndexOf(".");
+    const lastComma = clean.lastIndexOf(",");
+    if (lastDot > lastComma) clean = clean.replace(/,/g, "");
+    else clean = clean.replace(/\./g, "").replace(",", ".");
+  } else if (clean.includes(",") && !clean.includes(".")) {
+    clean = clean.replace(",", ".");
+  }
+  const n = parseFloat(clean);
+  if (isNaN(n)) { console.warn("parseMoney: NaN from", JSON.stringify(s)); return 0; }
+  return n;
+}
+
+function parseMoneyOrNull(s: unknown): number | null {
+  if (s === "" || s == null) return null;
+  return parseMoney(s);
+}
 
 /** Mapa fecha ISO (YYYY-MM-DD) -> tasa bolívares/USD */
 export type BcvRates = Record<string, number>;
@@ -236,10 +258,25 @@ export function useTransactions(): {
 } {
   const [list, setList] = useState<Transaction[]>([]);
   useEffect(() => {
-    let data = load<Transaction[]>(K_TX, []);
+    let data = load<any[]>(K_TX, []);
+
+    // Migración string → number (una vez)
+    const MIG_DONE = "lector_ocr_migracion_numerica_v1_done";
+    if (!localStorage.getItem(MIG_DONE) && data.length > 0 && typeof data[0].monto === "string") {
+      localStorage.setItem("lector_ocr_transacciones_v1_backup_pre_numeric", JSON.stringify(data));
+      data = data.map((t) => ({
+        ...t,
+        monto: parseMoney(t.monto),
+        tasa: parseMoneyOrNull(t.tasa),
+        montoUsd: parseMoney(t.montoUsd),
+      }));
+      save(K_TX, data as Transaction[]);
+      localStorage.setItem(MIG_DONE, "1");
+    }
+
     // Migrar fechas 2024 → 2026 (OCR asignó año incorrecto)
     let changed = false;
-    data = data.map((t) => {
+    data = data.map((t: any) => {
       if (t.fecha && t.fecha.includes("/2024")) {
         changed = true;
         const next = { ...t, fecha: t.fecha.replace("/2024", "/2026") };
@@ -248,8 +285,8 @@ export function useTransactions(): {
       }
       return t;
     });
-    if (changed) save(K_TX, data);
-    setList(data);
+    if (changed) save(K_TX, data as Transaction[]);
+    setList(data as Transaction[]);
   }, []);
   const fechaSortKey = (t: Transaction) => {
     const [d, m, y] = t.fecha.split("/");

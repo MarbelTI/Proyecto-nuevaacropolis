@@ -2,7 +2,7 @@ import { r as reactExports, j as jsxRuntimeExports } from "../_libs/react.mjs";
 import { u as useRouter } from "../_libs/tanstack__react-router.mjs";
 import { m as isRedirect } from "../_libs/tanstack__router-core.mjs";
 import { read as readSync, utils, writeFile as writeFileSync } from "../_libs/xlsx.mjs";
-import { a as createServerFn, T as TSS_SERVER_FUNCTION, g as getServerFnById } from "./server-C1RJKh7z.mjs";
+import { a as createServerFn, T as TSS_SERVER_FUNCTION, g as getServerFnById } from "./server-CSlMKufa.mjs";
 import { C as CATEGORIAS_INGRESO, a as CATEGORIAS_GASTO, A as AULAS_DEFAULT, S as STUDENTS } from "./students-data-CxTLa4wP.mjs";
 import { S as Slot } from "../_libs/radix-ui__react-slot.mjs";
 import { c as cva } from "../_libs/class-variance-authority.mjs";
@@ -136,6 +136,29 @@ const K_AULAS$1 = "lector_ocr_aulas";
 const K_TX = "lector_ocr_transacciones_v1";
 const K_BCV = "lector_ocr_bcv_v1";
 const K_SEED = "lector_ocr_seed_v4";
+function parseMoney(s) {
+  if (typeof s === "number" && isFinite(s)) return s;
+  if (typeof s !== "string") return 0;
+  let clean = s.trim().replace(/[^0-9,\-\.]/g, "");
+  if (clean.includes(",") && clean.includes(".")) {
+    const lastDot = clean.lastIndexOf(".");
+    const lastComma = clean.lastIndexOf(",");
+    if (lastDot > lastComma) clean = clean.replace(/,/g, "");
+    else clean = clean.replace(/\./g, "").replace(",", ".");
+  } else if (clean.includes(",") && !clean.includes(".")) {
+    clean = clean.replace(",", ".");
+  }
+  const n = parseFloat(clean);
+  if (isNaN(n)) {
+    console.warn("parseMoney: NaN from", JSON.stringify(s));
+    return 0;
+  }
+  return n;
+}
+function parseMoneyOrNull(s) {
+  if (s === "" || s == null) return null;
+  return parseMoney(s);
+}
 function load$1(key, fallback) {
   if (typeof window === "undefined") return fallback;
   try {
@@ -286,6 +309,18 @@ function useTransactions() {
   const [list, setList] = reactExports.useState([]);
   reactExports.useEffect(() => {
     let data = load$1(K_TX, []);
+    const MIG_DONE = "lector_ocr_migracion_numerica_v1_done";
+    if (!localStorage.getItem(MIG_DONE) && data.length > 0 && typeof data[0].monto === "string") {
+      localStorage.setItem("lector_ocr_transacciones_v1_backup_pre_numeric", JSON.stringify(data));
+      data = data.map((t) => ({
+        ...t,
+        monto: parseMoney(t.monto),
+        tasa: parseMoneyOrNull(t.tasa),
+        montoUsd: parseMoney(t.montoUsd)
+      }));
+      save$1(K_TX, data);
+      localStorage.setItem(MIG_DONE, "1");
+    }
     let changed = false;
     data = data.map((t) => {
       if (t.fecha && t.fecha.includes("/2024")) {
@@ -1685,12 +1720,10 @@ function currentYm() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 function calcularMontoUsd(moneda, monto, tasa) {
-  const m = Number(monto);
-  if (!m || !isFinite(m)) return "";
-  if (moneda === "USD" || moneda === "" || moneda === "Dólares") return m.toFixed(2);
-  const t = Number(tasa);
-  if (!t || !isFinite(t) || t <= 0) return "";
-  return (m / t).toFixed(2);
+  if (!monto || !isFinite(monto)) return 0;
+  if (moneda === "USD" || moneda === "" || moneda === "Dólares") return monto;
+  if (!tasa || !isFinite(tasa) || tasa <= 0) return 0;
+  return monto / tasa;
 }
 const TASA_PESOS_DEFAULT = 4e3;
 const MESES_ES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -1749,6 +1782,25 @@ function normalizeMoneyRow(row, bcvRates) {
     if (iso) {
       const r = bcvRateFor(bcvRates, iso);
       if (r != null) next.tasa = String(r);
+    }
+  }
+  const montoNum = Number(next.monto) || 0;
+  const tasaNum = next.tasa ? Number(next.tasa) : null;
+  next.montoUsd = String(calcularMontoUsd(next.moneda, montoNum, tasaNum));
+  return next;
+}
+function normalizeTransactionMoney(tx, bcvRates) {
+  const next = {
+    ...tx
+  };
+  if (next.moneda === "Pesos" && (next.tasa == null || next.tasa === 0)) {
+    next.tasa = TASA_PESOS_DEFAULT;
+  }
+  if (next.moneda === "Bolívares" && (next.tasa == null || next.tasa === 0)) {
+    const iso = fechaToIso(next.fecha);
+    if (iso) {
+      const r = bcvRateFor(bcvRates, iso);
+      if (r != null) next.tasa = r;
     }
   }
   next.montoUsd = calcularMontoUsd(next.moneda, next.monto, next.tasa);
@@ -1963,9 +2015,9 @@ function Index() {
       descripcion: e.descripcion,
       mensualidad: e.mensualidad,
       moneda: e.moneda,
-      monto: e.monto,
-      tasa: e.tasa,
-      montoUsd: e.montoUsd,
+      monto: Number(e.monto) || 0,
+      tasa: e.tasa ? Number(e.tasa) : null,
+      montoUsd: Number(e.montoUsd) || 0,
       banco: ""
     })));
     setEntries([]);
@@ -2322,9 +2374,9 @@ function TransactionsTab({
             descripcion: "",
             mensualidad: "",
             moneda: "USD",
-            monto: "",
-            tasa: "",
-            montoUsd: "",
+            monto: 0,
+            tasa: null,
+            montoUsd: 0,
             banco: ""
           };
           setEditing(empty);
@@ -2354,9 +2406,12 @@ function TransactionsTab({
               descripcion: String(r.Descripcion || r.Descripción || r.descripcion || ""),
               mensualidad: String(r.Mensualidad || r.mensualidad || ""),
               moneda: String(r.Moneda || r.moneda || "USD") === "Bolívares" ? "Bolívares" : String(r.Moneda || r.moneda || "USD") === "Pesos" ? "Pesos" : "USD",
-              monto: String(r.Monto || r.monto || "0"),
-              tasa: String(r["Tasa cambio"] || r["Tasa"] || r.tasa || ""),
-              montoUsd: String(r["Monto USD"] || r["USD"] || r.montoUsd || ""),
+              monto: Number(r.Monto || r.monto || 0) || 0,
+              tasa: (() => {
+                const v = r["Tasa cambio"] || r["Tasa"] || r.tasa;
+                return v ? Number(v) : null;
+              })(),
+              montoUsd: Number(r["Monto USD"] || r["USD"] || r.montoUsd || 0) || 0,
               banco: String(r.Banco || r.banco || "")
             }));
             if (!mapped.length) {
@@ -2540,7 +2595,7 @@ function TransactionEditDialog({
         [k]: v
       };
       if (k === "moneda" || k === "monto" || k === "tasa" || k === "fecha") {
-        return normalizeMoneyRow(next, bcvRates);
+        return normalizeTransactionMoney(next, bcvRates);
       }
       return next;
     });
@@ -2578,15 +2633,13 @@ function TransactionEditDialog({
           /* @__PURE__ */ jsxRuntimeExports.jsx(SelectItem, { value: "__editar__", children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-muted-foreground italic text-xs", children: "✎ Editar desde Categorías…" }) })
         ] })
       ] }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(Field, { label: "Monto", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Input, { value: draft.monto, onChange: (e) => update("monto", e.target.value) }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(Field, { label: "Tasa", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Input, { value: draft.tasa, onChange: (e) => update("tasa", e.target.value) }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(Field, { label: "USD", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Input, { value: draft.montoUsd, onChange: (e) => {
-        const v = e.target.value;
+      /* @__PURE__ */ jsxRuntimeExports.jsx(Field, { label: "Monto", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Input, { value: String(draft.monto || ""), onChange: (e) => update("monto", Number(e.target.value) || 0) }) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(Field, { label: "Tasa", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Input, { value: draft.tasa != null ? String(draft.tasa) : "", onChange: (e) => update("tasa", e.target.value ? Number(e.target.value) : null) }) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(Field, { label: "USD", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Input, { value: String(draft.montoUsd || ""), onChange: (e) => {
+        const v = Number(e.target.value) || 0;
         update("montoUsd", v);
-        const m = Number(draft.monto);
-        const u = Number(v);
-        if (m > 0 && u > 0 && (!draft.tasa || Number(draft.tasa) === 0)) {
-          update("tasa", String(m / u));
+        if (draft.monto > 0 && v > 0 && (draft.tasa == null || draft.tasa === 0)) {
+          update("tasa", draft.monto / v);
         }
       } }) })
     ] }),

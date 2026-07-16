@@ -38,12 +38,12 @@ const assets = {
     "size": 13011,
     "path": "../public/favicon.jpg"
   },
-  "/assets/index-C-07PwyV.js": {
+  "/assets/index-DDFmVqM7.js": {
     "type": "text/javascript; charset=utf-8",
-    "etag": '"5dc33-Vw4qErz64dGcze3GCRcu2zsw0Wk"',
-    "mtime": "2026-07-15T17:21:16.013Z",
+    "etag": '"5dc33-YetVW20HseOXEHFiXHU9VsiNolI"',
+    "mtime": "2026-07-16T02:12:09.321Z",
     "size": 384051,
-    "path": "../public/assets/index-C-07PwyV.js"
+    "path": "../public/assets/index-DDFmVqM7.js"
   },
   "/logo.jpg": {
     "type": "image/jpeg",
@@ -55,16 +55,16 @@ const assets = {
   "/assets/styles-Bml87bv_.css": {
     "type": "text/css; charset=utf-8",
     "etag": '"16310-x+0lwXl6SUCURbiNVoetUohGWVU"',
-    "mtime": "2026-07-15T17:21:16.013Z",
+    "mtime": "2026-07-16T02:12:09.321Z",
     "size": 90896,
     "path": "../public/assets/styles-Bml87bv_.css"
   },
-  "/assets/index-CoxKmsy0.js": {
+  "/assets/index-DpfiTIjC.js": {
     "type": "text/javascript; charset=utf-8",
-    "etag": '"a53c8-QIiok7JBMIDiV5+wO0iBa/ybzo4"',
-    "mtime": "2026-07-15T17:21:16.013Z",
-    "size": 676808,
-    "path": "../public/assets/index-CoxKmsy0.js"
+    "etag": '"a586c-s8xtyvKUMrloyFRmcyzUhaSvtTs"',
+    "mtime": "2026-07-16T02:12:09.321Z",
+    "size": 677996,
+    "path": "../public/assets/index-DpfiTIjC.js"
   }
 };
 const publicAssetBases = {};

@@ -138,7 +138,7 @@ function RootComponent() {
     /* @__PURE__ */ jsxRuntimeExports.jsx(Toaster, { richColors: true, position: "top-right" })
   ] });
 }
-const $$splitComponentImporter = () => import("./index-BrwHX_qQ.mjs");
+const $$splitComponentImporter = () => import("./index-xRr6lt8M.mjs");
 const Route = createFileRoute("/")({
   head: () => ({
     meta: [{

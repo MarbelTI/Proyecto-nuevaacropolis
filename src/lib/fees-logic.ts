@@ -108,18 +108,16 @@ export function currentYm(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-/** Recalcula USD desde monto + tasa + moneda (auto-completa columna USD). */
+/** Recalcula USD desde monto + tasa + moneda. */
 export function calcularMontoUsd(
   moneda: string,
-  monto: string | number,
-  tasa: string | number,
-): string {
-  const m = Number(monto);
-  if (!m || !isFinite(m)) return "";
-  if (moneda === "USD" || moneda === "" || moneda === "Dólares") return m.toFixed(2);
-  const t = Number(tasa);
-  if (!t || !isFinite(t) || t <= 0) return "";
-  return (m / t).toFixed(2);
+  monto: number,
+  tasa: number | null,
+): number {
+  if (!monto || !isFinite(monto)) return 0;
+  if (moneda === "USD" || moneda === "" || moneda === "Dólares") return monto;
+  if (!tasa || !isFinite(tasa) || tasa <= 0) return 0;
+  return monto / tasa;
 }
 
 /** Tasa por defecto para pesos colombianos. */

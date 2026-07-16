@@ -106,6 +106,24 @@ function normalizeMoneyRow<T extends { fecha:string; moneda:string; monto:string
       if (r != null) next.tasa = String(r);
     }
   }
+  const montoNum = Number(next.monto) || 0;
+  const tasaNum = next.tasa ? Number(next.tasa) : null;
+  next.montoUsd = String(calcularMontoUsd(next.moneda, montoNum, tasaNum));
+  return next;
+}
+
+function normalizeTransactionMoney(tx: Transaction, bcvRates: Record<string, number>): Transaction {
+  const next = { ...tx };
+  if (next.moneda === "Pesos" && (next.tasa == null || next.tasa === 0)) {
+    next.tasa = TASA_PESOS_DEFAULT;
+  }
+  if (next.moneda === "Bolívares" && (next.tasa == null || next.tasa === 0)) {
+    const iso = fechaToIso(next.fecha);
+    if (iso) {
+      const r = bcvRateFor(bcvRates, iso);
+      if (r != null) next.tasa = r;
+    }
+  }
   next.montoUsd = calcularMontoUsd(next.moneda, next.monto, next.tasa);
   return next;
 }
@@ -279,7 +297,10 @@ function Index() {
       entries.map((e) => ({
         fecha:e.fecha, mes:e.mes, tipo:e.tipo, categoria:e.categoria,
         descripcion:e.descripcion, mensualidad:e.mensualidad, moneda:e.moneda,
-        monto:e.monto, tasa:e.tasa, montoUsd:e.montoUsd, banco:"",
+        monto: Number(e.monto) || 0,
+        tasa: e.tasa ? Number(e.tasa) : null,
+        montoUsd: Number(e.montoUsd) || 0,
+        banco:"",
       })),
     );
     setEntries([]); setPreviews([]);
@@ -682,7 +703,7 @@ function TransactionsTab({
         <h2 className="text-lg font-semibold">Transacciones acumuladas</h2>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => {
-            const empty = { fecha:"", mes:"", id:"__new__", tipo:"Ingreso" as const, categoria:"", descripcion:"", mensualidad:"", moneda:"USD" as const, monto:"", tasa:"", montoUsd:"", banco:"" };
+            const empty: Transaction = { fecha:"", mes:"", id:"__new__", tipo:"Ingreso", categoria:"", descripcion:"", mensualidad:"", moneda:"USD", monto: 0, tasa: null, montoUsd: 0, banco:"" };
             setEditing(empty);
           }}>
             <Plus className="mr-1 h-4 w-4" /> Fila
@@ -704,9 +725,9 @@ function TransactionsTab({
                   descripcion: String(r.Descripcion || r.Descripción || r.descripcion || ""),
                   mensualidad: String(r.Mensualidad || r.mensualidad || ""),
                   moneda: (String(r.Moneda || r.moneda || "USD") === "Bolívares" ? "Bolívares" : String(r.Moneda || r.moneda || "USD") === "Pesos" ? "Pesos" : "USD") as "USD" | "Bolívares" | "Pesos",
-                  monto: String(r.Monto || r.monto || "0"),
-                  tasa: String(r["Tasa cambio"] || r["Tasa"] || r.tasa || ""),
-                  montoUsd: String(r["Monto USD"] || r["USD"] || r.montoUsd || ""),
+                  monto: Number(r.Monto || r.monto || 0) || 0,
+                  tasa: (() => { const v = r["Tasa cambio"] || r["Tasa"] || r.tasa; return v ? Number(v) : null; })(),
+                  montoUsd: Number(r["Monto USD"] || r["USD"] || r.montoUsd || 0) || 0,
                   banco: String(r.Banco || r.banco || ""),
                 }));
                 if (!mapped.length) { toast.error("Excel vacío o formato no reconocido"); return; }
@@ -916,7 +937,7 @@ function TransactionEditDialog({
       if (!d) return d;
       const next = { ...d, [k]: v };
       if (k === "moneda" || k === "monto" || k === "tasa" || k === "fecha") {
-        return normalizeMoneyRow(next, bcvRates);
+        return normalizeTransactionMoney(next, bcvRates);
       }
       return next;
     });
@@ -963,16 +984,14 @@ function TransactionEditDialog({
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Monto"><Input value={draft.monto} onChange={(e)=>update("monto", e.target.value)} /></Field>
-          <Field label="Tasa"><Input value={draft.tasa} onChange={(e)=>update("tasa", e.target.value)} /></Field>
+          <Field label="Monto"><Input value={String(draft.monto || "")} onChange={(e)=>update("monto", Number(e.target.value) || 0)} /></Field>
+          <Field label="Tasa"><Input value={draft.tasa != null ? String(draft.tasa) : ""} onChange={(e)=>update("tasa", e.target.value ? Number(e.target.value) : null)} /></Field>
           <Field label="USD">
-            <Input value={draft.montoUsd} onChange={(e)=>{
-              const v = e.target.value;
+            <Input value={String(draft.montoUsd || "")} onChange={(e)=>{
+              const v = Number(e.target.value) || 0;
               update("montoUsd", v);
-              const m = Number(draft.monto);
-              const u = Number(v);
-              if (m > 0 && u > 0 && (!draft.tasa || Number(draft.tasa) === 0)) {
-                update("tasa", String(m / u));
+              if (draft.monto > 0 && v > 0 && (draft.tasa == null || draft.tasa === 0)) {
+                update("tasa", draft.monto / v);
               }
             }} /></Field>
         </div>
