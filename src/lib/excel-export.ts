@@ -143,5 +143,14 @@ export function exportResumenExcel(
   wsRm["!cols"] = allCats.map(() => ({ wch: 20 }));
   XLSX.utils.book_append_sheet(wb, wsRm, "RESUMEN MENSUAL");
 
-  XLSX.writeFile(wb, `RESUMEN ${mesLabel} ${y}.xlsx`);
+  const wbOut = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  const blob = new Blob([wbOut], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `RESUMEN ${mesLabel} ${y}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
