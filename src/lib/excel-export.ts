@@ -41,143 +41,104 @@ export function exportResumenExcel(
   gastos: string[],
 ): void {
   const wb = XLSX.utils.book_new();
-  const allTx = transactions;
   const y = year;
   const m = month;
   const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
   const ym = `${y}-${String(m).padStart(2,"0")}`;
+  const mesLabel = meses[m-1];
 
-  const txHeader = ["Fecha","Mes Contable","Tipo","Categoría","Nombre / Descripción","Mes Mensualidad","Moneda","Monto Original","Tasa Bs/$","Monto USD"];
-  const txRows: any[][] = [];
-  txRows.push([`📋  TRANSACCIONES  |  Nueva Acrópolis SC  |  ${y}-${y+1}`]);
-  txRows.push(txHeader);
-  for (const t of allTx) {
-    const iso = fechaToIso(t.fecha);
-    if (!iso || iso.slice(0,4) !== String(y)) continue;
-    txRows.push([
-      iso ? serialDate(iso) : "",
-      t.mes || "",
-      t.tipo || "",
-      t.categoria || "",
-      t.descripcion || "",
-      t.mensualidad || "",
-      t.moneda || "USD",
-      Number(t.monto) || 0,
-      Number(t.tasa) || "",
-      Number(t.montoUsd) || 0,
-    ]);
-  }
-  const wsTx = XLSX.utils.aoa_to_sheet(txRows);
-  wsTx["!cols"] = [{wch:12},{wch:14},{wch:10},{wch:16},{wch:42},{wch:16},{wch:10},{wch:14},{wch:12},{wch:12}];
-  XLSX.utils.book_append_sheet(wb, wsTx, "TRANSACCIONES");
-
-  const allCats = [...new Set([...ingresos, ...gastos])];
-  const ingCats = ingresos.sort();
-  const gasCats = gastos.sort();
-  const af: any[][] = [];
-
-  af.push([`📊  ANÁLISIS FINANCIERO POR CATEGORÍA  |  Nueva Acrópolis SC  |  ${y}`]);
-  af.push(["Tipo","Categoría",...meses,"TOTAL","PROMEDIO/MES","VARIACIÓN E→Últ."]);
-  af.push([null,null,...meses]);
-
-  const sumaCatMes = (cat: string, mesIdx: number): number => {
-    let total = 0;
-    for (const t of allTx) {
-      const iso = fechaToIso(t.fecha);
-      if (!iso || iso.slice(0,4) !== String(y)) continue;
-      const tm = parseInt(iso.slice(5,7),10);
-      if (tm !== mesIdx + 1) continue;
-      if (t.categoria !== cat) continue;
-      total += Number(t.montoUsd) || 0;
-    }
-    return total;
-  };
-
-  for (const c of ingCats) {
-    const vals = meses.map((_,i) => sumaCatMes(c, i));
-    const total = vals.reduce((a,b) => a + b, 0);
-    const prom = total / 12;
-    const firstNonZero = vals.find(v => v > 0) ?? 0;
-    const lastNonZero = [...vals].reverse().find(v => v > 0) ?? 0;
-    const varE = firstNonZero && lastNonZero ? ((lastNonZero - firstNonZero) / firstNonZero * 100).toFixed(1) : "";
-    af.push(["Ingreso", c, ...vals, total, prom, varE]);
-  }
-  const totalIngVals = meses.map((_,i) => ingCats.reduce((s,c) => s + sumaCatMes(c,i), 0));
-  const totalIngSum = totalIngVals.reduce((a,b)=>a+b,0);
-  af.push(["","TOTAL INGRESOS", ...totalIngVals, totalIngSum, totalIngSum/12, ""]);
-  af.push([]);
-
-  for (const c of gasCats) {
-    const vals = meses.map((_,i) => sumaCatMes(c, i));
-    const total = vals.reduce((a,b) => a + b, 0);
-    const prom = total / 12;
-    const firstNonZero = vals.find(v => v > 0) ?? 0;
-    const lastNonZero = [...vals].reverse().find(v => v > 0) ?? 0;
-    const varE = firstNonZero && lastNonZero ? ((lastNonZero - firstNonZero) / firstNonZero * 100).toFixed(1) : "";
-    af.push(["Egreso", c, ...vals, total, prom, varE]);
-  }
-  const totalGasVals = meses.map((_,i) => gasCats.reduce((s,c) => s + sumaCatMes(c,i), 0));
-  const totalGasSum = totalGasVals.reduce((a,b)=>a+b,0);
-  af.push(["","TOTAL EGRESOS", ...totalGasVals, totalGasSum, totalGasSum/12, ""]);
-
-  const wsAf = XLSX.utils.aoa_to_sheet(af);
-  wsAf["!cols"] = [{wch:10},{wch:22},...meses.map(()=>({wch:12})),{wch:10},{wch:12},{wch:16}];
-  XLSX.utils.book_append_sheet(wb, wsAf, "ANÁLISIS FINANCIERO");
-
-  const monthTx = allTx.filter(t => {
+  const monthTx = transactions.filter(t => {
     const iso = fechaToIso(t.fecha);
     return iso && iso.slice(0,7) === ym;
   });
-  const mesLabel = meses[m-1];
+
+  const allCats = [...ingresos, ...gastos];
+
+  type Entry = { monto: number; desc: string; fecha: string; mes: string };
+  const catData: Record<string, Entry[]> = {};
+  for (const cat of allCats) catData[cat] = [];
+
+  for (const t of monthTx) {
+    const cat = t.categoria || "(sin categoría)";
+    if (cat === "CONVERSIÓN") continue;
+    if (!catData[cat]) continue;
+    const monto = Number(t.montoUsd) || 0;
+    const isGasto = t.tipo === "Gasto";
+    catData[cat].push({
+      monto: isGasto ? -Math.abs(monto) : Math.abs(monto),
+      desc: t.descripcion || "",
+      fecha: t.fecha,
+      mes: t.mensualidad || "",
+    });
+  }
+
+  const maxRecords = Math.max(0, ...allCats.map(c => catData[c].length));
+  const totalRowIdx = maxRecords + 1; // 0-indexed, +1 por header
+  const lastDataRow = totalRowIdx;    // última fila de datos (0-indexed)
+
   const rm: any[][] = [];
-  rm.push([`📅  RESUMEN MENSUAL  |  ${mesLabel} ${y}`]);
-  rm.push([]);
-  rm.push(["MES SELECCIONADO →", mesLabel]);
-  rm.push([]);
-  rm.push(["INDICADORES DEL MES"]);
-  rm.push(["Total Ingresos","Total Egresos","Margen Neto","Alquiler","Cuotas M+P"]);
-  const rmIngTotal = ingCats.reduce((s,c) => s + sumaCatMes(c, m-1), 0);
-  const rmGasTotal = gasCats.reduce((s,c) => s + sumaCatMes(c, m-1), 0);
-  const alquiler = sumaCatMes("ALQUILER", m-1);
-  const cuotasMP = sumaCatMes("MIEMBROS", m-1) + sumaCatMes("PROBAS", m-1);
-  rm.push([rmIngTotal, rmGasTotal, rmIngTotal - rmGasTotal, alquiler, cuotasMP]);
-  rm.push([]);
 
-  const nPagos = (cat: string, mesIdx: number): number =>
-    allTx.filter(t => {
-      const iso = fechaToIso(t.fecha);
-      if (!iso || parseInt(iso.slice(5,7),10) !== mesIdx+1) return false;
-      if (t.categoria !== cat) return false;
-      return true;
-    }).length;
+  // Fila 1: encabezados de categoría
+  rm.push([...allCats]);
 
-  rm.push(["↑  INGRESOS DEL MES"]);
-  rm.push(["Categoría","Monto USD","N° Pagos","% del Total Ing.","% Acum. hasta este mes"]);
-  let acumPct = 0;
-  for (const c of ingCats) {
-    const val = sumaCatMes(c, m-1);
-    if (val === 0) continue;
-    const np = nPagos(c, m-1);
-    const pct = rmIngTotal ? (val / rmIngTotal * 100).toFixed(1) : "0";
-    acumPct += Number(pct);
-    rm.push([c, val, np, pct, acumPct.toFixed(1)]);
+  // Filas de datos
+  for (let r = 0; r < maxRecords; r++) {
+    rm.push(allCats.map(cat => (r < catData[cat].length ? catData[cat][r].monto : null)));
   }
+
+  // Fila de totales con fórmula SUM
+  rm.push(allCats.map((cat, ci) => {
+    const hasData = catData[cat].length > 0;
+    if (!hasData) return null;
+    const colLetter = XLSX.utils.encode_col(ci);
+    return { f: `SUM(${colLetter}2:${colLetter}${lastDataRow + 1})` };
+  }));
+
+  // 5 filas en blanco
+  for (let i = 0; i < 5; i++) rm.push([]);
+
+  // Resumen: nombre de categoría + total
+  for (const cat of allCats) {
+    const total = catData[cat].reduce((s, e) => s + e.monto, 0);
+    if (total !== 0) {
+      rm.push([cat, null, null, null, total]);
+    } else {
+      rm.push([cat]);
+    }
+  }
+
+  // Gran total: ingresos en col E, egresos en col F
+  const totalIngMes = ingresos.reduce((s, cat) => {
+    const t = catData[cat].reduce((s2, e) => s2 + e.monto, 0);
+    return s + (t > 0 ? t : 0);
+  }, 0);
+  const totalGasMes = gastos.reduce((s, cat) => {
+    const t = catData[cat].reduce((s2, e) => s2 + e.monto, 0);
+    return s + (t < 0 ? Math.abs(t) : 0);
+  }, 0);
   rm.push([]);
-  rm.push(["↓  EGRESOS DEL MES"]);
-  rm.push(["Categoría","Monto USD","N° Pagos","% del Total Eg.","% Acum. hasta este mes"]);
-  let acumPctE = 0;
-  for (const c of gasCats) {
-    const val = sumaCatMes(c, m-1);
-    if (val === 0) continue;
-    const np = nPagos(c, m-1);
-    const pct = rmGasTotal ? (val / rmGasTotal * 100).toFixed(1) : "0";
-    acumPctE += Number(pct);
-    rm.push([c, val, np, pct, acumPctE.toFixed(1)]);
-  }
+  rm.push([null, null, null, null, totalIngMes, Math.abs(totalGasMes)]);
 
   const wsRm = XLSX.utils.aoa_to_sheet(rm);
-  wsRm["!cols"] = [{wch:24},{wch:12},{wch:10},{wch:18},{wch:22}];
+
+  // Añadir notas (comentarios) con fecha + descripción en cada celda de dato
+  for (let c = 0; c < allCats.length; c++) {
+    const cat = allCats[c];
+    const entries = catData[cat];
+    for (let r = 0; r < entries.length; r++) {
+      const addr = XLSX.utils.encode_cell({ c, r: r + 1 });
+      const cell = wsRm[addr];
+      if (cell) {
+        const lines = [entries[r].fecha];
+        if (entries[r].mes) lines.push(entries[r].mes);
+        if (entries[r].desc) lines.push(entries[r].desc);
+        cell.c = [{ a: "Nueva Acrópolis", t: lines.join("\n") }];
+      }
+    }
+  }
+
+  wsRm["!cols"] = allCats.map(() => ({ wch: 20 }));
   XLSX.utils.book_append_sheet(wb, wsRm, "RESUMEN MENSUAL");
 
-  XLSX.writeFile(wb, `RESUMEN_${ym}_${todayIso()}.xlsx`);
+  XLSX.writeFile(wb, `RESUMEN ${mesLabel} ${y}.xlsx`);
 }
