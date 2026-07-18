@@ -98,8 +98,8 @@ export const authCallback = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { createClient } = await import("@supabase/supabase-js");
-    const supabaseUrl = process.env.vite_supabase_url ?? process.env.VITE_SUPABASE_URL ?? "";
-    const supabaseServiceKey = process.env.supabase_service_role_key ?? process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+    const supabaseUrl = process.env.VITE_SUPABASE_URL ?? "";
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
     if (!supabaseUrl || !supabaseServiceKey) {
       // Sin conexión Supabase: devolver rol basado en email nomás
