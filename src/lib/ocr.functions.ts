@@ -85,7 +85,7 @@ function extractJson(text: string): unknown {
 export const analyzeJournalImage = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data }) => {
-    const key = process.env.OPENROUTER_API_KEY || process.env.ANTHROPIC_API_KEY;
+    const key = process.env.openrouter_api_key ?? process.env.OPENROUTER_API_KEY ?? process.env.anthropic_api_key ?? process.env.ANTHROPIC_API_KEY;
     if (!key) throw new Error("Missing API key — configura OPENROUTER_API_KEY en .env");
 
     const provider = createOpenAICompatible({
