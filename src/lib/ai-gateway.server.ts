@@ -15,3 +15,14 @@ export function createGoogleGeminiProvider(apiKey: string) {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
 }
+
+export function createAnthropicProvider(apiKey: string) {
+  return createOpenAICompatible({
+    name: "anthropic",
+    baseURL: "https://api.anthropic.com/v1",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+  });
+}

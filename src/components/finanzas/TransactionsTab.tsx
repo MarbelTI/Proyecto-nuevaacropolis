@@ -524,6 +524,50 @@ export function TransactionsTab({
     toast.success("Excel descargado");
   };
 
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchDialog, setBatchDialog] = useState(false);
+  const [batchField, setBatchField] = useState<string>("");
+  const [batchValue, setBatchValue] = useState<string>("");
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const applyBatchEdit = async () => {
+    if (!batchField || !batchValue) return;
+    let count = 0;
+    for (const t of tx.list) {
+      if (!selectedIds.has(t.id)) continue;
+      const next = { ...t };
+      if (batchField === "fecha") next.fecha = batchValue;
+      else if (batchField === "tipo") next.tipo = batchValue as "Ingreso" | "Gasto";
+      else if (batchField === "categoria") next.categoria = batchValue;
+      else if (batchField === "moneda") next.moneda = batchValue as "USD" | "Bolívares" | "Pesos" | "";
+      else if (batchField === "tasa") next.tasa = batchValue ? Number(batchValue) : null;
+      else if (batchField === "banco") next.banco = batchValue;
+      else if (batchField === "mes") next.mes = batchValue;
+      else if (batchField === "descripcion") next.descripcion = batchValue;
+      else if (batchField === "mensualidad") next.mensualidad = batchValue;
+      if (batchField === "moneda" || batchField === "tasa") {
+        const { calcularMontoUsd } = await import("@/lib/fees-logic");
+        next.montoUsd = calcularMontoUsd(next.moneda, next.monto, next.tasa);
+      }
+      tx.replace(t.id, next);
+      count++;
+    }
+    toast.success(`${count} transacciones actualizadas`);
+    setSelectedIds(new Set());
+    setBatchDialog(false);
+    setBatchField("");
+    setBatchValue("");
+  };
+
   const eliminarRango = () => {
     if (!filtered.length) {
       toast.error("Nada que eliminar en el rango");
@@ -634,6 +678,9 @@ export function TransactionsTab({
           <Button onClick={exportExcel}>
             <Download className="mr-2 h-4 w-4" /> Excel
           </Button>
+          <Button variant={selectMode ? "default" : "ghost"} size="sm" onClick={() => { setSelectMode(!selectMode); if (selectMode) setSelectedIds(new Set()); }}>
+            Seleccionar
+          </Button>
           <Button variant="ghost" onClick={eliminarRango}>
             <Trash2 className="mr-2 h-4 w-4" /> Eliminar rango
           </Button>
@@ -717,8 +764,13 @@ export function TransactionsTab({
             </tr>
           </thead>
           <tbody>
-            {filtered.map((r) => (
-              <tr key={r.id} className="border-b last:border-0">
+            {filtered.map((r) => {
+              const isSelected = selectMode && selectedIds.has(r.id);
+              return (
+              <tr key={r.id}
+                className={`border-b last:border-0 cursor-default ${isSelected ? "bg-primary/10 ring-1 ring-inset ring-primary" : selectMode ? "hover:bg-accent/40" : ""}`}
+                onClick={() => selectMode && toggleSelect(r.id)}
+              >
                 <td className="p-2">{r.fecha}</td>
                 <td className="p-2 text-xs">{r.tipo}</td>
                 <td className="p-2 text-xs">{r.categoria}</td>
@@ -822,7 +874,8 @@ export function TransactionsTab({
                   })()}
                 </td>
               </tr>
-            ))}
+            );
+          })}
             {!filtered.length && (
               <tr>
                 <td
@@ -834,23 +887,171 @@ export function TransactionsTab({
               </tr>
             )}
             {anyFilterActive && filtered.length > 1 && (
-              <tr className="border-t-2 font-semibold bg-accent/20">
-                <td className="p-2 text-xs" colSpan={7}>
-                  Total ({filtered.length} filas)
-                </td>
-                <td className="p-2 text-right tabular-nums">
-                  ${$(filtered.reduce((s, r) => s + (Number(r.monto) || 0), 0))}
-                </td>
-                <td className="p-2" />
-                <td className="p-2 text-right tabular-nums">
-                  ${$(filtered.reduce((s, r) => s + (Number(r.montoUsd) || 0), 0))}
-                </td>
-                <td colSpan={2} />
-              </tr>
+              <>
+                {(() => {
+                  const porMoneda: Record<string, number> = {};
+                  for (const r of filtered) {
+                    const mon = r.moneda || "USD";
+                    porMoneda[mon] = (porMoneda[mon] || 0) + (Number(r.monto) || 0);
+                  }
+                  const monedas = Object.entries(porMoneda);
+                  return monedas.map(([mon, total]) => (
+                    <tr key={mon} className="border-t-2 font-semibold bg-accent/20">
+                      <td className="p-2 text-xs" colSpan={7}>
+                        Total {mon} ({filtered.length} filas)
+                      </td>
+                      <td className="p-2 text-right tabular-nums">
+                        ${$(total)}
+                      </td>
+                      <td className="p-2" />
+                      <td className="p-2 text-right tabular-nums" />
+                      <td colSpan={2} />
+                    </tr>
+                  ));
+                })()}
+                <tr className="font-semibold bg-accent/10">
+                  <td className="p-2 text-xs" colSpan={7}>
+                    Total USD equivalente
+                  </td>
+                  <td className="p-2" />
+                  <td className="p-2" />
+                  <td className="p-2 text-right tabular-nums">
+                    ${$(filtered.reduce((s, r) => s + (Number(r.montoUsd) || 0), 0))}
+                  </td>
+                  <td colSpan={2} />
+                </tr>
+              </>
             )}
           </tbody>
         </table>
       </div>
+
+      {selectMode && selectedIds.size > 0 && (
+        <div className="mt-3 flex items-center gap-3 rounded-lg border bg-accent/20 px-4 py-2">
+          <span className="text-sm font-medium">{selectedIds.size} seleccionadas</span>
+          <div className="flex gap-2 ml-auto">
+            <Button size="sm" variant="outline" onClick={() => setSelectedIds(new Set())}>
+              Deseleccionar
+            </Button>
+            <Button size="sm" onClick={() => setBatchDialog(true)}>
+              Editar seleccionadas
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <Dialog open={batchDialog} onOpenChange={setBatchDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Edición masiva</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground mb-3">
+            {selectedIds.size} transacciones seleccionadas. Elegí qué campo modificar y el nuevo valor.
+          </p>
+          <div className="space-y-3">
+            <Select value={batchField} onValueChange={(v) => { setBatchField(v); setBatchValue(""); }}>
+              <SelectTrigger><SelectValue placeholder="Campo a modificar…" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="categoria">Categoría</SelectItem>
+                <SelectItem value="fecha">Fecha</SelectItem>
+                <SelectItem value="tipo">Tipo (Ingreso/Gasto)</SelectItem>
+                <SelectItem value="moneda">Moneda</SelectItem>
+                <SelectItem value="tasa">Tasa de cambio</SelectItem>
+                <SelectItem value="banco">Banco/Cuenta</SelectItem>
+                <SelectItem value="mes">Mes</SelectItem>
+                <SelectItem value="descripcion">Descripción</SelectItem>
+                <SelectItem value="mensualidad">Mensualidad</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {batchField === "categoria" && (
+              <Select value={batchValue} onValueChange={setBatchValue}>
+                <SelectTrigger><SelectValue placeholder="Selecciona categoría…" /></SelectTrigger>
+                <SelectContent>
+                  {[...ingresos, ...gastos].map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {batchField === "tipo" && (
+              <Select value={batchValue} onValueChange={setBatchValue}>
+                <SelectTrigger><SelectValue placeholder="Selecciona tipo…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Ingreso">Ingreso</SelectItem>
+                  <SelectItem value="Gasto">Gasto</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            {batchField === "moneda" && (
+              <Select value={batchValue} onValueChange={setBatchValue}>
+                <SelectTrigger><SelectValue placeholder="Selecciona moneda…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="USD">USD</SelectItem>
+                  <SelectItem value="Bolívares">Bolívares</SelectItem>
+                  <SelectItem value="Pesos">Pesos</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            {batchField === "fecha" && (
+              <input
+                type="text"
+                value={batchValue}
+                onChange={(e) => setBatchValue(e.target.value)}
+                placeholder="dd/mm/aaaa"
+                className="w-full rounded border bg-background px-3 py-2 text-sm"
+              />
+            )}
+            {batchField === "tasa" && (
+              <input
+                type="number"
+                value={batchValue}
+                onChange={(e) => setBatchValue(e.target.value)}
+                placeholder="Ej: 90.50"
+                className="w-full rounded border bg-background px-3 py-2 text-sm"
+              />
+            )}
+            {batchField === "banco" && (
+              <input
+                type="text"
+                value={batchValue}
+                onChange={(e) => setBatchValue(e.target.value)}
+                placeholder="Nombre del banco…"
+                className="w-full rounded border bg-background px-3 py-2 text-sm"
+              />
+            )}
+            {batchField === "mes" && (
+              <input
+                type="text"
+                value={batchValue}
+                onChange={(e) => setBatchValue(e.target.value)}
+                placeholder="Ej: Abril"
+                className="w-full rounded border bg-background px-3 py-2 text-sm"
+              />
+            )}
+            {batchField === "descripcion" && (
+              <input
+                type="text"
+                value={batchValue}
+                onChange={(e) => setBatchValue(e.target.value)}
+                placeholder="Nueva descripción…"
+                className="w-full rounded border bg-background px-3 py-2 text-sm"
+              />
+            )}
+            {batchField === "mensualidad" && (
+              <input
+                type="text"
+                value={batchValue}
+                onChange={(e) => setBatchValue(e.target.value)}
+                placeholder="Ej: jul-2026"
+                className="w-full rounded border bg-background px-3 py-2 text-sm"
+              />
+            )}
+          </div>
+          <DialogFooter className="mt-3">
+            <Button variant="outline" onClick={() => setBatchDialog(false)}>Cancelar</Button>
+            <Button onClick={applyBatchEdit} disabled={!batchField || !batchValue}>Aplicar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <TransactionEditDialog
         editing={editing}

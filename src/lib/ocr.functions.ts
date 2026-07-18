@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { generateText } from "ai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { z } from "zod";
-import { createGoogleGeminiProvider } from "./ai-gateway.server";
 import {
   CATEGORIAS_GASTO,
   CATEGORIAS_INGRESO,
@@ -17,16 +17,16 @@ const Input = z.object({
 });
 
 export type Entry = {
-  fecha: string; // dd/mm/yyyy
-  mes: string; // ej "Abril"
+  fecha: string;
+  mes: string;
   tipo: "Ingreso" | "Gasto" | "";
   categoria: string;
   descripcion: string;
-  mensualidad: string; // ej "abr-2026" (lo que está después de C/S)
+  mensualidad: string;
   moneda: "USD" | "Bolívares" | "Pesos" | "";
-  monto: string; // monto en la moneda original
-  tasa: string; // tasa de cambio (vacío para USD)
-  montoUsd: string; // equivalente en USD
+  monto: string;
+  tasa: string;
+  montoUsd: string;
 };
 
 function coerceEntries(raw: unknown): Entry[] {
@@ -85,9 +85,18 @@ function extractJson(text: string): unknown {
 export const analyzeJournalImage = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data }) => {
-    const key = process.env.GOOGLE_API_KEY;
-    if (!key) throw new Error("Missing GOOGLE_API_KEY");
-    const gateway = createGoogleGeminiProvider(key);
+    const key = process.env.OPENROUTER_API_KEY || process.env.ANTHROPIC_API_KEY;
+    if (!key) throw new Error("Missing API key — configura OPENROUTER_API_KEY en .env");
+
+    const provider = createOpenAICompatible({
+      name: "openrouter",
+      baseURL: "https://openrouter.ai/api/v1",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "HTTP-Referer": "http://localhost:8080",
+        "X-Title": "SISFIA",
+      },
+    });
 
     const ingresos = data.ingresos?.length ? data.ingresos : [...CATEGORIAS_INGRESO];
     const gastos = data.gastos?.length ? data.gastos : [...CATEGORIAS_GASTO];
@@ -113,7 +122,7 @@ ESTRUCTURA DE LA HOJA (de izquierda a derecha):
 4. Columna de PESOS (penúltima columna)
 5. Columna de DÓLARES USD (última columna)
 
-REGLA CRÍTICA — UNA MONEDA POR FILA:
+REGLAS CRÍTICAS — UNA MONEDA POR FILA:
 Si una misma línea del libro tiene montos en DOS o TRES monedas distintas, DEBES devolver una entrada SEPARADA por cada moneda, repitiendo fecha/descripción/categoría/mensualidad pero cambiando moneda y monto.
 
 CAMPOS A DEVOLVER POR ENTRADA:
@@ -128,19 +137,17 @@ CAMPOS A DEVOLVER POR ENTRADA:
 - tasa: tasa de cambio si aparece (vacío para USD)
 - monto_usd: equivalente en USD si aparece, sino vacío
 
-Devuelve SOLO JSON válido, sin markdown.`;
+Devuelve SOLO JSON válido.`;
 
     const { text } = await generateText({
-      model: gateway("gemini-1.5-flash"),
+      model: provider("google/gemini-2.0-flash-001"),
       messages: [
-        { role: "system", content: systemPrompt },
         {
           role: "user",
           content: [
             {
               type: "text",
-              text: `Analiza esta hoja del libro diario manuscrito.
-Devuelve JSON con esta forma EXACTA:
+              text: systemPrompt + `\n\nAnaliza esta hoja del libro diario manuscrito y devuelve SOLO JSON con esta forma EXACTA:
 {"entries":[{"fecha":"","mes":"","tipo":"","categoria":"","descripcion":"","mensualidad":"","moneda":"","monto":"","tasa":"","monto_usd":""}]}
 
 Recuerda: una fila con dos monedas → DOS entradas. Corrige nombres usando la lista oficial. SOLO JSON.`,

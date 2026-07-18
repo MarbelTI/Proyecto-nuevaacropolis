@@ -199,6 +199,7 @@ export const CATEGORIAS_GASTO = [
   "INTERNET",
   "MANTENIMI",
   "PRESTAMO",
+  "PRÉSTAMOS, PROFESOR",
   "PRUEBA CTA VZLA",
   "PUBLICIDAD",
   "SECRETARIAS",
@@ -233,6 +234,7 @@ export const MATRIZ_CATEGORY_MAP: Record<string, { categoria: string; tipo: "Ing
   "INTERNET": { categoria: "INTERNET", tipo: "Gasto", banco: "Efectivo Bs" },
   "comision bco": { categoria: "COMISIONES BANCARIAS", tipo: "Gasto", banco: "Efectivo Bs" },
   "PRESTAMOS": { categoria: "PRESTAMO", tipo: "Gasto", banco: "Efectivo USD" },
+  "PRÉSTAMOS PROFESOR": { categoria: "PRÉSTAMOS, PROFESOR", tipo: "Gasto", banco: "Efectivo USD" },
   "impuestos": { categoria: "SERVICIOS", tipo: "Gasto", banco: "Efectivo Bs" },
 };
 

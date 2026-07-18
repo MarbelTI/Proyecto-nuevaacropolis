@@ -150,3 +150,102 @@ export function exportResumenExcel(
   a.download = `RESUMEN ${mesLabel} ${y}.xlsx`;
   a.click();
 }
+
+function saldoAcumuladoAntes(transactions: Transaction[], year: number, month: number): number {
+  let saldo = 0;
+  const ymLimite = `${year}-${String(month).padStart(2, "0")}`;
+  for (const t of transactions) {
+    const iso = fechaToIso(t.fecha);
+    if (!iso) continue;
+    if (iso.slice(0, 7) >= ymLimite) continue;
+    if (t.categoria === "CONVERSIÓN") continue;
+    const usd = Number(t.montoUsd) || 0;
+    if (t.tipo === "Ingreso") saldo += Math.abs(usd);
+    else if (t.tipo === "Gasto") saldo -= Math.abs(usd);
+  }
+  return saldo;
+}
+
+export function exportInformeOina(
+  transactions: Transaction[],
+  year: number,
+  month: number,
+  ingresos: string[],
+  gastos: string[],
+): void {
+  const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const ym = `${year}-${String(month).padStart(2, "0")}`;
+  const mesLabel = meses[month - 1];
+
+  const monthTx = transactions.filter(t => {
+    const iso = fechaToIso(t.fecha);
+    return iso && iso.slice(0, 7) === ym;
+  });
+
+  const saldoAnterior = saldoAcumuladoAntes(transactions, year, month);
+
+  type CatTotal = { debe: number; haber: number };
+  const cats: Record<string, CatTotal> = {};
+
+  for (const cat of ingresos) cats[cat] = { debe: 0, haber: 0 };
+  for (const cat of gastos) cats[cat] = { debe: 0, haber: 0 };
+
+  for (const t of monthTx) {
+    const cat = t.categoria || "(sin categoría)";
+    if (cat === "CONVERSIÓN") continue;
+    if (!cats[cat]) cats[cat] = { debe: 0, haber: 0 };
+    const usd = Number(t.montoUsd) || 0;
+    if (t.tipo === "Ingreso") cats[cat].debe += Math.abs(usd);
+    else if (t.tipo === "Gasto") cats[cat].haber += Math.abs(usd);
+  }
+
+  const entries = Object.entries(cats).filter(([_, v]) => v.debe > 0 || v.haber > 0);
+  const totalDebe = entries.reduce((s, [_, v]) => s + v.debe, 0);
+  const totalHaber = entries.reduce((s, [_, v]) => s + v.haber, 0);
+
+  const fmtNum = '#,##0.00;(#,##0.00);"-"';
+  const fmtPct = '0.0%;(0.0%);"-"';
+
+  const rm: any[][] = [];
+  rm.push(["Informe OINA — " + mesLabel + " " + year]);
+  rm.push([]);
+  rm.push(["CUENTAS", "DEBE", "HABER", "ACUMULADO", "% DEBE", "% HABER"]);
+  rm.push(["Saldo del mes anterior", 0, 0, saldoAnterior, "", ""]);
+
+  let acumulado = saldoAnterior;
+  for (const [cat, v] of entries) {
+    acumulado += v.debe - v.haber;
+    const pctDe = totalDebe > 0 ? v.debe / totalDebe : 0;
+    const pctHa = totalHaber > 0 ? v.haber / totalHaber : 0;
+    rm.push([cat, v.debe, v.haber, acumulado, pctDe, pctHa]);
+  }
+
+  rm.push([]);
+  const totalAcum = saldoAnterior + totalDebe - totalHaber;
+  rm.push(["TOTALES", totalDebe, totalHaber, totalAcum, 1, 1]);
+  rm.push([]);
+  rm.push(["Debe (Ingresos) - Haber (Gastos) = Diferencia", "", "", totalDebe - totalHaber, "", ""]);
+
+  const ws = XLSX.utils.aoa_to_sheet(rm);
+  ws["!cols"] = [{ wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 12 }];
+
+  // Aplicar formato de número a las celdas
+  for (let r = 0; r < rm.length; r++) {
+    for (let c = 1; c <= 5; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })];
+      if (cell && typeof cell.v === "number") {
+        cell.z = (c >= 4) ? fmtPct : fmtNum;
+      }
+    }
+  }
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "OINA");
+
+  const wbOut = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+  const dataUri = "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64," + wbOut;
+  const a = document.createElement("a");
+  a.href = dataUri;
+  a.download = `OINA_${mesLabel}_${year}.xlsx`;
+  a.click();
+}
