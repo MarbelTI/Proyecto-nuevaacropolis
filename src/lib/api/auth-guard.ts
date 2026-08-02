@@ -1,7 +1,5 @@
 import { getRequestHeader } from "@tanstack/react-start/server";
-
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? "";
-const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? "";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./env";
 
 // Escape hatch SOLO para desarrollo local (este flag nunca se define en producción).
 // En Vercel, las variables de entorno se configuran en el dashboard, no en .env,

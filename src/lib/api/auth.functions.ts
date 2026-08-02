@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getSessionUser } from "./auth-guard";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./env";
 
 export type UserRole =
   "super_admin" | "finanzas" | "director" | "celador" | "celador_estudios" | "unknown";
@@ -88,8 +89,8 @@ export const authCallback = createServerFn({ method: "POST" })
     }
 
     const { createClient } = await import("@supabase/supabase-js");
-    const supabaseUrl = process.env.VITE_SUPABASE_URL ?? "";
-    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY ?? "";
+    const supabaseUrl = SUPABASE_URL;
+    const supabaseAnonKey = SUPABASE_ANON_KEY;
 
     const role = (session.role as UserRole) || "unknown";
     const full_name = session.email;

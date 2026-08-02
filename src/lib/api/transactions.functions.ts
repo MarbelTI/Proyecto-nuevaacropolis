@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { canManageFinanzas, canReadFinanzas, getSessionUser } from "./auth-guard";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./env";
 
 const TransactionSchema = z.object({
   id: z.string(),
@@ -45,8 +46,8 @@ export const syncTransactionsToSupabase = createServerFn({ method: "POST" })
       return { ok: false, error: "No autorizado" };
     }
     const { createClient } = await import("@supabase/supabase-js");
-    const supabaseUrl = process.env.VITE_SUPABASE_URL ?? "";
-    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY ?? "";
+    const supabaseUrl = SUPABASE_URL;
+    const supabaseAnonKey = SUPABASE_ANON_KEY;
     if (!supabaseUrl || !supabaseAnonKey) {
       return { ok: false, error: "Supabase not configured" };
     }
@@ -92,8 +93,8 @@ export const syncBcvRatesToSupabase = createServerFn({ method: "POST" })
       return { ok: false, error: "No autorizado" };
     }
     const { createClient } = await import("@supabase/supabase-js");
-    const supabaseUrl = process.env.VITE_SUPABASE_URL ?? "";
-    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY ?? "";
+    const supabaseUrl = SUPABASE_URL;
+    const supabaseAnonKey = SUPABASE_ANON_KEY;
     if (!supabaseUrl || !supabaseAnonKey) {
       return { ok: false, error: "Supabase not configured" };
     }
@@ -128,8 +129,8 @@ export const loadTransactionsFromSupabase = createServerFn({ method: "POST" })
       return { ok: false, error: "No autorizado", data: [] };
     }
     const { createClient } = await import("@supabase/supabase-js");
-    const supabaseUrl = process.env.VITE_SUPABASE_URL ?? "";
-    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY ?? "";
+    const supabaseUrl = SUPABASE_URL;
+    const supabaseAnonKey = SUPABASE_ANON_KEY;
     if (!supabaseUrl || !supabaseAnonKey) {
       return { ok: false, error: "Supabase not configured", data: [] };
     }
@@ -159,8 +160,8 @@ export const loadBcvRatesFromSupabase = createServerFn({ method: "POST" })
       return { ok: false, error: "No autorizado", data: {} };
     }
     const { createClient } = await import("@supabase/supabase-js");
-    const supabaseUrl = process.env.VITE_SUPABASE_URL ?? "";
-    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY ?? "";
+    const supabaseUrl = SUPABASE_URL;
+    const supabaseAnonKey = SUPABASE_ANON_KEY;
     if (!supabaseUrl || !supabaseAnonKey) {
       return { ok: false, error: "Supabase not configured", data: {} };
     }
