@@ -83,7 +83,17 @@ function Index() {
   const [bcvSources, setBcvSources] = useState<Record<string, string>>({});
   const fetchForDate = useServerFn(fetchBcvForDate);
 
-  const { session: auth, loading: authLoading, login, signUp, logout } = useAuth();
+  const {
+    session: auth,
+    loading: authLoading,
+    login,
+    signUp,
+    logout,
+    forgotPassword,
+    updatePassword,
+    recoveryOpen,
+    setRecoveryOpen,
+  } = useAuth();
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [aulasMeta, setAulasMeta] = useAulasMeta();
   const [attRecords, setAttRecords] = useAttendance();
@@ -240,6 +250,10 @@ function Index() {
           onLogin={login}
           onSignUp={signUp}
           loading={authLoading}
+          onForgot={forgotPassword}
+          onUpdatePassword={updatePassword}
+          recoveryOpen={recoveryOpen}
+          onRecoveryOpenChange={setRecoveryOpen}
         />
 
         {authLoading ? (
