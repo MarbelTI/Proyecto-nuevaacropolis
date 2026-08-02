@@ -29,7 +29,11 @@ export async function getSessionUser(accessToken?: string): Promise<AuthSession 
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
 
   const { createClient } = await import("@supabase/supabase-js");
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  // El cliente lleva el access_token del usuario en el header, para que RLS
+  // reconozca al usuario (auth.uid()) y le permita leer su propio perfil.
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
 
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data.user) return null;
