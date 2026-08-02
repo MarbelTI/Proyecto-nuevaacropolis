@@ -141,9 +141,11 @@ create trigger on_auth_user_created
   for each row execute function public.handle_new_user();
 
 -- 9. Políticas RLS en profiles
+drop policy if exists "users_read_own_profile" on public.profiles;
 create policy "users_read_own_profile" on public.profiles
   for select using (auth.uid() = id);
 
+drop policy if exists "super_admin_read_all_profiles" on public.profiles;
 create policy "super_admin_read_all_profiles" on public.profiles
   for select using (
     exists (select 1 from public.profiles where id = auth.uid() and role = 'super_admin')
@@ -171,25 +173,34 @@ create or replace function public.can_edit() returns boolean as $$
 $$ language sql security definer;
 
 -- 11. RLS policies para transactions
+drop policy if exists "finanzas_all" on public.transactions;
 create policy "finanzas_all" on public.transactions
   for all using (public.is_finanzas());
+drop policy if exists "director_read_transactions" on public.transactions;
 create policy "director_read_transactions" on public.transactions
   for select using (public.is_director());
 
 -- 12. RLS policies para bcv_rates
+drop policy if exists "finanzas_all_bcv" on public.bcv_rates;
 create policy "finanzas_all_bcv" on public.bcv_rates
   for all using (public.is_finanzas());
+drop policy if exists "director_read_bcv" on public.bcv_rates;
 create policy "director_read_bcv" on public.bcv_rates
   for select using (public.is_director());
+drop policy if exists "everyone_read_bcv" on public.bcv_rates;
 create policy "everyone_read_bcv" on public.bcv_rates
   for select using (true);
 
 -- 13. RLS policies para students
+drop policy if exists "super_admin_all_students" on public.students;
 create policy "super_admin_all_students" on public.students
   for all using (public.is_super_admin());
+drop policy if exists "finanzas_read_students" on public.students;
 create policy "finanzas_read_students" on public.students
   for select using (public.is_finanzas());
+drop policy if exists "director_read_students" on public.students;
 create policy "director_read_students" on public.students
   for select using (public.is_director());
+drop policy if exists "celador_estudios_all_students" on public.students;
 create policy "celador_estudios_all_students" on public.students
   for all using (public.is_celador_estudios());
