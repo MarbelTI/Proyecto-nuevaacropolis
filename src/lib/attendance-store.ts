@@ -5,6 +5,8 @@ const K_ASIST = "sisfia_asistencias_v1";
 const K_AULAS = "sisfia_aulas_meta_v2";
 const K_USER = "sisfia_user";
 const K_IMPORT = "sisfia_asist_imported";
+const K_REF_META = "sisfia_reflexiones_meta_v1";
+const K_REF_ASIST = "sisfia_reflexiones_asist_v1";
 
 function load<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -31,6 +33,22 @@ export type AttendanceRecord = {
   fecha: string; // ISO
   asistencia: "" | "A" | "I" | "NC";
   reflexion: "" | "E" | "NE" | "SE";
+};
+
+export type ReflexionMeta = {
+  id: string;
+  aula: string;
+  year: number;
+  titulo: string;
+  fecha: string;
+  temaFecha?: string; // ISO date of the linked tema (for grouped reflections)
+};
+
+export type ReflexionAsistencia = {
+  aula: string;
+  alumno: string;
+  reflexionId: string;
+  estado: "" | "E" | "NE";
 };
 
 export function generateFechas(diaSemana: string, year: number): string[] {
@@ -70,9 +88,21 @@ export function useCurrentUser(): [string, Dispatch<SetStateAction<string>>] {
   return [user, setUser];
 }
 
+export function useReflexionesMeta(): [ReflexionMeta[], Dispatch<SetStateAction<ReflexionMeta[]>>] {
+  const [items, setItems] = useState<ReflexionMeta[]>(() => load<ReflexionMeta[]>(K_REF_META, []));
+  useEffect(() => { save(K_REF_META, items); }, [items]);
+  return [items, setItems];
+}
+
+export function useReflexionAsistencia(): [ReflexionAsistencia[], Dispatch<SetStateAction<ReflexionAsistencia[]>>] {
+  const [items, setItems] = useState<ReflexionAsistencia[]>(() => load<ReflexionAsistencia[]>(K_REF_ASIST, []));
+  useEffect(() => { save(K_REF_ASIST, items); }, [items]);
+  return [items, setItems];
+}
+
 export function importFromExcel(
   file: File,
-): Promise<{ aulas: AulaMeta[]; records: AttendanceRecord[] }> {
+): Promise<{ aulas: AulaMeta[]; records: AttendanceRecord[]; reflexionesMeta: ReflexionMeta[]; reflexionAsistencia: ReflexionAsistencia[] }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -81,6 +111,8 @@ export function importFromExcel(
         const wb = XLSX.read(buf, { type: "array" });
         const aulas: AulaMeta[] = [];
         const records: AttendanceRecord[] = [];
+        const reflexionesMeta: ReflexionMeta[] = [];
+        const reflexionAsistencia: ReflexionAsistencia[] = [];
 
         // Parse aula sheets
         const aulaSheets = wb.SheetNames.filter(
@@ -137,6 +169,16 @@ export function importFromExcel(
 
           aulas.push({ nombre, celador, diaSemana, condicion, year: 2026, temas });
 
+          // Create ReflexionMeta for each reflexion date
+          const reflexionIdsByDate: Record<string, string> = {};
+          for (let i = 0; i < Math.min(dateCols.length, refPairs.length); i++) {
+            const fecha = fechas[i];
+            const id = "ref_" + Date.now().toString(36) + "_" + i + "_" + sheetName.replace(/\s/g, "");
+            const titulo = temas[fecha] ? `Reflexión: ${temas[fecha]}` : `Reflexión ${isoToShort(fecha)}`;
+            reflexionIdsByDate[fecha] = id;
+            reflexionesMeta.push({ id, aula: nombre, year: 2026, titulo, fecha, temaFecha: fecha });
+          }
+
           // Parse student attendance data starting from row 9 (0-indexed)
           for (let r = 9; r < data.length; r++) {
             const row = data[r];
@@ -166,20 +208,22 @@ export function importFromExcel(
               records.push({ aula: nombre, alumno, fecha: fechas[i], asistencia, reflexion: "" });
             }
 
-            // Reflexion marks — map each (1era,2da) pair to the corresponding date
+            // Reflexion marks — create ReflexionAsistencia only for entries with "E"
             for (let i = 0; i < Math.min(dateCols.length, refPairs.length); i++) {
               const [c1, c2] = refPairs[i];
               const v1 = String(row[c1] ?? "").trim().toUpperCase();
               const v2 = String(row[c2] ?? "").trim().toUpperCase();
-              const e = v1 === "E" || v2 === "E" ? "E" : "";
-              if (e) {
-                records.push({ aula: nombre, alumno, fecha: fechas[i], asistencia: "", reflexion: "E" });
+              if (v1 === "E" || v2 === "E") {
+                const reflexionId = reflexionIdsByDate[fechas[i]];
+                if (reflexionId) {
+                  reflexionAsistencia.push({ aula: nombre, alumno, reflexionId, estado: "E" });
+                }
               }
             }
           }
         }
 
-        resolve({ aulas, records });
+        resolve({ aulas, records, reflexionesMeta, reflexionAsistencia });
       } catch (err) {
         reject(err);
       }
@@ -187,6 +231,11 @@ export function importFromExcel(
     reader.onerror = reject;
     reader.readAsArrayBuffer(file);
   });
+}
+
+function isoToShort(iso: string) {
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m.slice(2)}`;
 }
 
 function serialToIso(serial: number): string {

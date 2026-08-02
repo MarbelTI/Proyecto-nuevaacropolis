@@ -5,8 +5,8 @@ import { z } from "zod";
 import {
   CATEGORIAS_GASTO,
   CATEGORIAS_INGRESO,
-  studentListForPrompt,
 } from "./students-data";
+import { getSessionUser } from "./api/auth-guard";
 
 const Input = z.object({
   imageBase64: z.string().min(1),
@@ -14,6 +14,7 @@ const Input = z.object({
   ingresos: z.array(z.string()).optional(),
   gastos: z.array(z.string()).optional(),
   students: z.array(z.object({ nombre: z.string(), aulas: z.array(z.string()) })).optional(),
+  accessToken: z.string().optional(),
 });
 
 export type Entry = {
@@ -85,6 +86,13 @@ function extractJson(text: string): unknown {
 export const analyzeJournalImage = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data }) => {
+    // Solo usuarios autenticados pueden consumir la API de IA (evita que
+    // cualquiera queme la API key con llamadas no autorizadas).
+    const session = await getSessionUser(data.accessToken);
+    if (!session) {
+      throw new Error("No autorizado — inicia sesión para usar el OCR");
+    }
+
     const key = process.env.OPENROUTER_API_KEY || process.env.ANTHROPIC_API_KEY;
     if (!key) throw new Error("Missing API key — configura OPENROUTER_API_KEY en .env");
 
@@ -102,7 +110,7 @@ export const analyzeJournalImage = createServerFn({ method: "POST" })
     const gastos = data.gastos?.length ? data.gastos : [...CATEGORIAS_GASTO];
     const studentsList = data.students?.length
       ? data.students.map((s) => `- ${s.nombre} → ${s.aulas.join(", ")}`).join("\n")
-      : studentListForPrompt();
+      : "";
 
     const systemPrompt = `Eres un experto contable leyendo libros diarios manuscritos en español del centro "Filosofía Café".
 

@@ -107,6 +107,8 @@ create trigger set_updated_at_profiles
   for each row execute function public.update_updated_at();
 
 -- 8. Trigger: crear perfil al registrarse
+--    Los roles se asignan comparando md5 del email (sin datos personales en el repo).
+--    Para mapear un usuario nuevo: select md5(lower('usuario@ejemplo.com'));
 create or replace function public.handle_new_user()
 returns trigger as $$
 declare
@@ -115,15 +117,15 @@ declare
 begin
   user_email := lower(new.email);
   assigned_role := case
-    when user_email in ('margelys.invermapa@gmail.com', 'tecnologiasnuevaacropolissc@gmail.com')
+    when md5(user_email) in ('b4280c3d035dba77e903747052e521bc', '031aecdbef22c085378acbed0c5e6813')
       then 'super_admin'::public.user_role
-    when user_email = 'manuelajesusa2018@gmail.com'
+    when md5(user_email) = '5c5d3a6a8159ca93d763e2a63618219a'
       then 'finanzas'::public.user_role
-    when user_email = 'rgr486@gmail.com'
+    when md5(user_email) = '2f1d5ce1e1cbce56254c606a79475b8e'
       then 'director'::public.user_role
-    when user_email in ('kairobeor08@gmail.com', 'aliciachacongarcia94@gmail.com', 'ajjm.1996@gmail.com')
+    when md5(user_email) in ('85dc525f05801acb77f29d5e59d11955', '13d6ad2bda108b44a7c1bcea0eb70de3', '166e35c4905efb2eb2af8a895349586c')
       then 'celador'::public.user_role
-    when user_email in ('cejc.fundazoo@gmail.com', 'ekarinarodriguez@gmail.com')
+    when md5(user_email) in ('91690fe772669e34990109f4cbc6cb85', '6516d9e4ce381053f09b0a0dd045f835')
       then 'celador_estudios'::public.user_role
     else 'celador'::public.user_role
   end;

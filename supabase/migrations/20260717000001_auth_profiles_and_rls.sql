@@ -14,11 +14,11 @@
 -- 1. Enum de roles
 do $$ begin
   create type public.user_role as enum (
-    'super_admin',    -- Margelys, Tecnologías — acceso total
-    'finanzas',       -- Manuela — solo finanzas
-    'director',       -- Ricardo — solo lectura en todo
-    'celador',        -- Kairo, Alicia, Alejandro — asistencia de su aula
-    'celador_estudios' -- Milagro, Karina — asistencia + control de estudios
+    'super_admin',     -- acceso total
+    'finanzas',        -- solo finanzas
+    'director',        -- solo lectura en todo
+    'celador',         -- asistencia de su aula
+    'celador_estudios' -- asistencia + control de estudios
   );
 exception when duplicate_object then null;
 end $$;
@@ -45,30 +45,34 @@ declare
 begin
   user_email := lower(new.email);
   
-  -- Asignar rol según email conocido
+  -- Asignar rol según email conocido. Los emails se comparan como hash md5 para
+  -- no exponer datos personales en el repositorio. Para mapear un usuario nuevo:
+  --   select md5(lower('usuario@ejemplo.com'));
+  -- y agregar el hash en el caso correspondiente (o asignar el rol a mano desde
+  -- la tabla `profiles`).
   assigned_role := case
-    when user_email in (
-      'margelys.invermapa@gmail.com',
-      'tecnologiasnuevaacropolissc@gmail.com'
+    when md5(user_email) in (
+      'b4280c3d035dba77e903747052e521bc',  -- super_admin
+      '031aecdbef22c085378acbed0c5e6813'
     ) then 'super_admin'::public.user_role
-    
-    when user_email = 'manuelajesusa2018@gmail.com'
+
+    when md5(user_email) = '5c5d3a6a8159ca93d763e2a63618219a'
       then 'finanzas'::public.user_role
-    
-    when user_email = 'rgr486@gmail.com'
+
+    when md5(user_email) = '2f1d5ce1e1cbce56254c606a79475b8e'
       then 'director'::public.user_role
-    
-    when user_email in (
-      'kairobeor08@gmail.com',
-      'aliciachacongarcia94@gmail.com',
-      'ajjm.1996@gmail.com'
+
+    when md5(user_email) in (
+      '85dc525f05801acb77f29d5e59d11955',  -- celador
+      '13d6ad2bda108b44a7c1bcea0eb70de3',
+      '166e35c4905efb2eb2af8a895349586c'
     ) then 'celador'::public.user_role
-    
-    when user_email in (
-      'cejc.fundazoo@gmail.com',
-      'ekarinarodriguez@gmail.com'
+
+    when md5(user_email) in (
+      '91690fe772669e34990109f4cbc6cb85',  -- celador_estudios
+      '6516d9e4ce381053f09b0a0dd045f835'
     ) then 'celador_estudios'::public.user_role
-    
+
     else 'celador'::public.user_role -- por defecto
   end;
 

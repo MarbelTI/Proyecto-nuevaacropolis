@@ -3,3 +3,9 @@ dist
 .env
 *.local
 .DS_Store
+
+# Cache/build local - no subir
+.output/
+.vercel/
+.wrangler/
+CODIGO_COMPLETO.txt

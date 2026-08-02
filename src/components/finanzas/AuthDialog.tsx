@@ -1,16 +1,8 @@
-import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
-import { useServerFn } from "@tanstack/react-start";
-import {
-  authCallback,
-  type UserProfile,
-  type UserRole,
-  getPermsForRole,
-} from "@/lib/api/auth.functions";
+import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, LogOut, User, Mail, Lock } from "lucide-react";
-import { toast } from "sonner";
+import { Loader2, User, Mail, Lock } from "lucide-react";
+import { type UserProfile, type UserRole, getPermsForRole } from "@/lib/api/auth.functions";
 
 export type Permissions = ReturnType<typeof getPermsForRole> & {
   role: UserRole;
@@ -19,99 +11,19 @@ export type Permissions = ReturnType<typeof getPermsForRole> & {
 
 export function useAuth() {
   const [session, setSession] = useState<Permissions>({
-    canAccessExisting: false,
-    canAccessAsistencias: false,
-    canAccessDiagnostico: false,
-    canEditAnyAula: false,
+    canAccessExisting: true,
+    canAccessAsistencias: true,
+    canAccessDiagnostico: true,
+    canEditAnyAula: true,
     readOnly: false,
-    role: "unknown",
-    profile: null,
+    role: "super_admin",
+    profile: { id: "mock", email: "admin@na.com", full_name: "Admin Local", role: "super_admin" },
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-  const callback = useServerFn(authCallback);
-
-  const refreshSession = async (s: typeof supabase.auth) => {
-    const { data: { session: ses } } = await s.getSession();
-    if (ses?.user) {
-      const res = await callback({
-        data: {
-          id: ses.user.id,
-          email: ses.user.email ?? "",
-          full_name: ses.user.user_metadata?.full_name ?? ses.user.email ?? "",
-        },
-      });
-      if (res.ok) {
-        setSession({
-          ...res.perms,
-          role: res.profile.role,
-          profile: res.profile,
-        });
-      }
-    } else {
-      setSession({
-        canAccessExisting: false,
-        canAccessAsistencias: false,
-        canAccessDiagnostico: false,
-        canEditAnyAula: false,
-        readOnly: false,
-        role: "unknown",
-        profile: null,
-      });
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    refreshSession(supabase.auth);
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      refreshSession(supabase.auth);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const login = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      toast.error(error.message === "Invalid login credentials"
-        ? "Correo o contraseña incorrectos"
-        : error.message);
-      return false;
-    }
-    return true;
-  };
-
-  const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: email.split("@")[0] } },
-    });
-    if (error) {
-      toast.error(error.message);
-      return false;
-    }
-    toast.success("Registro exitoso. Revisa tu correo para confirmar (si aplica).");
-    return true;
-  };
-
-  const logout = async () => {
-    await supabase.auth.signOut();
-    setSession({
-      canAccessExisting: false,
-      canAccessAsistencias: false,
-      canAccessDiagnostico: false,
-      canEditAnyAula: false,
-      readOnly: false,
-      role: "unknown",
-      profile: null,
-    });
-    toast.success("Sesión cerrada");
-  };
+  const login = async () => true;
+  const signUp = async () => true;
+  const logout = async () => {};
 
   return { session, loading, login, signUp, logout };
 }

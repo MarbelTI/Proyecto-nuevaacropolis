@@ -11,6 +11,16 @@ import {
   loadBcvRatesFromSupabase,
 } from "@/lib/api/transactions.functions";
 import type { Transaction } from "@/lib/lists-store";
+import { supabase } from "@/lib/supabase";
+
+async function getAccessToken(): Promise<string | undefined> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export function SupabaseSync({
   transactions,
@@ -37,7 +47,8 @@ export function SupabaseSync({
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const txResult = await syncTx({ data: { transactions: transactions.list } });
+      const accessToken = await getAccessToken();
+      const txResult = await syncTx({ data: { transactions: transactions.list, accessToken } });
       if (!txResult.ok) {
         toast.error(`Error syncing transactions: ${txResult.error}`);
         return;
@@ -47,7 +58,7 @@ export function SupabaseSync({
         isoDate,
         rate,
       }));
-      const bcvResult = await syncBcv({ data: { rates: ratesArray } });
+      const bcvResult = await syncBcv({ data: { rates: ratesArray, accessToken } });
       if (!bcvResult.ok) {
         toast.error(`Error syncing BCV rates: ${bcvResult.error}`);
         return;
@@ -65,7 +76,8 @@ export function SupabaseSync({
   const handleLoad = async () => {
     setLoading(true);
     try {
-      const txResult = await loadTx();
+      const accessToken = await getAccessToken();
+      const txResult = await loadTx({ data: { accessToken } });
       if (!txResult.ok) {
         toast.error(`Error loading: ${txResult.error}`);
         return;
@@ -95,7 +107,7 @@ export function SupabaseSync({
         transactions.append(mapped);
       }
 
-      const bcvResult = await loadBcv();
+      const bcvResult = await loadBcv({ data: { accessToken } });
       if (bcvResult.ok && Object.keys(bcvResult.data).length > 0) {
         bcvRates.merge(bcvResult.data);
       }

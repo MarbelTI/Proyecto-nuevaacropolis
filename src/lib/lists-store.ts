@@ -178,6 +178,7 @@ export function useEditableStudents(): [Student[], (next: Student[]) => void] {
         }
       }
       base ||= seedFromDefault();
+      if (!base) return;
 
       // Enriquecer con condición/celador/actividad desde la semilla si faltan.
       const seed = seedFromDefault();
@@ -218,7 +219,7 @@ export function useEditableStudents(): [Student[], (next: Student[]) => void] {
       base = base.map((s) => {
         const mig = krishnaVIFromArjuna.get(s.nombre);
         if (mig && (!s.aulas.includes("Krishna VI"))) {
-          return { ...s, aulas: mig.aulas, condicion: mig.condicion };
+          return { ...s, aulas: mig.aulas, condicion: mig.condicion as Condicion | undefined };
         }
         return s;
       });

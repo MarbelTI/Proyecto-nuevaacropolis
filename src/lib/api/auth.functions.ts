@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { getSessionUser } from "./auth-guard";
 
 export type UserRole =
   "super_admin" | "finanzas" | "director" | "celador" | "celador_estudios" | "unknown";
@@ -10,23 +11,6 @@ export type UserProfile = {
   full_name: string;
   role: UserRole;
 };
-
-// Mapa de emails → rol (mismo que el trigger de la BD)
-const EMAIL_ROLES: Record<string, UserRole> = {
-  "margelys.invermapa@gmail.com": "super_admin",
-  "tecnologiasnuevaacropolissc@gmail.com": "super_admin",
-  "manuelajesusa2018@gmail.com": "finanzas",
-  "rgr486@gmail.com": "director",
-  "kairobeor08@gmail.com": "celador",
-  "aliciachacongarcia94@gmail.com": "celador",
-  "ajjm.1996@gmail.com": "celador",
-  "cejc.fundazoo@gmail.com": "celador_estudios",
-  "ekarinarodriguez@gmail.com": "celador_estudios",
-};
-
-function getRole(email: string): UserRole {
-  return EMAIL_ROLES[email.toLowerCase()] ?? "unknown";
-}
 
 // Permisos por rol
 const ROLE_PERMS: Record<
@@ -87,56 +71,58 @@ export function getPermsForRole(role: UserRole) {
   return ROLE_PERMS[role] ?? ROLE_PERMS.unknown;
 }
 
-// Crea/actualiza el perfil en Supabase y devuelve datos del usuario
+// Verifica la sesión del usuario y devuelve su perfil con rol.
+// El rol proviene de la tabla `profiles` (poblada por el trigger de signup en la
+// base de datos), NUNCA de datos enviados por el navegador. Así no se puede
+// suplantar un rol enviando un email arbitrario.
 export const authCallback = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
-      id: z.string(),
-      email: z.string().email(),
-      full_name: z.string(),
+      accessToken: z.string().optional(),
     }),
   )
   .handler(async ({ data }) => {
+    const session = await getSessionUser(data.accessToken);
+    if (!session) {
+      return { ok: false, error: "No autorizado" };
+    }
+
     const { createClient } = await import("@supabase/supabase-js");
     const supabaseUrl = process.env.VITE_SUPABASE_URL ?? "";
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY ?? "";
 
-    if (!supabaseUrl || !supabaseServiceKey) {
-      // Sin conexión Supabase: devolver rol basado en email nomás
-      const role = getRole(data.email);
+    const role = (session.role as UserRole) || "unknown";
+    const full_name = session.email;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
       return {
         ok: true,
-        profile: { id: data.id, email: data.email, full_name: data.full_name, role },
+        profile: { id: session.userId, email: session.email, full_name, role },
         perms: getPermsForRole(role),
       };
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
+    });
 
-    // Upsert profile
-    const role = getRole(data.email);
-    const { error } = await supabase.from("profiles").upsert(
-      {
-        id: data.id,
-        email: data.email.toLowerCase(),
-        full_name: data.full_name,
-        role,
-      },
-      { onConflict: "id" },
-    );
+    // Buscar el perfil (creado por el trigger) y el full_name real.
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("full_name, role")
+      .eq("id", session.userId)
+      .maybeSingle();
 
-    if (error) {
-      // Si profiles no existe (migración no ejecutada), igual devolvemos datos
-      return {
-        ok: true,
-        profile: { id: data.id, email: data.email, full_name: data.full_name, role },
-        perms: getPermsForRole(role),
-      };
-    }
+    const roleFromDb = (profile?.role as UserRole) || role;
 
     return {
       ok: true,
-      profile: { id: data.id, email: data.email, full_name: data.full_name, role },
-      perms: getPermsForRole(role),
+      profile: {
+        id: session.userId,
+        email: session.email,
+        full_name: profile?.full_name || full_name,
+        role: roleFromDb,
+      },
+      perms: getPermsForRole(roleFromDb),
     };
   });

@@ -56,6 +56,17 @@ function fechaToIso(fecha: string): string | null {
 const $ = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+type WaLogEntry = { fecha: string; alumno: string; mensaje: string };
+function readWaLog(): WaLogEntry[] {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    const raw = localStorage.getItem("wa_log");
+    return raw ? (JSON.parse(raw) as WaLogEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 function Index() {
   const [ingresos, setIngresos] = useEditableList("ingresos");
   const [gastos, setGastos] = useEditableList("gastos");
@@ -322,6 +333,7 @@ function Index() {
                     ingresos={ingresos}
                     gastos={gastos}
                     bcvRates={bcv.rates}
+                    students={students}
                   />
                 </TabsContent>
                 <TabsContent value="analisis">
@@ -381,7 +393,7 @@ function Index() {
           </div>
           <div key={waLogKey} className="space-y-2 max-h-[60vh] overflow-y-auto text-sm">
             {(() => {
-              const raw = JSON.parse(localStorage.getItem("wa_log") || "[]");
+              const raw = readWaLog();
               if (!raw.length)
                 return <p className="text-muted-foreground">Sin mensajes registrados</p>;
               const log = [...raw].reverse();

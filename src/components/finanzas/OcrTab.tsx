@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { supabase } from "@/lib/supabase";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -168,11 +169,17 @@ export function OcrTab({
         try {
           const base64 = newItems[i].url.split(",")[1];
           if (!base64) throw new Error("No se pudo leer la imagen");
+          let accessToken: string | undefined;
+          try {
+            const s = await supabase.auth.getSession();
+            accessToken = s.data.session?.access_token ?? undefined;
+          } catch { /* sesión no disponible */ }
           const result = await analyze({
             data: {
               imageBase64: base64, mimeType: f.type || "image/jpeg", ingresos, gastos,
               students: students.filter((s) => s.actividad !== "Retirado")
                 .map((s) => ({ nombre: s.nombre, aulas: s.aulas })),
+              accessToken,
             },
           });
           const normalized = (result.entries ?? []).map((e) => normalizeMoneyRow(e, bcvRates));

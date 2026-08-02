@@ -31,6 +31,44 @@ import { toast } from "sonner";
 
 // ------------------------- Helpers -------------------------
 
+const MES_MAP: Record<string, string> = {
+  enero:"ene", febrero:"feb", marzo:"mar", abril:"abr", mayo:"may", junio:"jun",
+  julio:"jul", agosto:"ago", septiembre:"sep", octubre:"oct", noviembre:"nov", diciembre:"dic",
+  "01":"ene","02":"feb","03":"mar","04":"abr","05":"may","06":"jun",
+  "07":"jul","08":"ago","09":"sep","10":"oct","11":"nov","12":"dic",
+};
+
+const MESES_NOMBRE = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+
+function mesLabel(ym: string): string {
+  const [yy, mm] = ym.split("-");
+  const name = MESES_NOMBRE[Number(mm) - 1] ?? mm;
+  return `${name[0].toUpperCase()}${name.slice(1)} ${yy}`;
+}
+
+function formatMes(mes: string): string {
+  if (/^[a-z]{3}-\d{2}$/i.test(mes)) return mes.toLowerCase();
+  const m = mes.match(/^(\d{1,2}|[a-z]{3,9})[-\s]\s*(\d{4})$/i);
+  if (m) {
+    const abr = MES_MAP[m[1].toLowerCase()] ?? m[1].slice(0, 3).toLowerCase();
+    return `${abr}-${m[2].slice(2)}`;
+  }
+  const m2 = mes.match(/^(\d{4})[-/](\d{1,2})$/);
+  if (m2) {
+    const mm = m2[2].padStart(2, "0");
+    return `${MES_MAP[mm] ?? mm}-${m2[1].slice(2)}`;
+  }
+  const m3 = mes.match(/^(\d{1,2})[/-](\d{4})$/);
+  if (m3) {
+    const mm = m3[1].padStart(2, "0");
+    return `${MES_MAP[mm] ?? mm}-${m3[2].slice(2)}`;
+  }
+  return mes;
+}
+
 function fechaToIso(fecha: string): string | null {
   const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
   if (!m) return null;
@@ -330,12 +368,12 @@ function StudentEditDialog({
               <Input
                 type="number"
                 step="0.01"
-                value={draft.tarifaMensual ?? ""}
+                value={draft.cuotaOverride ?? ""}
                 placeholder={placeholder}
                 onChange={(e) =>
                   setDraft({
                     ...draft,
-                    tarifaMensual: Number(e.target.value) || undefined,
+                    cuotaOverride: Number(e.target.value) || undefined,
                   })
                 }
               />
@@ -381,9 +419,9 @@ function StudentEditDialog({
               </p>
             </div>
           )}
-          {deuda > 0 && (
+          {deuda.totalUSD > 0 && (
             <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-              Deuda: ${deuda.toFixed(2)} USD ({deuda} cuotas)
+              Deuda: ${deuda.totalUSD.toFixed(2)} USD ({deuda.meses} cuotas)
             </div>
           )}
         </div>
@@ -460,6 +498,7 @@ export function TransactionsTab({
   const [filterMoneda, setFilterMoneda] = useState<string>("");
   const [filterCategoria, setFilterCategoria] = useState<string>("");
   const [filterBanco, setFilterBanco] = useState<string>("");
+  const [filterMes, setFilterMes] = useState<string>("");
 
   const filtered = useMemo(() => {
     const sq = searchQ.trim().toLowerCase();
@@ -468,6 +507,7 @@ export function TransactionsTab({
       if (!iso) return true;
       if (from && iso < from) return false;
       if (to && iso > to) return false;
+      if (filterMes && iso.slice(0, 7) !== filterMes) return false;
       if (sq) {
         const descOk = r.descripcion?.toLowerCase().includes(sq);
         const catOk = r.categoria?.toLowerCase().includes(sq);
@@ -503,6 +543,7 @@ export function TransactionsTab({
     filterMoneda,
     filterBanco,
     filterCategoria,
+    filterMes,
   ]);
 
   const anyFilterActive = !!(
@@ -512,8 +553,18 @@ export function TransactionsTab({
     filterTipo ||
     filterMoneda ||
     filterCategoria ||
-    filterBanco
+    filterBanco ||
+    filterMes
   );
+
+  const mesOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of tx.list) {
+      const iso = fechaToIso(r.fecha);
+      if (iso) set.add(iso.slice(0, 7));
+    }
+    return [...set].sort().reverse();
+  }, [tx.list]);
 
   const exportExcel = () => {
     if (!filtered.length) {
@@ -701,8 +752,21 @@ export function TransactionsTab({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-left text-muted-foreground">
-              <th className="p-2 font-medium">Fecha</th>
-              <th className="p-2 font-medium">
+              <th className="py-0.5 px-2 font-medium">
+                <select
+                  value={filterMes}
+                  onChange={(e) => setFilterMes(e.target.value)}
+                  className="w-full bg-transparent text-xs font-medium outline-none"
+                >
+                  <option value="">Mes</option>
+                  {mesOptions.map((ym) => (
+                    <option key={ym} value={ym}>
+                      {mesLabel(ym)}
+                    </option>
+                  ))}
+                </select>
+              </th>
+              <th className="py-0.5 px-2 font-medium">
                 <select
                   value={filterTipo}
                   onChange={(e) => setFilterTipo(e.target.value)}
@@ -713,7 +777,7 @@ export function TransactionsTab({
                   <option value="Gasto">Gasto</option>
                 </select>
               </th>
-              <th className="p-2 font-medium">
+              <th className="py-0.5 px-2 font-medium">
                 <input
                   value={filterCategoria}
                   onChange={(e) => setFilterCategoria(e.target.value)}
@@ -721,9 +785,9 @@ export function TransactionsTab({
                   className="w-full bg-transparent text-xs font-medium outline-none placeholder:text-muted-foreground/50"
                 />
               </th>
-              <th className="p-2 font-medium">Descripción</th>
-              <th className="p-2 font-medium">Mens.</th>
-              <th className="p-2 font-medium">
+              <th className="py-0.5 px-2 font-medium">Descripción</th>
+              <th className="py-0.5 px-2 font-medium">Mens.</th>
+              <th className="py-0.5 px-2 font-medium">
                 <select
                   value={filterMoneda}
                   onChange={(e) => setFilterMoneda(e.target.value)}
@@ -735,7 +799,7 @@ export function TransactionsTab({
                   <option value="Pesos">Pesos</option>
                 </select>
               </th>
-              <th className="p-2 font-medium">
+              <th className="py-0.5 px-2 font-medium">
                 <Select
                   value={filterBanco || undefined}
                   onValueChange={(v) => setFilterBanco(v)}
@@ -756,11 +820,11 @@ export function TransactionsTab({
                   </SelectContent>
                 </Select>
               </th>
-              <th className="p-2 font-medium">Monto</th>
-              <th className="p-2 font-medium">Tasa</th>
-              <th className="p-2 font-medium">USD</th>
-              <th className="p-2 font-medium"></th>
-              <th className="p-2 font-medium"></th>
+              <th className="py-0.5 px-2 font-medium">Monto</th>
+              <th className="py-0.5 px-2 font-medium">Tasa</th>
+              <th className="py-0.5 px-2 font-medium">USD</th>
+              <th className="py-0.5 px-2 font-medium"></th>
+              <th className="py-0.5 px-2 font-medium"></th>
             </tr>
           </thead>
           <tbody>
@@ -771,27 +835,27 @@ export function TransactionsTab({
                 className={`border-b last:border-0 cursor-default ${isSelected ? "bg-primary/10 ring-1 ring-inset ring-primary" : selectMode ? "hover:bg-accent/40" : ""}`}
                 onClick={() => selectMode && toggleSelect(r.id)}
               >
-                <td className="p-2">{r.fecha}</td>
-                <td className="p-2 text-xs">{r.tipo}</td>
-                <td className="p-2 text-xs">{r.categoria}</td>
-                <td className="p-2">{r.descripcion}</td>
-                <td className="p-2 text-xs">{r.mensualidad}</td>
-                <td className="p-2 text-xs">{r.moneda}</td>
-                <td className="p-2 text-xs text-muted-foreground">
+                <td className="py-0.5 px-2">{r.fecha}</td>
+                <td className="py-0.5 px-2 text-xs">{r.tipo}</td>
+                <td className="py-0.5 px-2 text-xs">{r.categoria}</td>
+                <td className="py-0.5 px-2">{r.descripcion}</td>
+                <td className="py-0.5 px-2 text-xs">{r.mensualidad ? formatMes(r.mensualidad) : ""}</td>
+                <td className="py-0.5 px-2 text-xs">{r.moneda}</td>
+                <td className="py-0.5 px-2 text-xs text-muted-foreground">
                   {r.banco || "—"}
                 </td>
-                <td className="p-2 text-right tabular-nums">
+                <td className="py-0.5 px-2 text-right tabular-nums">
                   {isNaN(Number(r.monto))
                     ? r.monto
                     : $(Number(r.monto))}
                 </td>
-                <td className="p-2 text-right tabular-nums text-xs">
+                <td className="py-0.5 px-2 text-right tabular-nums text-xs">
                   {r.tasa}
                 </td>
-                <td className="p-2 text-right tabular-nums font-medium">
+                <td className="py-0.5 px-2 text-right tabular-nums font-medium">
                   ${$(Number(r.montoUsd) || 0)}
                 </td>
-                <td className="p-2">
+                <td className="py-0.5 px-2">
                   <div className="flex gap-1">
                     <Button
                       variant="ghost"
@@ -817,7 +881,7 @@ export function TransactionsTab({
                     </Button>
                   </div>
                 </td>
-                <td className="p-2">
+                <td className="py-0.5 px-2">
                   {(() => {
                     const s = findStudentInDesc(r.descripcion, students);
                     if (!s)
@@ -889,38 +953,81 @@ export function TransactionsTab({
             {anyFilterActive && filtered.length > 1 && (
               <>
                 {(() => {
-                  const porMoneda: Record<string, number> = {};
+                  const porMoneda: Record<string, { count: number; total: number; usd: number }> = {};
                   for (const r of filtered) {
                     const mon = r.moneda || "USD";
-                    porMoneda[mon] = (porMoneda[mon] || 0) + (Number(r.monto) || 0);
+                    const cur = porMoneda[mon] ?? { count: 0, total: 0, usd: 0 };
+                    cur.count++;
+                    cur.total += Number(r.monto) || 0;
+                    cur.usd += Number(r.montoUsd) || 0;
+                    porMoneda[mon] = cur;
                   }
                   const monedas = Object.entries(porMoneda);
-                  return monedas.map(([mon, total]) => (
-                    <tr key={mon} className="border-t-2 font-semibold bg-accent/20">
-                      <td className="p-2 text-xs" colSpan={7}>
-                        Total {mon} ({filtered.length} filas)
-                      </td>
-                      <td className="p-2 text-right tabular-nums">
-                        ${$(total)}
-                      </td>
-                      <td className="p-2" />
-                      <td className="p-2 text-right tabular-nums" />
+                  const totalUsd = filtered.reduce((s, r) => s + (Number(r.montoUsd) || 0), 0);
+                  return (
+                    <>
+                      {monedas.map(([mon, cur]) => (
+                        <tr key={mon} className="border-t-2 font-semibold bg-accent/20">
+                          <td className="py-0.5 px-2 text-xs" colSpan={7}>
+                            Total {mon} ({cur.count} filas)
+                          </td>
+                          <td className="py-0.5 px-2 text-right tabular-nums">${$(cur.total)}</td>
+                          <td className="py-0.5 px-2" />
+                          <td className="py-0.5 px-2 text-right tabular-nums">${$(cur.usd)}</td>
+                          <td colSpan={2} />
+                        </tr>
+                      ))}
+                      <tr className="font-semibold bg-accent/10">
+                        <td className="py-0.5 px-2 text-xs" colSpan={7}>
+                          Total en USD ({filtered.length} filas)
+                        </td>
+                        <td className="py-0.5 px-2" />
+                        <td className="py-0.5 px-2" />
+                        <td className="py-0.5 px-2 text-right tabular-nums">${$(totalUsd)}</td>
+                        <td colSpan={2} />
+                      </tr>
+                    </>
+                  );
+                })()}
+              </>
+            )}
+            {!anyFilterActive && filtered.length > 0 && (
+              (() => {
+                const porMoneda: Record<string, { count: number; total: number; usd: number }> = {};
+                let totalUsd = 0;
+                for (const r of filtered) {
+                  const mon = r.moneda || "USD";
+                  const cur = porMoneda[mon] ?? { count: 0, total: 0, usd: 0 };
+                  cur.count++;
+                  cur.total += Number(r.monto) || 0;
+                  cur.usd += Number(r.montoUsd) || 0;
+                  porMoneda[mon] = cur;
+                  totalUsd += Number(r.montoUsd) || 0;
+                }
+                const monedas = Object.entries(porMoneda);
+                return (
+                  <>
+                    {monedas.map(([mon, cur]) => (
+                      <tr key={mon} className="border-t-2 font-semibold bg-accent/20">
+                        <td className="py-0.5 px-2 text-xs" colSpan={7}>
+                          Total {mon} ({cur.count} filas)
+                        </td>
+                        <td className="py-0.5 px-2 text-right tabular-nums">${$(cur.total)}</td>
+                        <td className="py-0.5 px-2" />
+                        <td className="py-0.5 px-2 text-right tabular-nums">${$(cur.usd)}</td>
+                        <td colSpan={2} />
+                      </tr>
+                    ))}
+                    <tr className="font-semibold bg-accent/10">
+                      <td className="py-0.5 px-2 text-xs" colSpan={7}>Total en USD ({filtered.length} filas)</td>
+                      <td className="py-0.5 px-2" />
+                      <td className="py-0.5 px-2" />
+                      <td className="py-0.5 px-2 text-right tabular-nums">${$(totalUsd)}</td>
                       <td colSpan={2} />
                     </tr>
-                  ));
-                })()}
-                <tr className="font-semibold bg-accent/10">
-                  <td className="p-2 text-xs" colSpan={7}>
-                    Total USD equivalente
-                  </td>
-                  <td className="p-2" />
-                  <td className="p-2" />
-                  <td className="p-2 text-right tabular-nums">
-                    ${$(filtered.reduce((s, r) => s + (Number(r.montoUsd) || 0), 0))}
-                  </td>
-                  <td colSpan={2} />
-                </tr>
-              </>
+                  </>
+                );
+              })()
             )}
           </tbody>
         </table>

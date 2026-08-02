@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { canManageFinanzas, canReadFinanzas, getSessionUser } from "./auth-guard";
 
 const TransactionSchema = z.object({
   id: z.string(),
@@ -22,6 +23,12 @@ const BcvRateSchema = z.object({
   source: z.string().optional(),
 });
 
+// El access_token del usuario autenticado se valida en el servidor (JWT firmado
+// por Supabase). Las operaciones usan la anon key + la sesión del usuario, por lo
+// que las políticas RLS son las que autorizan/deniegan el acceso — nunca se usa
+// la service_role key aquí.
+const accessTokenField = z.string().optional();
+
 export type ServerTransaction = z.infer<typeof TransactionSchema>;
 export type ServerBcvRate = z.infer<typeof BcvRateSchema>;
 
@@ -29,16 +36,24 @@ export const syncTransactionsToSupabase = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
       transactions: z.array(TransactionSchema),
+      accessToken: accessTokenField,
     }),
   )
   .handler(async ({ data }) => {
+    const session = await getSessionUser(data.accessToken);
+    if (!session || !canManageFinanzas(session.role)) {
+      return { ok: false, error: "No autorizado" };
+    }
     const { createClient } = await import("@supabase/supabase-js");
     const supabaseUrl = process.env.VITE_SUPABASE_URL ?? "";
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-    if (!supabaseUrl || !supabaseServiceKey) {
+    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY ?? "";
+    if (!supabaseUrl || !supabaseAnonKey) {
       return { ok: false, error: "Supabase not configured" };
     }
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    // Cliente con la sesión del usuario → RLS aplica (finanzas RW, director R).
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
+    });
 
     const mapped = data.transactions.map((t) => ({
       id: t.id,
@@ -68,16 +83,23 @@ export const syncBcvRatesToSupabase = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
       rates: z.array(BcvRateSchema),
+      accessToken: accessTokenField,
     }),
   )
   .handler(async ({ data }) => {
+    const session = await getSessionUser(data.accessToken);
+    if (!session || !canManageFinanzas(session.role)) {
+      return { ok: false, error: "No autorizado" };
+    }
     const { createClient } = await import("@supabase/supabase-js");
     const supabaseUrl = process.env.VITE_SUPABASE_URL ?? "";
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-    if (!supabaseUrl || !supabaseServiceKey) {
+    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY ?? "";
+    if (!supabaseUrl || !supabaseAnonKey) {
       return { ok: false, error: "Supabase not configured" };
     }
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
+    });
 
     const mapped = data.rates.map((r) => ({
       iso_date: r.isoDate,
@@ -94,41 +116,65 @@ export const syncBcvRatesToSupabase = createServerFn({ method: "POST" })
     return { ok: true, count: mapped.length };
   });
 
-export const loadTransactionsFromSupabase = createServerFn({ method: "POST" }).handler(async () => {
-  const { createClient } = await import("@supabase/supabase-js");
-  const supabaseUrl = process.env.VITE_SUPABASE_URL ?? "";
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-  if (!supabaseUrl || !supabaseServiceKey) {
-    return { ok: false, error: "Supabase not configured", data: [] };
-  }
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+export const loadTransactionsFromSupabase = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      accessToken: accessTokenField,
+    }),
+  )
+  .handler(async ({ data }) => {
+    const session = await getSessionUser(data.accessToken);
+    if (!session || !canReadFinanzas(session.role)) {
+      return { ok: false, error: "No autorizado", data: [] };
+    }
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabaseUrl = process.env.VITE_SUPABASE_URL ?? "";
+    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY ?? "";
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return { ok: false, error: "Supabase not configured", data: [] };
+    }
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
+    });
 
-  const { data, error } = await supabase
-    .from("transactions")
-    .select("*")
-    .order("fecha", { ascending: true });
+    const { data: rows, error } = await supabase
+      .from("transactions")
+      .select("*")
+      .order("fecha", { ascending: true });
 
-  if (error) return { ok: false, error: error.message, data: [] };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return { ok: true, data: data as any[] };
-});
+    if (error) return { ok: false, error: error.message, data: [] };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { ok: true, data: rows as any[] };
+  });
 
-export const loadBcvRatesFromSupabase = createServerFn({ method: "POST" }).handler(async () => {
-  const { createClient } = await import("@supabase/supabase-js");
-  const supabaseUrl = process.env.VITE_SUPABASE_URL ?? "";
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-  if (!supabaseUrl || !supabaseServiceKey) {
-    return { ok: false, error: "Supabase not configured", data: {} };
-  }
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+export const loadBcvRatesFromSupabase = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      accessToken: accessTokenField,
+    }),
+  )
+  .handler(async ({ data }) => {
+    const session = await getSessionUser(data.accessToken);
+    if (!session) {
+      return { ok: false, error: "No autorizado", data: {} };
+    }
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabaseUrl = process.env.VITE_SUPABASE_URL ?? "";
+    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY ?? "";
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return { ok: false, error: "Supabase not configured", data: {} };
+    }
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
+    });
 
-  const { data, error } = await supabase
-    .from("bcv_rates")
-    .select("*")
-    .order("iso_date", { ascending: true });
+    const { data: rows, error } = await supabase
+      .from("bcv_rates")
+      .select("*")
+      .order("iso_date", { ascending: true });
 
-  if (error) return { ok: false, error: error.message, data: {} };
-  const rates: Record<string, number> = {};
-  for (const r of data) rates[r.iso_date] = r.rate;
-  return { ok: true, data: rates };
-});
+    if (error) return { ok: false, error: error.message, data: {} };
+    const rates: Record<string, number> = {};
+    for (const r of rows) rates[r.iso_date] = r.rate;
+    return { ok: true, data: rates };
+  });

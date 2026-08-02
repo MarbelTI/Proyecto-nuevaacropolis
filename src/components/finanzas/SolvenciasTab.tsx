@@ -40,6 +40,37 @@ const $ = (n: number) => n.toLocaleString("en-US", {minimumFractionDigits:2, max
 
 // ------------------------- Helpers -------------------------
 
+const MESES_ABR = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+const MES_MAP: Record<string, string> = {
+  enero:"ene", febrero:"feb", marzo:"mar", abril:"abr", mayo:"may", junio:"jun",
+  julio:"jul", agosto:"ago", septiembre:"sep", octubre:"oct", noviembre:"nov", diciembre:"dic",
+  "01":"ene","02":"feb","03":"mar","04":"abr","05":"may","06":"jun",
+  "07":"jul","08":"ago","09":"sep","10":"oct","11":"nov","12":"dic",
+};
+
+function formatMes(mes: string): string {
+  // Already "abr-26" or "ene-25" — return as-is
+  if (/^[a-z]{3}-\d{2}$/i.test(mes)) return mes.toLowerCase();
+  // "abr-2026" → "abr-26"
+  const m = mes.match(/^(\d{1,2}|[a-z]{3,9})[-\s]\s*(\d{4})$/i);
+  if (m) {
+    const abr = MES_MAP[m[1].toLowerCase()] ?? m[1].slice(0, 3).toLowerCase();
+    return `${abr}-${m[2].slice(2)}`;
+  }
+  // "2026-01" or "01/2026" → "ene-26"
+  const m2 = mes.match(/^(\d{4})[-/](\d{1,2})$/);
+  if (m2) {
+    const mm = m2[2].padStart(2, "0");
+    return `${MES_MAP[mm] ?? mm}-${m2[1].slice(2)}`;
+  }
+  const m3 = mes.match(/^(\d{1,2})[/-](\d{4})$/);
+  if (m3) {
+    const mm = m3[1].padStart(2, "0");
+    return `${MES_MAP[mm] ?? mm}-${m3[2].slice(2)}`;
+  }
+  return mes;
+}
+
 function fechaToIso(fecha: string): string | null {
   const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
   if (!m) return null;
@@ -123,6 +154,7 @@ function StudentTxDialog({ student, tx, onClose }: { student: Student | null; tx
             <thead>
               <tr className="border-b text-left text-muted-foreground text-xs">
                 <th className="p-1">Fecha</th>
+                <th className="p-1">I/G</th>
                 <th className="p-1">Categoría</th>
                 <th className="p-1">Descripción</th>
                 <th className="p-1 text-right">Monto</th>
@@ -133,6 +165,14 @@ function StudentTxDialog({ student, tx, onClose }: { student: Student | null; tx
               {rows.map((r) => (
                 <tr key={r.id} className="border-b last:border-0">
                   <td className="p-1 text-xs">{r.fecha}</td>
+                  <td className="p-1 text-center">
+                    <span className={"inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold " +
+                      (r.tipo === "Ingreso"
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                        : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300")}>
+                      {r.tipo === "Ingreso" ? "I" : "G"}
+                    </span>
+                  </td>
                   <td className="p-1 text-xs">{r.categoria}</td>
                   <td className="p-1 text-xs max-w-48 truncate" title={r.descripcion}>{r.descripcion}</td>
                   <td className="p-1 text-right text-xs tabular-nums">{isNaN(Number(r.monto)) ? r.monto : $(Number(r.monto))} {r.moneda==="Bolívares"?"Bs":r.moneda==="Pesos"?"$COP":"$"}</td>
@@ -452,7 +492,6 @@ export default function SolvenciasTab({
                   const lastYm = pay ? (fechaToIso(pay.fecha) || "").slice(0,7) : null;
                   const deuda = calcularCuotasDebidas(st, lastYm, ymNow, pay?.monto);
                   const esPorClase = st.condicion === "ClasePorClase";
-                  // Sin abonos aún → dejar estado en blanco hasta el primer pago.
                   const sinHistorial = !pay && !esPorClase;
                   return (
                     <tr key={idx} className="border-b last:border-0">
@@ -463,7 +502,7 @@ export default function SolvenciasTab({
                         {st.celador && <span className="ml-2 rounded bg-accent px-1.5 py-px text-[10px] uppercase text-accent-foreground">celador</span>}
                       </td>
                       <td className="p-2 text-xs text-center">{pay?.fecha ?? "—"}</td>
-                      <td className="p-2 text-xs text-center">{pay?.mes ? pay.mes.replace("2026","26") : "—"}</td>
+                      <td className="p-2 text-xs text-center">{pay?.mes ? formatMes(pay.mes) : "—"}</td>
                       <td className="p-2 text-center text-xs tabular-nums">{pay ? `$${$(pay.monto)}` : "—"}</td>
                       <td className="p-2 text-xs">
                         {esPorClase
