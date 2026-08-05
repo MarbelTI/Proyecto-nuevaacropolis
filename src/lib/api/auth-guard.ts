@@ -1,10 +1,12 @@
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./env";
 
-// Escape hatch SOLO para desarrollo local (este flag nunca se define en producción).
-// En Vercel, las variables de entorno se configuran en el dashboard, no en .env,
-// por lo que el bypass queda desactivado en el deploy.
-const DEV_BYPASS = process.env.SISFIA_DEV_BYPASS_AUTH === "1";
+// Escape hatch SOLO para desarrollo local. Además del flag, exigimos que NO
+// estemos corriendo en Vercel (la var VERCEL=1 la pone Vercel automáticamente
+// en todos sus entornos: production, preview y development), como red de
+// seguridad extra por si alguien define SISFIA_DEV_BYPASS_AUTH=1 por error
+// en el dashboard de Vercel.
+const DEV_BYPASS = process.env.SISFIA_DEV_BYPASS_AUTH === "1" && !process.env.VERCEL;
 
 export type AuthSession = {
   userId: string;
@@ -60,4 +62,20 @@ export function canManageFinanzas(role: string): boolean {
 /** Roles que pueden leer datos financieros (sin escribir). */
 export function canReadFinanzas(role: string): boolean {
   return role === "super_admin" || role === "finanzas" || role === "director";
+}
+
+/** Roles que pueden escribir el perfil completo de alumnos (control de estudio). */
+export function canManageStudents(role: string): boolean {
+  return role === "super_admin" || role === "celador_estudios";
+}
+
+/** Cualquier rol que tenga algún tipo de acceso de lectura a alumnos. */
+export function canReadStudents(role: string): boolean {
+  return (
+    role === "super_admin" ||
+    role === "celador_estudios" ||
+    role === "finanzas" ||
+    role === "director" ||
+    role === "celador"
+  );
 }

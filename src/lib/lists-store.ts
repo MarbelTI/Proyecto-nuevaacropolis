@@ -21,6 +21,7 @@ const K_BCV = "lector_ocr_bcv_v1";
 const K_SEED = "lector_ocr_seed_v4";
 
 export type Student = {
+  id?: string;
   nombre: string;
   aulas: string[];
   condicion?: Condicion;
@@ -30,6 +31,22 @@ export type Student = {
   cuotaOverridesTemporales?: CuotaOverrideTemporal[];
   telefono?: string;
   fechaIngreso?: string;
+  // Datos de "Ficha" (control de estudio) — solo celador_estudios/super_admin
+  // los ven completos; finanzas/celador reciben una vista sin estos campos.
+  cedula?: string;
+  correo?: string;
+  direccion?: string;
+  redesSociales?: string;
+  ocupacion?: string;
+  habilidades?: string;
+  gradoParticipacion?: string;
+  fechaMiembro?: string;
+  fechaFfvv?: string;
+  sede?: string;
+  instructor?: string;
+  celadorNombre?: string;
+  horario?: string;
+  materias?: string;
 };
 
 export type Transaction = {
@@ -60,7 +77,10 @@ function parseMoney(s: unknown): number {
     clean = clean.replace(",", ".");
   }
   const n = parseFloat(clean);
-  if (isNaN(n)) { console.warn("parseMoney: NaN from", JSON.stringify(s)); return 0; }
+  if (isNaN(n)) {
+    console.warn("parseMoney: NaN from", JSON.stringify(s));
+    return 0;
+  }
   return n;
 }
 
@@ -90,17 +110,27 @@ function save<T>(key: string, val: T) {
   }
 }
 
-const BANCOS_DEFAULT = ["Efectivo USD", "Efectivo Bs", "Binance", "Bancolombia", "Bco Venezuela", "Bco Mercantil", "Bco Provincial", "Pago Móvil"];
+const BANCOS_DEFAULT = [
+  "Efectivo USD",
+  "Efectivo Bs",
+  "Binance",
+  "Bancolombia",
+  "Bco Venezuela",
+  "Bco Mercantil",
+  "Bco Provincial",
+  "Pago Móvil",
+];
 
 export function useEditableList(
   kind: "ingresos" | "gastos" | "bancos",
 ): [string[], (next: string[]) => void] {
   const key = kind === "ingresos" ? K_ING : kind === "gastos" ? K_GAS : K_BNC;
-  const def = kind === "ingresos"
-    ? [...CATEGORIAS_INGRESO]
-    : kind === "gastos"
-    ? [...CATEGORIAS_GASTO]
-    : [...BANCOS_DEFAULT];
+  const def =
+    kind === "ingresos"
+      ? [...CATEGORIAS_INGRESO]
+      : kind === "gastos"
+        ? [...CATEGORIAS_GASTO]
+        : [...BANCOS_DEFAULT];
   const [items, setItems] = useState<string[]>(def);
   useEffect(() => {
     setItems(load<string[]>(key, def));
@@ -131,7 +161,8 @@ export function useEditableAulas(): [string[], (next: string[]) => void] {
 
 function defaultFechaIngreso(aulas: string[]): string {
   if (aulas.some((a) => a.includes("Arjuna I"))) return "2026-02-05";
-  if (aulas.some((a) => a.includes("Arjuna II 2026") || a.includes("Arjuna II"))) return "2026-06-05";
+  if (aulas.some((a) => a.includes("Arjuna II 2026") || a.includes("Arjuna II")))
+    return "2026-06-05";
   return "2026-01-01";
 }
 
@@ -143,7 +174,9 @@ function seedFromDefault(): Student[] {
     actividad: s.actividad ?? "Activo",
     celador: s.celador ?? false,
     cuotaOverride: s.cuotaOverride,
-    cuotaOverridesTemporales: s.cuotaOverridesTemporales ? [...s.cuotaOverridesTemporales] : undefined,
+    cuotaOverridesTemporales: s.cuotaOverridesTemporales
+      ? [...s.cuotaOverridesTemporales]
+      : undefined,
     fechaIngreso: s.fechaIngreso ?? defaultFechaIngreso(s.aulas),
   }));
 }
@@ -205,29 +238,29 @@ export function useEditableStudents(): [Student[], (next: Student[]) => void] {
       }
 
       // Migración v3→v4: mover alumnos de Arjuna II a Krishna VI
-      const krishnaVIFromArjuna = new Map<string, { aulas:string[]; condicion?:string }>([
-        ["Carmen Gonzalez", { aulas:["Krishna VI"], condicion:"Miembro" }],
-        ["Gabina Useche", { aulas:["Krishna VI"], condicion:"Miembro" }],
-        ["Jose Figueroa", { aulas:["Krishna VI"], condicion:"Miembro" }],
-        ["Karla Marquez", { aulas:["Krishna VI"], condicion:"Miembro" }],
-        ["Marta Ruda", { aulas:["Krishna VI"], condicion:"Miembro" }],
-        ["Neicy Fortoul", { aulas:["Krishna VI"], condicion:"Miembro" }],
-        ["Pedro Diaz", { aulas:["Krishna VI"], condicion:"Miembro" }],
-        ["William Zambrano", { aulas:["Krishna VI"], condicion:"Miembro" }],
-        ["Yennifer Angarita", { aulas:["Krishna VI"], condicion:"Miembro" }],
+      const krishnaVIFromArjuna = new Map<string, { aulas: string[]; condicion?: string }>([
+        ["Carmen Gonzalez", { aulas: ["Krishna VI"], condicion: "Miembro" }],
+        ["Gabina Useche", { aulas: ["Krishna VI"], condicion: "Miembro" }],
+        ["Jose Figueroa", { aulas: ["Krishna VI"], condicion: "Miembro" }],
+        ["Karla Marquez", { aulas: ["Krishna VI"], condicion: "Miembro" }],
+        ["Marta Ruda", { aulas: ["Krishna VI"], condicion: "Miembro" }],
+        ["Neicy Fortoul", { aulas: ["Krishna VI"], condicion: "Miembro" }],
+        ["Pedro Diaz", { aulas: ["Krishna VI"], condicion: "Miembro" }],
+        ["William Zambrano", { aulas: ["Krishna VI"], condicion: "Miembro" }],
+        ["Yennifer Angarita", { aulas: ["Krishna VI"], condicion: "Miembro" }],
       ]);
       base = base.map((s) => {
         const mig = krishnaVIFromArjuna.get(s.nombre);
-        if (mig && (!s.aulas.includes("Krishna VI"))) {
+        if (mig && !s.aulas.includes("Krishna VI")) {
           return { ...s, aulas: mig.aulas, condicion: mig.condicion as Condicion | undefined };
         }
         return s;
       });
       // Corregir condición/actividad de alumnos que ya estaban en Krishna VI
       const fixes = new Map<string, Partial<Student>>([
-        ["Claudia Quintero", { condicion:"Probacionista" as const }],
-        ["Juan Rodriguez", { condicion:"Probacionista" as const, actividad:"Retirado" as const }],
-        ["Nelson Garcia", { condicion:"Probacionista" as const, actividad:"Retirado" as const }],
+        ["Claudia Quintero", { condicion: "Probacionista" as const }],
+        ["Juan Rodriguez", { condicion: "Probacionista" as const, actividad: "Retirado" as const }],
+        ["Nelson Garcia", { condicion: "Probacionista" as const, actividad: "Retirado" as const }],
       ]);
       base = base.map((s) => {
         const fix = fixes.get(s.nombre);
@@ -239,7 +272,8 @@ export function useEditableStudents(): [Student[], (next: Student[]) => void] {
       if (!localStorage.getItem(TEMP_OVERRIDE_DONE)) {
         const seedOverrides = new Map<string, Student["cuotaOverridesTemporales"]>();
         for (const s of seed) {
-          if (s.cuotaOverridesTemporales?.length) seedOverrides.set(s.nombre.toLowerCase(), s.cuotaOverridesTemporales);
+          if (s.cuotaOverridesTemporales?.length)
+            seedOverrides.set(s.nombre.toLowerCase(), s.cuotaOverridesTemporales);
         }
         if (seedOverrides.size) {
           base = base.map((s) => {
@@ -274,6 +308,8 @@ export function useTransactions(): {
   append: (rows: Omit<Transaction, "id">[]) => void;
   update: <K extends keyof Transaction>(id: string, field: K, value: Transaction[K]) => void;
   replace: (id: string, transaction: Transaction) => void;
+  /** Reemplaza la lista completa (para correcciones en lote). */
+  replaceAll: (rows: Transaction[]) => void;
   remove: (id: string) => void;
   removeMany: (ids: Set<string>) => void;
   duplicateAfter: (id: string) => void;
@@ -338,6 +374,7 @@ export function useTransactions(): {
     replace: (id, transaction) => {
       persist(list.map((r) => (r.id === id ? transaction : r)));
     },
+    replaceAll: (rows) => persist([...rows]),
     remove: (id) => persist(list.filter((r) => r.id !== id)),
     removeMany: (ids) => persist(list.filter((r) => !ids.has(r.id))),
     duplicateAfter: (id) => {
@@ -346,7 +383,10 @@ export function useTransactions(): {
       const orig = list[idx];
       const copy = {
         ...orig,
-        id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2),
+        id:
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : Math.random().toString(36).slice(2),
       };
       const next = [...list];
       next.splice(idx + 1, 0, copy);
@@ -396,6 +436,39 @@ export function useBcvRates(): {
   };
 }
 
+/**
+ * "Huella" de un movimiento, para detectar que ya fue registrado.
+ *
+ * Se comparan fecha, tipo, categoría, descripción, moneda y monto. NO se
+ * incluyen tasa ni montoUsd (pueden variar si se recalcularon), ni el banco
+ * (suele quedar vacío al venir del OCR). La descripción se normaliza sin
+ * tildes ni mayúsculas para que "José Pérez" y "jose perez" cuenten igual.
+ */
+export function firmaTransaccion(t: {
+  fecha: string;
+  tipo: string;
+  categoria: string;
+  descripcion: string;
+  moneda: string;
+  monto: number | string;
+}): string {
+  const desc = String(t.descripcion ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const monto = Math.round((Number(t.monto) || 0) * 100) / 100;
+  return [
+    String(t.fecha ?? "").trim(),
+    String(t.tipo ?? "").trim(),
+    String(t.categoria ?? "").trim(),
+    desc,
+    String(t.moneda ?? "").trim(),
+    monto,
+  ].join("|");
+}
+
 /** Devuelve la tasa BCV del día, o la más cercana anterior si no existe. */
 export function bcvRateFor(rates: BcvRates, isoDate: string): number | null {
   if (rates[isoDate] != null) return rates[isoDate];
@@ -406,4 +479,29 @@ export function bcvRateFor(rates: BcvRates, isoDate: string): number | null {
     else break;
   }
   return best;
+}
+
+/**
+ * Igual que `bcvRateFor`, pero si la fecha es ANTERIOR a todas las tasas
+ * registradas devuelve la primera disponible en vez de null.
+ *
+ * Se usa al importar movimientos viejos: lo correcto es la tasa vigente ese día
+ * (la última publicada antes o en esa fecha), pero si el histórico no llega tan
+ * atrás es preferible la tasa más próxima que dejar el movimiento sin convertir.
+ * Devuelve también de dónde salió, para poder avisar cuando es aproximada.
+ */
+export function bcvRateNearest(
+  rates: BcvRates,
+  isoDate: string,
+): { rate: number; exacta: boolean } | null {
+  const exact = rates[isoDate];
+  if (exact != null) return { rate: exact, exacta: true };
+
+  const previa = bcvRateFor(rates, isoDate);
+  if (previa != null) return { rate: previa, exacta: false };
+
+  // No hay ninguna tasa anterior: tomar la primera posterior.
+  const keys = Object.keys(rates).sort();
+  if (!keys.length) return null;
+  return { rate: rates[keys[0]], exacta: false };
 }

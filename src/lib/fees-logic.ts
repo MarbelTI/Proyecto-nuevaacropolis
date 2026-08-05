@@ -55,8 +55,12 @@ export function calcularCuotasDebidas(
     return { meses: 0, totalUSD: 0, detalle: [] };
   }
   const detalle: { ym: string; cuota: number }[] = [];
-  const ingresoYm = student.fechaIngreso ? student.fechaIngreso.slice(0,7) : "2000-01";
-  const start = lastPaidYm ? nextYm(lastPaidYm) : ingresoYm > aulaStartYm(student.aulas) ? ingresoYm : aulaStartYm(student.aulas);
+  const ingresoYm = student.fechaIngreso ? student.fechaIngreso.slice(0, 7) : "2000-01";
+  const start = lastPaidYm
+    ? nextYm(lastPaidYm)
+    : ingresoYm > aulaStartYm(student.aulas)
+      ? ingresoYm
+      : aulaStartYm(student.aulas);
   let cur = start;
   let guard = 0;
   while (cur <= currentYm && guard++ < 120) {
@@ -83,11 +87,7 @@ export function currentYm(): string {
 }
 
 /** Recalcula USD desde monto + tasa + moneda. */
-export function calcularMontoUsd(
-  moneda: string,
-  monto: number,
-  tasa: number | null,
-): number {
+export function calcularMontoUsd(moneda: string, monto: number, tasa: number | null): number {
   if (!monto || !isFinite(monto)) return 0;
   if (moneda === "USD" || moneda === "" || moneda === "Dólares") return monto;
   if (!tasa || !isFinite(tasa) || tasa <= 0) return 0;
@@ -96,3 +96,23 @@ export function calcularMontoUsd(
 
 /** Tasa por defecto para pesos colombianos. */
 export const TASA_PESOS_DEFAULT = 4000;
+
+/**
+ * Toda tasa de cambio se guarda y se muestra con 2 decimales, sin importar
+ * cuántos traiga el origen (BCV publica más, y a mano se pueden escribir 4).
+ * Se redondea al ESCRIBIR, no solo al mostrar, para que la tasa guardada y el
+ * monto en dólares calculado con ella siempre coincidan.
+ */
+export function redondearTasa(tasa: number | null): number | null {
+  if (tasa == null || !isFinite(tasa)) return null;
+  return Math.round(tasa * 100) / 100;
+}
+
+/** Formatea una tasa para mostrar (siempre 2 decimales, "—" si no hay). */
+export function formatTasa(tasa: number | null | undefined): string {
+  if (tasa == null || !isFinite(Number(tasa)) || Number(tasa) === 0) return "—";
+  return Number(tasa).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}

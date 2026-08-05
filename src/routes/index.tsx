@@ -25,8 +25,22 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, ScanText, MessageCircle, LogOut } from "lucide-react";
+import {
+  Loader2,
+  ScanText,
+  MessageCircle,
+  LogOut,
+  Receipt,
+  BarChart3,
+  Users,
+  CalendarCheck,
+} from "lucide-react";
 import { toast } from "sonner";
+
+// Estilos del menú lateral: en escritorio cada ítem ocupa toda la fila.
+const NAV_ITEM =
+  "w-full justify-start gap-2 px-3 py-2 text-sm lg:w-full data-[state=active]:bg-background data-[state=active]:shadow-sm";
+const NAV_ICON = "h-4 w-4 shrink-0";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -278,113 +292,138 @@ function Index() {
                   ? "asistencias"
                   : "ocr"
             }
-            className="w-full"
+            orientation="vertical"
+            className="flex flex-col gap-4 lg:flex-row lg:items-start"
           >
-            <TabsList className="mb-4 flex flex-wrap">
-              {userInfo.canAccessExisting && <TabsTrigger value="ocr">Registro OCR</TabsTrigger>}
+            {/* Sidebar de navegación: vertical en escritorio, horizontal en móvil */}
+            <TabsList className="h-auto w-full shrink-0 flex-row flex-wrap justify-start gap-1 rounded-xl p-2 lg:w-56 lg:flex-col lg:flex-nowrap lg:items-stretch">
               {userInfo.canAccessExisting && (
-                <TabsTrigger value="tx">Transacciones ({transactions.list.length})</TabsTrigger>
+                <TabsTrigger value="ocr" className={NAV_ITEM}>
+                  <ScanText className={NAV_ICON} /> Registro OCR
+                </TabsTrigger>
               )}
-              {userInfo.canAccessExisting && <TabsTrigger value="finanzas">Finanzas</TabsTrigger>}
               {userInfo.canAccessExisting && (
-                <TabsTrigger value="solvencias">Solvencias</TabsTrigger>
+                <TabsTrigger value="tx" className={NAV_ITEM}>
+                  <Receipt className={NAV_ICON} /> Transacciones
+                  <span className="ml-auto rounded bg-background/60 px-1.5 py-0.5 text-[11px] font-normal">
+                    {transactions.list.length}
+                  </span>
+                </TabsTrigger>
+              )}
+              {userInfo.canAccessExisting && (
+                <TabsTrigger value="finanzas" className={NAV_ITEM}>
+                  <BarChart3 className={NAV_ICON} /> Finanzas
+                </TabsTrigger>
+              )}
+              {userInfo.canAccessExisting && (
+                <TabsTrigger value="solvencias" className={NAV_ITEM}>
+                  <Users className={NAV_ICON} /> Solvencias
+                </TabsTrigger>
               )}
               {userInfo.canAccessAsistencias && (
-                <TabsTrigger value="asistencias">Asistencias</TabsTrigger>
+                <TabsTrigger value="asistencias" className={NAV_ITEM}>
+                  <CalendarCheck className={NAV_ICON} /> Asistencias
+                </TabsTrigger>
               )}
             </TabsList>
 
-            <TabsContent value="ocr" className="space-y-6">
-              <OcrTab
-                ingresos={ingresos}
-                gastos={gastos}
-                bcvRates={bcv.rates}
-                students={students}
-                transactions={transactions}
-              />
-            </TabsContent>
-
-            <TabsContent value="tx">
-              <TransactionsTab
-                tx={transactions}
-                ingresos={ingresos}
-                gastos={gastos}
-                bancos={bancos}
-                setIngresos={setIngresos}
-                setGastos={setGastos}
-                setBancos={setBancos}
-                bcvRates={bcv.rates}
-                bcvSources={bcvSources}
-                students={students}
-                aulas={aulas}
-                setStudents={setStudents}
-              />
-            </TabsContent>
-
-            <TabsContent value="finanzas">
-              <div className="mb-4">
-                <SupabaseSync transactions={transactions} bcvRates={bcv} />
-              </div>
-              <Tabs defaultValue="resumen" className="w-full">
-                <TabsList className="mb-4">
-                  <TabsTrigger value="resumen">Resumen mensual</TabsTrigger>
-                  <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-                  <TabsTrigger value="analisis">Análisis anual</TabsTrigger>
-                  <TabsTrigger value="bcv">Tasas BCV</TabsTrigger>
-                </TabsList>
-                <TabsContent value="resumen">
-                  <ResumenTab
-                    tx={transactions}
-                    ingresos={ingresos}
-                    gastos={gastos}
-                    bancos={bancos}
-                    bcvRates={bcv.rates}
-                  />
-                </TabsContent>
-                <TabsContent value="dashboard">
-                  <DashboardTab
-                    tx={transactions.list}
-                    ingresos={ingresos}
-                    gastos={gastos}
-                    bcvRates={bcv.rates}
-                    students={students}
-                  />
-                </TabsContent>
-                <TabsContent value="analisis">
-                  <AnalisisTab
-                    tx={transactions.list}
-                    ingresos={ingresos}
-                    gastos={gastos}
-                    bcvRates={bcv.rates}
-                  />
-                </TabsContent>
-                <TabsContent value="bcv">
-                  <TasasBcvTab bcv={bcv} />
-                </TabsContent>
-              </Tabs>
-            </TabsContent>
-
-            <TabsContent value="solvencias">
-              <SolvenciasTab
-                students={students}
-                setStudents={setStudents}
-                aulas={aulas}
-                setAulas={setAulas}
-                tx={transactions.list}
-              />
-            </TabsContent>
-
-            {userInfo.canAccessAsistencias && (
-              <TabsContent value="asistencias">
-                <AsistenciasTab
-                  aulasMeta={aulasMeta}
-                  setAulasMeta={setAulasMeta}
-                  records={attRecords}
-                  setRecords={setAttRecords}
-                  user={userInfo}
+            <div className="min-w-0 flex-1">
+              <TabsContent value="ocr" className="space-y-6">
+                <OcrTab
+                  ingresos={ingresos}
+                  gastos={gastos}
+                  bcvRates={bcv.rates}
+                  students={students}
+                  transactions={transactions}
                 />
               </TabsContent>
-            )}
+
+              <TabsContent value="tx">
+                <TransactionsTab
+                  tx={transactions}
+                  ingresos={ingresos}
+                  gastos={gastos}
+                  bancos={bancos}
+                  setIngresos={setIngresos}
+                  setGastos={setGastos}
+                  setBancos={setBancos}
+                  bcvRates={bcv.rates}
+                  bcvSources={bcvSources}
+                  students={students}
+                  aulas={aulas}
+                  setStudents={setStudents}
+                />
+              </TabsContent>
+
+              <TabsContent value="finanzas">
+                <div className="mb-4">
+                  <SupabaseSync
+                    transactions={transactions}
+                    bcvRates={bcv}
+                    students={{ list: students, setAll: setStudents }}
+                  />
+                </div>
+                <Tabs defaultValue="resumen" className="w-full">
+                  <TabsList className="mb-4">
+                    <TabsTrigger value="resumen">Resumen mensual</TabsTrigger>
+                    <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+                    <TabsTrigger value="analisis">Análisis anual</TabsTrigger>
+                    <TabsTrigger value="bcv">Tasas BCV</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="resumen">
+                    <ResumenTab
+                      tx={transactions}
+                      ingresos={ingresos}
+                      gastos={gastos}
+                      bancos={bancos}
+                      bcvRates={bcv.rates}
+                    />
+                  </TabsContent>
+                  <TabsContent value="dashboard">
+                    <DashboardTab
+                      tx={transactions.list}
+                      ingresos={ingresos}
+                      gastos={gastos}
+                      bcvRates={bcv.rates}
+                      students={students}
+                    />
+                  </TabsContent>
+                  <TabsContent value="analisis">
+                    <AnalisisTab
+                      tx={transactions.list}
+                      ingresos={ingresos}
+                      gastos={gastos}
+                      bcvRates={bcv.rates}
+                    />
+                  </TabsContent>
+                  <TabsContent value="bcv">
+                    <TasasBcvTab bcv={bcv} />
+                  </TabsContent>
+                </Tabs>
+              </TabsContent>
+
+              <TabsContent value="solvencias">
+                <SolvenciasTab
+                  students={students}
+                  setStudents={setStudents}
+                  aulas={aulas}
+                  setAulas={setAulas}
+                  tx={transactions.list}
+                />
+              </TabsContent>
+
+              {userInfo.canAccessAsistencias && (
+                <TabsContent value="asistencias">
+                  <AsistenciasTab
+                    aulasMeta={aulasMeta}
+                    setAulasMeta={setAulasMeta}
+                    records={attRecords}
+                    setRecords={setAttRecords}
+                    user={userInfo}
+                  />
+                </TabsContent>
+              )}
+            </div>
           </Tabs>
         )}
       </div>

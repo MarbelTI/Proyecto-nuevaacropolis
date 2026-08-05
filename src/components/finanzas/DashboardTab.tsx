@@ -1,30 +1,58 @@
 import { useMemo, useState } from "react";
 import type { Transaction, Student } from "@/lib/lists-store";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { ReporteEjecutivo } from "@/components/finanzas/ReporteEjecutivo";
+import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 import {
-  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  TrendingUp, TrendingDown, Search, X, DollarSign, Banknote,
-} from "lucide-react";
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip as ReTooltip,
+  ResponsiveContainer,
+  Legend,
+  CartesianGrid,
 } from "recharts";
 
 const MESES_ES = [
-  "Enero","Febrero","Marzo","Abril","Mayo","Junio",
-  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
 ];
-const MESES_ABR = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+const MESES_ABR = [
+  "Ene",
+  "Feb",
+  "Mar",
+  "Abr",
+  "May",
+  "Jun",
+  "Jul",
+  "Ago",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dic",
+];
+
+// Paleta validada para daltonismo y contraste (light + dark) con
+// scripts/validate_palette.js. La separación verde/terracota queda en la
+// banda que exige codificación secundaria: por eso cada serie lleva
+// SIEMPRE leyenda, flecha (↑/↓) y su valor escrito — nunca solo color.
+const C_ING = "#3F8A5F"; // ingresos
+const C_GAS = "#C25E45"; // gastos
 
 const $ = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const $0 = (n: number) =>
-  n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+const $0 = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 
 function fechaToIso(fecha: string): string | null {
   const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
@@ -36,564 +64,494 @@ function fechaToIso(fecha: string): string | null {
   return `${yy}-${mm}-${dd}`;
 }
 
-function normalizeName(s: string) {
-  return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-}
-
-function matchStudent(desc: string, students: Student[]): Student | null {
-  const n = normalizeName(desc);
-  for (const s of students) {
-    if (n.includes(normalizeName(s.nombre))) return s;
+/** Suma ingresos/gastos en USD de un conjunto de movimientos. */
+function totales(rows: Transaction[]) {
+  let ing = 0,
+    gas = 0;
+  for (const t of rows) {
+    const usd = Number(t.montoUsd) || 0;
+    if (t.tipo === "Ingreso") ing += usd;
+    else if (t.tipo === "Gasto") gas += usd;
   }
-  return null;
+  return { ing, gas, neto: ing - gas };
 }
 
-const CHART_COLORS = ["#D4AC5C", "#74A67E", "#C25E45", "#6C97A0", "#8B8271"];
+/** Top N categorías por monto, de un tipo dado. */
+function topCategorias(rows: Transaction[], tipo: "Ingreso" | "Gasto", n: number) {
+  const acc = new Map<string, number>();
+  for (const t of rows) {
+    if (t.tipo !== tipo) continue;
+    const cat = t.categoria || "(sin categoría)";
+    acc.set(cat, (acc.get(cat) || 0) + (Number(t.montoUsd) || 0));
+  }
+  return [...acc.entries()]
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n);
+}
+
+/** Variación porcentual contra el periodo anterior. */
+function variacion(actual: number, previo: number): number | null {
+  if (!previo) return null;
+  return ((actual - previo) / Math.abs(previo)) * 100;
+}
+
+function Delta({ pct, invertido = false }: { pct: number | null; invertido?: boolean }) {
+  if (pct == null) {
+    return <span className="text-[11px] text-muted-foreground">sin periodo anterior</span>;
+  }
+  const sube = pct > 0.5,
+    baja = pct < -0.5;
+  // En gastos, subir es malo (invertido); en ingresos, subir es bueno.
+  const bueno = invertido ? baja : sube;
+  const color =
+    !sube && !baja ? "text-muted-foreground" : bueno ? "text-[#3F8A5F]" : "text-[#C25E45]";
+  const Icon = sube ? ArrowUp : baja ? ArrowDown : Minus;
+  return (
+    <span className={`inline-flex items-center gap-1 text-[11px] font-medium ${color}`}>
+      <Icon className="h-3 w-3" aria-hidden />
+      {Math.abs(pct).toFixed(0)}% vs. periodo anterior
+    </span>
+  );
+}
+
+/** Lista rankeada con barra proporcional — más legible que un gráfico para un top corto. */
+function TopLista({
+  titulo,
+  datos,
+  color,
+  total,
+}: {
+  titulo: string;
+  datos: [string, number][];
+  color: string;
+  total: number;
+}) {
+  const max = datos.length ? datos[0][1] : 0;
+  return (
+    <Card className="p-4">
+      <h3 className="mb-2.5 text-xs font-semibold">{titulo}</h3>
+      {datos.length === 0 ? (
+        <p className="py-6 text-center text-xs text-muted-foreground">
+          Sin movimientos en este periodo
+        </p>
+      ) : (
+        <ol className="space-y-2">
+          {datos.map(([cat, val], i) => {
+            const pctDelTotal = total > 0 ? (val / total) * 100 : 0;
+            return (
+              <li key={cat}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="flex min-w-0 items-baseline gap-1.5">
+                    <span className="font-mono text-[10px] text-muted-foreground">{i + 1}.</span>
+                    <span className="truncate text-[11px]" title={cat}>
+                      {cat}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-[11px] font-semibold tabular-nums">
+                    ${$0(val)}
+                    <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                      {pctDelTotal.toFixed(0)}%
+                    </span>
+                  </span>
+                </div>
+                <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: `${max > 0 ? (val / max) * 100 : 0}%`, background: color }}
+                  />
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </Card>
+  );
+}
 
 export function DashboardTab({
-  tx, ingresos, gastos, bcvRates, students,
+  tx,
+  ingresos,
+  gastos,
+  bcvRates,
 }: {
   tx: Transaction[];
   ingresos: string[];
   gastos: string[];
   bcvRates: Record<string, number>;
-  students: Student[];
+  students?: Student[];
 }) {
-  const yearsSet = useMemo(() => {
+  const years = useMemo(() => {
     const s = new Set<number>();
     for (const t of tx) {
       const iso = fechaToIso(t.fecha);
       if (iso) s.add(Number(iso.slice(0, 4)));
     }
     s.add(new Date().getFullYear());
-    return s;
-  }, [tx]);
-  const years = Array.from(yearsSet).sort((a, b) => b - a);
-  const allMonths = useMemo(() => {
-    const s = new Set<number>();
-    for (const t of tx) {
-      const iso = fechaToIso(t.fecha);
-      if (iso) s.add(Number(iso.slice(5, 7)));
-    }
-    return Array.from(s).sort((a, b) => a - b);
+    return Array.from(s).sort((a, b) => b - a);
   }, [tx]);
 
   const [year, setYear] = useState<number>(years[0]);
   const [month, setMonth] = useState<number | null>(null);
-  const [personaQ, setPersonaQ] = useState("");
-  const [personaSelected, setPersonaSelected] = useState<string | null>(null);
-  const [filterTipo, setFilterTipo] = useState<string>("todos");
-  const [filterMoneda, setFilterMoneda] = useState<string>("");
-  const [filterCategoria, setFilterCategoria] = useState<string>("");
-  const [catPanelOpen, setCatPanelOpen] = useState(false);
-  const [catSearch, setCatSearch] = useState("");
 
-  const personaSuggestions = useMemo(() => {
-    if (!personaQ.trim() || personaSelected) return [];
-    const q = normalizeName(personaQ);
-    return students.filter((s) => normalizeName(s.nombre).includes(q)).slice(0, 6);
-  }, [personaQ, personaSelected, students]);
-
-  const personaLabel = useMemo(() => {
-    if (!personaSelected) return null;
-    return students.find((s) => s.nombre === personaSelected)?.nombre ?? personaSelected;
-  }, [personaSelected, students]);
-
-  const filteredTx = useMemo(() => {
-    let filtered = tx;
-    filtered = filtered.filter((t) => {
-      const iso = fechaToIso(t.fecha);
-      if (!iso || Number(iso.slice(0, 4)) !== year) return false;
-      if (month && Number(iso.slice(5, 7)) !== month) return false;
-      if (filterTipo !== "todos" && t.tipo !== filterTipo) return false;
-      if (filterMoneda && t.moneda !== filterMoneda) return false;
-      if (filterCategoria && t.categoria !== filterCategoria) return false;
-      if (personaSelected) {
-        const s = matchStudent(t.descripcion, students);
-        if (s?.nombre !== personaSelected) return false;
-      }
-      return true;
-    });
-    return filtered;
-  }, [tx, year, month, filterTipo, filterMoneda, filterCategoria, personaSelected, students]);
-
-  const monthData = useMemo(() => {
-    let ing = 0, gas = 0;
-    const ingCat: Record<string, number> = {};
-    const gasCat: Record<string, number> = {};
-    for (const c of ingresos) ingCat[c] = 0;
-    for (const c of gastos) gasCat[c] = 0;
-    for (const t of filteredTx) {
-      const usd = Number(t.montoUsd) || 0;
-      if (t.tipo === "Ingreso") {
-        ing += usd;
-        const cat = t.categoria || "(sin categoría)";
-        ingCat[cat] = (ingCat[cat] || 0) + usd;
-      } else if (t.tipo === "Gasto") {
-        gas += usd;
-        const cat = t.categoria || "(sin categoría)";
-        gasCat[cat] = (gasCat[cat] || 0) + usd;
-      }
-    }
-    return { ing, gas, neto: ing - gas, ingCat, gasCat };
-  }, [filteredTx, ingresos, gastos]);
-
-  const monedaData = useMemo(() => {
-    let usdIng = 0, usdGas = 0, bsIng = 0, bsGas = 0, copIng = 0, copGas = 0;
-    for (const t of filteredTx) {
-      const usd = Number(t.montoUsd) || 0;
-      const monto = Number(t.monto) || 0;
-      if (t.tipo === "Ingreso") {
-        usdIng += usd;
-        if (t.moneda === "Bolívares") bsIng += monto;
-        if (t.moneda === "Pesos") copIng += monto;
-      } else if (t.tipo === "Gasto") {
-        usdGas += usd;
-        if (t.moneda === "Bolívares") bsGas += monto;
-        if (t.moneda === "Pesos") copGas += monto;
-      }
-    }
-    return {
-      usdIng, usdGas, usdNeto: usdIng - usdGas,
-      bsIng, bsGas, bsNeto: bsIng - bsGas,
-      copIng, copGas, copNeto: copIng - copGas,
-    };
-  }, [filteredTx]);
-
-  const topCategorias = useMemo(() => {
-    const ing = Object.entries(monthData.ingCat)
-      .filter(([, v]) => v > 0).sort(([, a], [, b]) => b - a).slice(0, 8);
-    const gas = Object.entries(monthData.gasCat)
-      .filter(([, v]) => v > 0).sort(([, a], [, b]) => b - a).slice(0, 8);
-    return { ingreso: ing, gasto: gas };
-  }, [monthData]);
-
-  const allCategorias = useMemo(() => {
-    const cats = new Set<string>();
-    for (const t of tx) if (t.categoria) cats.add(t.categoria);
-    return Array.from(cats).sort();
-  }, [tx]);
-
-  const catGroups = useMemo(() => {
-    const ing = new Map<string, number>();
-    const gas = new Map<string, number>();
+  const mesesConDatos = useMemo(() => {
+    const s = new Set<number>();
     for (const t of tx) {
-      if (!t.categoria) continue;
-      if (t.tipo === "Ingreso") ing.set(t.categoria, (ing.get(t.categoria) || 0) + 1);
-      else gas.set(t.categoria, (gas.get(t.categoria) || 0) + 1);
+      const iso = fechaToIso(t.fecha);
+      if (iso && Number(iso.slice(0, 4)) === year) s.add(Number(iso.slice(5, 7)));
     }
-    return {
-      ingreso: [...ing.entries()].sort((a, b) => a[0].localeCompare(b[0], "es")),
-      gasto: [...gas.entries()].sort((a, b) => a[0].localeCompare(b[0], "es")),
-    };
-  }, [tx]);
+    return Array.from(s).sort((a, b) => a - b);
+  }, [tx, year]);
 
-  const monthlyTrend = useMemo(() => {
-    const map = new Map<number, { mes: number; ingreso: number; gasto: number }>();
+  /** Movimientos del periodo seleccionado. */
+  const periodoTx = useMemo(
+    () =>
+      tx.filter((t) => {
+        const iso = fechaToIso(t.fecha);
+        if (!iso || Number(iso.slice(0, 4)) !== year) return false;
+        return month ? Number(iso.slice(5, 7)) === month : true;
+      }),
+    [tx, year, month],
+  );
+
+  /** Periodo anterior (mes anterior, o año anterior si la vista es anual). */
+  const previoTx = useMemo(() => {
+    const [pYear, pMonth] = month
+      ? month === 1
+        ? [year - 1, 12]
+        : [year, month - 1]
+      : [year - 1, null];
+    return tx.filter((t) => {
+      const iso = fechaToIso(t.fecha);
+      if (!iso || Number(iso.slice(0, 4)) !== pYear) return false;
+      return pMonth ? Number(iso.slice(5, 7)) === pMonth : true;
+    });
+  }, [tx, year, month]);
+
+  const act = useMemo(() => totales(periodoTx), [periodoTx]);
+  const prev = useMemo(() => totales(previoTx), [previoTx]);
+
+  const top5Gastos = useMemo(() => topCategorias(periodoTx, "Gasto", 5), [periodoTx]);
+  const top3Ingresos = useMemo(() => topCategorias(periodoTx, "Ingreso", 3), [periodoTx]);
+
+  const tendencia = useMemo(() => {
+    const map = new Map<number, { mes: string; Ingresos: number; Gastos: number }>();
     for (const t of tx) {
       const iso = fechaToIso(t.fecha);
       if (!iso || Number(iso.slice(0, 4)) !== year) continue;
       const m = Number(iso.slice(5, 7));
-      const usd = Number(t.montoUsd) || 0;
-      if (!map.has(m)) map.set(m, { mes: m, ingreso: 0, gasto: 0 });
+      if (!map.has(m)) map.set(m, { mes: MESES_ABR[m - 1], Ingresos: 0, Gastos: 0 });
       const d = map.get(m)!;
-      if (t.tipo === "Ingreso") d.ingreso += usd;
-      else d.gasto += usd;
+      const usd = Number(t.montoUsd) || 0;
+      if (t.tipo === "Ingreso") d.Ingresos += usd;
+      else if (t.tipo === "Gasto") d.Gastos += usd;
     }
-    return Array.from(map.values()).sort((a, b) => a.mes - b.mes);
+    return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
   }, [tx, year]);
 
-  const monedaDist = useMemo(() => {
-    const counts: Record<string, number> = { USD: 0, "Bolívares": 0, Pesos: 0 };
-    for (const t of filteredTx) {
-      const m = t.moneda || "USD";
-      counts[m] = (counts[m] || 0) + 1;
+  /** Totales en la moneda original de cada movimiento (sin convertir). */
+  const porMoneda = useMemo(() => {
+    const base = {
+      USD: { ing: 0, gas: 0, n: 0 },
+      Bolívares: { ing: 0, gas: 0, n: 0 },
+      Pesos: { ing: 0, gas: 0, n: 0 },
+    };
+    for (const t of periodoTx) {
+      // Los movimientos sin moneda marcada se cuentan como USD (es el caso
+      // por defecto en la carga manual y en el OCR).
+      const m = t.moneda === "Bolívares" || t.moneda === "Pesos" ? t.moneda : "USD";
+      const monto = Number(t.monto) || 0;
+      base[m].n++;
+      if (t.tipo === "Ingreso") base[m].ing += monto;
+      else if (t.tipo === "Gasto") base[m].gas += monto;
     }
-    return Object.entries(counts).filter(([, v]) => v > 0).map(([k, v]) => ({ name: k, value: v }));
-  }, [filteredTx]);
+    return base;
+  }, [periodoTx]);
 
-  const bcvTasa = useMemo(() => {
-    if (!month) return null;
-    const ym = `${year}-${String(month).padStart(2, "0")}`;
-    for (let d = 31; d >= 1; d--) {
-      const iso = `${ym}-${String(d).padStart(2, "0")}`;
-      if (bcvRates[iso]) return bcvRates[iso];
-    }
-    return null;
+  const tasaBcv = useMemo(() => {
+    const ym = month ? `${year}-${String(month).padStart(2, "0")}` : null;
+    const keys = Object.keys(bcvRates).sort();
+    const match = ym
+      ? keys.filter((k) => k.startsWith(ym))
+      : keys.filter((k) => k.startsWith(String(year)));
+    return match.length ? bcvRates[match[match.length - 1]] : null;
   }, [bcvRates, year, month]);
 
-  const nIng = filteredTx.filter((r) => r.tipo === "Ingreso").length;
-  const nGas = filteredTx.filter((r) => r.tipo === "Gasto").length;
-  const coveragePct = (cov: number, total: number) => total > 0 ? `${Math.round((cov / total) * 100)}%` : "—";
-
-  const kpiColor = (v: number) =>
-    v > 0 ? "text-[#74A67E]" : v < 0 ? "text-[#C25E45]" : "text-muted-foreground";
-
-  const mesLabel = month ? MESES_ES[month - 1] : "todo el año";
-
-  const clearFilters = () => {
-    setMonth(null);
-    setFilterTipo("todos");
-    setFilterMoneda("");
-    setFilterCategoria("");
-    setPersonaSelected(null);
-    setPersonaQ("");
-  };
-
-  const anyFilter = !!(month || filterTipo !== "todos" || filterMoneda || filterCategoria || personaSelected);
+  const periodoLabel = month ? `${MESES_ES[month - 1]} ${year}` : `Año ${year}`;
+  const periodoPrevioLabel = month
+    ? month === 1
+      ? `Diciembre ${year - 1}`
+      : `${MESES_ES[month - 2]} ${year}`
+    : `Año ${year - 1}`;
 
   return (
-    <div className="space-y-4">
-
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <span className="w-2 h-2 rounded-full bg-[#D4AC5C] ring-2 ring-[#D4AC5C]/30" />
-          <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-[#D4AC5C]">
-            {year} · {month ? mesLabel : "anual"}
+    <div className="space-y-3">
+      {/* ---------- Encabezado y selector de periodo ---------- */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-baseline gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Resumen ejecutivo
           </span>
+          <h1 className="text-lg font-bold tracking-tight">{periodoLabel}</h1>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-xl font-bold">Panorama de Ingresos y Gastos</h1>
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="outline" className="font-mono text-xs gap-1">
-              🗓 {MESES_ABR[(allMonths[0] || 1) - 1]} – {MESES_ABR[(allMonths[allMonths.length - 1] || new Date().getMonth() + 1) - 1]} {year}
-            </Badge>
-            <Badge variant="outline" className="font-mono text-xs gap-1">
-              🧾 {tx.length} movimientos
-            </Badge>
-          </div>
-        </div>
-      </div>
-
-      {/* Filter bar */}
-      <div className="sticky top-0 z-40 -mx-2 px-2 py-3 bg-background/90 backdrop-blur-md border rounded-xl">
-        <div className="flex flex-wrap items-start gap-3">
-          {/* Year */}
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground">Año</span>
-            <div className="flex flex-wrap gap-1.5">
-              {years.map((y) => (
-                <button key={y}
-                  onClick={() => { if (year !== y) setYear(y); else setYear(y); }}
-                  className={"px-3 py-1.5 text-xs rounded-full border font-medium transition " +
-                    (year === y ? "bg-[#D4AC5C]/15 border-[#D4AC5C] text-[#D4AC5C]" : "bg-card border-border text-muted-foreground hover:border-[#D4AC5C]")}>
-                  {y}
-                </button>
-              ))}
-            </div>
-          </div>
-          {/* Month */}
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground">Mes</span>
-            <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-1">
+            {years.map((y) => (
               <button
-                onClick={() => setMonth(null)}
-                className={"px-2.5 py-1.5 text-xs rounded-full border font-medium transition " +
-                  (!month ? "bg-primary/15 border-primary text-primary" : "bg-card border-border text-muted-foreground hover:border-[#D4AC5C]")}>
-              Todo
+                key={y}
+                onClick={() => setYear(y)}
+                className={
+                  "rounded-full border px-2.5 py-1 text-[11px] font-medium transition " +
+                  (year === y
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-card text-muted-foreground hover:border-primary/50")
+                }
+              >
+                {y}
               </button>
-              {allMonths.map((m) => (
-                <button key={m}
-                  onClick={() => setMonth(m)}
-                  className={"px-2.5 py-1.5 text-xs rounded-full border font-medium transition " +
-                    (month === m ? "bg-[#D4AC5C]/15 border-[#D4AC5C] text-[#D4AC5C]" : "bg-card border-border text-muted-foreground hover:border-[#D4AC5C]")}>
-                  {MESES_ABR[m - 1]}
-                </button>
-              ))}
-            </div>
+            ))}
           </div>
-          {/* Tipo */}
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground">Tipo</span>
-            <div className="flex gap-1.5">
-              {[{ v: "todos", l: "Todos" }, { v: "Ingreso", l: "↑ Ingresos" }, { v: "Gasto", l: "↓ Gastos" }].map(({ v, l }) => (
-                <button key={v}
-                  onClick={() => setFilterTipo(v)}
-                  className={"px-3 py-1.5 text-xs rounded-full border font-medium transition " +
-                    (filterTipo === v ? "bg-primary/15 border-primary text-primary" : "bg-card border-border text-muted-foreground hover:border-[#D4AC5C]")}>
-                  {l}
-                </button>
-              ))}
-            </div>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setMonth(null)}
+              className={
+                "rounded-full border px-2 py-1 text-[11px] font-medium transition " +
+                (!month
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border bg-card text-muted-foreground hover:border-primary/50")
+              }
+            >
+              Todo el año
+            </button>
+            {mesesConDatos.map((m) => (
+              <button
+                key={m}
+                onClick={() => setMonth(m)}
+                className={
+                  "rounded-full border px-2 py-1 text-[11px] font-medium transition " +
+                  (month === m
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-card text-muted-foreground hover:border-primary/50")
+                }
+              >
+                {MESES_ABR[m - 1]}
+              </button>
+            ))}
           </div>
-          {/* Moneda */}
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground">Moneda</span>
-            <div className="flex gap-1.5 flex-wrap">
-              {["", "USD", "Bolívares", "Pesos"].map((m) => (
-                <button key={m || "todas"}
-                  onClick={() => setFilterMoneda(m)}
-                  className={"px-2.5 py-1.5 text-xs rounded-full border font-medium transition " +
-                    (filterMoneda === m ? "bg-primary/15 border-primary text-primary" : "bg-card border-border text-muted-foreground hover:border-[#D4AC5C]")}>
-                  {m || "Todas"}
-                </button>
-              ))}
-            </div>
+        </div>
+      </div>
+
+      {periodoTx.length === 0 ? (
+        <Card className="p-12 text-center">
+          <p className="text-muted-foreground">No hay movimientos registrados en {periodoLabel}.</p>
+        </Card>
+      ) : (
+        <>
+          {/* ---------- Los números que importan + resumen ---------- */}
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Card className="p-3.5">
+              <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <ArrowUp className="h-3 w-3" style={{ color: C_ING }} aria-hidden />
+                Ingresos
+              </p>
+              <p className="mt-1 text-xl font-bold tracking-tight tabular-nums">
+                US$ {$0(act.ing)}
+              </p>
+              <Delta pct={variacion(act.ing, prev.ing)} />
+            </Card>
+
+            <Card className="p-3.5">
+              <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <ArrowDown className="h-3 w-3" style={{ color: C_GAS }} aria-hidden />
+                Gastos
+              </p>
+              <p className="mt-1 text-xl font-bold tracking-tight tabular-nums">
+                US$ {$0(act.gas)}
+              </p>
+              <Delta pct={variacion(act.gas, prev.gas)} invertido />
+            </Card>
+
+            <Card className="p-3.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Balance
+              </p>
+              <p
+                className="mt-1 text-xl font-bold tracking-tight tabular-nums"
+                style={{ color: act.neto >= 0 ? C_ING : C_GAS }}
+              >
+                {act.neto >= 0 ? "+" : "−"}US$ {$0(Math.abs(act.neto))}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                {act.neto >= 0 ? "Superávit" : "Déficit"} ·{" "}
+                {act.ing > 0
+                  ? `${((act.neto / act.ing) * 100).toFixed(0)}% de los ingresos`
+                  : "sin ingresos"}
+              </p>
+            </Card>
+
+            {/* 4ª tarjeta: el resumen en palabras */}
+            <Card
+              className="border-l-[3px] p-3.5"
+              style={{ borderLeftColor: act.neto >= 0 ? C_ING : C_GAS }}
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                En resumen
+              </p>
+              <p className="mt-1 text-[11px] leading-snug">
+                {act.neto >= 0 ? "Ingresó" : "Faltó"} <b>US$ {$(Math.abs(act.neto))}</b>{" "}
+                {act.neto >= 0 ? "más de lo gastado" : "para cubrir los gastos"}
+                {top5Gastos[0] && (
+                  <>
+                    . Mayor gasto: <b>{top5Gastos[0][0]}</b>
+                  </>
+                )}
+                {prev.ing || prev.gas ? (
+                  <>
+                    . Vs. {periodoPrevioLabel.toLowerCase()}: ingresos{" "}
+                    {act.ing >= prev.ing ? "↑" : "↓"}, gastos {act.gas >= prev.gas ? "↑" : "↓"}
+                  </>
+                ) : null}
+                .
+              </p>
+            </Card>
           </div>
-          {/* Persona */}
-          <div className="relative flex-1 min-w-[140px] max-w-[200px]">
-            <span className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground mb-1 block">Persona</span>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input value={personaSelected ?? personaQ}
-                onChange={(e) => { setPersonaQ(e.target.value); setPersonaSelected(null); }}
-                onFocus={() => { if (personaSelected) { setPersonaQ(""); setPersonaSelected(null); } }}
-                placeholder="Buscar..." className="h-8 pl-8 pr-8 text-xs" />
-              {personaSelected && (
-                <button onClick={() => { setPersonaSelected(null); setPersonaQ(""); }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 hover:bg-accent">
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-              {personaSuggestions.length > 0 && !personaSelected && (
-                <div className="absolute z-50 mt-1 w-full rounded-lg border bg-popover shadow-md">
-                  {personaSuggestions.map((s) => (
-                    <button key={s.nombre}
-                      onClick={() => { setPersonaSelected(s.nombre); setPersonaQ(""); }}
-                      className="block w-full px-3 py-1.5 text-left text-xs hover:bg-accent first:rounded-t-lg last:rounded-b-lg">
-                      {s.nombre}
-                    </button>
-                  ))}
+
+          {/* ---------- Tops + gráfico, en una sola fila ---------- */}
+          <div className="grid gap-3 lg:grid-cols-3">
+            <TopLista
+              titulo="En qué se gastó más — Top 5"
+              datos={top5Gastos}
+              color={C_GAS}
+              total={act.gas}
+            />
+            <TopLista
+              titulo="De dónde vino el dinero — Top 3"
+              datos={top3Ingresos}
+              color={C_ING}
+              total={act.ing}
+            />
+
+            {tendencia.length > 1 ? (
+              <Card className="p-4">
+                <div className="mb-2 flex items-baseline justify-between">
+                  <h3 className="text-xs font-semibold">Mes a mes · {year}</h3>
+                  <span className="text-[10px] text-muted-foreground">USD</span>
                 </div>
-              )}
-            </div>
-          </div>
-          <button onClick={clearFilters}
-            className="px-3 py-1.5 text-xs rounded-full border border-border text-muted-foreground hover:text-[#C25E45] hover:border-[#C25E45] transition self-end">
-            Limpiar
-          </button>
-        </div>
-        <div className="mt-2 text-[11px] text-muted-foreground">
-          Mostrando <b className="text-foreground">{filteredTx.length}</b> de {tx.length} movimientos
-          {anyFilter && (
-            <button onClick={clearFilters} className="ml-2 text-[#C25E45] hover:underline">(quitar filtros)</button>
-          )}
-        </div>
-      </div>
-
-      {/* Insight */}
-      {filteredTx.length > 0 && (() => {
-        const balTxt = monthData.neto >= 0
-          ? `los <b>ingresos superan a los gastos</b> en aprox. <b>US$ ${$(monthData.neto)}</b>`
-          : `los <b>gastos superan a los ingresos</b> en aprox. <b>US$ ${$(Math.abs(monthData.neto))}</b>`;
-        const topGas = topCategorias.gasto[0];
-        const catTxt = topGas ? ` · Mayor gasto: <b>${topGas[0]}</b> (${$(topGas[1])})` : "";
-        return (
-          <div className="border-l-3 border-[#D4AC5C] bg-card border rounded-lg px-4 py-3 text-sm text-muted-foreground"
-            dangerouslySetInnerHTML={{ __html: `Con los filtros actuales (${filteredTx.length} movimientos), ${balTxt}.${catTxt}` }} />
-        );
-      })()}
-
-      {/* KPI Cards */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="relative pt-0 overflow-hidden" style={{}}>
-          <div className="h-[3px] bg-[#74A67E] rounded-t-lg" />
-          <div className="p-4">
-            <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold tracking-wider uppercase">
-              Ingresos (USD aprox.)
-              <Badge variant="outline" className="font-mono text-[9px] bg-[#74A67E]/10 text-[#74A67E] border-[#74A67E]/30">
-                {coveragePct(filteredTx.filter(r => r.tipo === "Ingreso" && r.montoUsd != null).length, nIng)}
-              </Badge>
-            </div>
-            <p className="text-[#74A67E] text-2xl font-bold mt-1.5 tracking-tight">US$ {$(monthData.ing)}</p>
-            <p className="text-[11px] text-muted-foreground font-mono">{nIng} movimientos</p>
-          </div>
-        </Card>
-        <Card className="relative pt-0 overflow-hidden">
-          <div className="h-[3px] bg-[#C25E45] rounded-t-lg" />
-          <div className="p-4">
-            <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold tracking-wider uppercase">
-              Gastos (USD aprox.)
-              <Badge variant="outline" className="font-mono text-[9px] bg-[#C25E45]/10 text-[#C25E45] border-[#C25E45]/30">
-                {coveragePct(filteredTx.filter(r => r.tipo === "Gasto" && r.montoUsd != null).length, nGas)}
-              </Badge>
-            </div>
-            <p className="text-[#C25E45] text-2xl font-bold mt-1.5 tracking-tight">US$ {$(monthData.gas)}</p>
-            <p className="text-[11px] text-muted-foreground font-mono">{nGas} movimientos</p>
-          </div>
-        </Card>
-        <Card className="relative pt-0 overflow-hidden">
-          <div className="h-[3px] bg-[#D4AC5C] rounded-t-lg" />
-          <div className="p-4">
-            <div className="text-[11px] text-muted-foreground font-semibold tracking-wider uppercase">
-              Balance
-            </div>
-            <p className={`text-2xl font-bold mt-1.5 tracking-tight ${kpiColor(monthData.neto)}`}>
-              {monthData.neto >= 0 ? "+" : ""}US$ {$(monthData.neto)}
-            </p>
-            <p className="text-[11px] text-muted-foreground font-mono">
-              {monthData.ing > 0 ? `Margen: ${((monthData.neto / monthData.ing) * 100).toFixed(1)}%` : "Sin ingresos"}
-            </p>
-          </div>
-        </Card>
-        <Card className="relative pt-0 overflow-hidden">
-          <div className="h-[3px] bg-[#6C97A0] rounded-t-lg" />
-          <div className="p-4">
-            <div className="text-[11px] text-muted-foreground font-semibold tracking-wider uppercase">
-              Movimientos
-            </div>
-            <p className="text-foreground text-2xl font-bold mt-1.5 tracking-tight">{filteredTx.length}</p>
-            <p className="text-[11px] text-muted-foreground font-mono">{nIng} ingresos · {nGas} gastos</p>
-          </div>
-        </Card>
-      </div>
-
-      {/* Currency panels */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        {[
-          { moneda: "USD", label: "Dólares", tag: "USD", ing: monedaData.usdIng, gas: monedaData.usdGas, neto: monedaData.usdNeto, fmt: (v: number) => `US$ ${$(v)}`, color: "text-[#74A67E]" },
-          { moneda: "Bolívares", label: "Bolívares", tag: "Bs", ing: monedaData.bsIng, gas: monedaData.bsGas, neto: monedaData.bsNeto, fmt: (v: number) => `Bs. ${$(v)}`, color: "text-[#D4AC5C]" },
-          { moneda: "Pesos", label: "Pesos", tag: "COP", ing: monedaData.copIng, gas: monedaData.copGas, neto: monedaData.copNeto, fmt: (v: number) => `$ ${$(v)}`, color: "text-[#6C97A0]" },
-        ].map(({ moneda, label, tag, ing, gas, neto, fmt, color }) => (
-          <Card key={moneda} className="p-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className="font-bold">{label}</span>
-              <Badge variant="outline" className="font-mono text-[10px]">{tag}</Badge>
-            </div>
-            <div className="space-y-1.5 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">↑ Ingresos</span><span className="font-semibold text-[#74A67E]">{fmt(ing)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">↓ Gastos</span><span className="font-semibold text-[#C25E45]">{fmt(gas)}</span></div>
-              <div className="flex justify-between border-t pt-1.5 mt-1.5"><span className="font-medium">Balance</span><span className={"font-bold " + (neto >= 0 ? "text-[#74A67E]" : "text-[#C25E45]")}>{fmt(neto)}</span></div>
-            </div>
-            {moneda === "Bolívares" && bcvTasa && (
-              <div className="mt-2 text-[10px] text-right text-muted-foreground">Tasa BCV: {$(bcvTasa)} Bs/$</div>
+                <div className="h-[190px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={tendencia}
+                      barGap={1}
+                      margin={{ top: 4, right: 4, bottom: 0, left: -12 }}
+                    >
+                      <CartesianGrid
+                        vertical={false}
+                        stroke="currentColor"
+                        className="text-border"
+                        strokeDasharray="3 3"
+                      />
+                      <XAxis
+                        dataKey="mes"
+                        tick={{ fontSize: 10 }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 10 }}
+                        axisLine={false}
+                        tickLine={false}
+                        width={48}
+                        tickFormatter={(v) => `$${$0(v)}`}
+                      />
+                      <ReTooltip
+                        contentStyle={{
+                          borderRadius: 8,
+                          border: "1px solid hsl(var(--border))",
+                          background: "hsl(var(--popover))",
+                          fontSize: 11,
+                        }}
+                        formatter={(v: number, name: string) => [`US$ ${$0(v)}`, name]}
+                        cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 10, paddingTop: 4 }} iconSize={8} />
+                      <Bar dataKey="Ingresos" fill={C_ING} radius={[3, 3, 0, 0]} maxBarSize={14} />
+                      <Bar dataKey="Gastos" fill={C_GAS} radius={[3, 3, 0, 0]} maxBarSize={14} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            ) : (
+              <ReporteEjecutivo tx={tx} year={year} month={month} periodoLabel={periodoLabel} />
             )}
-          </Card>
-        ))}
-      </div>
-
-      {/* Charts */}
-      {monthlyTrend.length > 0 && (
-        <Card className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-bold text-sm">Tendencia mensual ({year})</h3>
-            <span className="text-[11px] text-muted-foreground">USD aprox.</span>
           </div>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthlyTrend.map(d => ({ ...d, mes: MESES_ABR[d.mes - 1] }))}>
-                <XAxis dataKey="mes" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${Math.round(v)}`} />
-                <ReTooltip contentStyle={{ borderRadius: 8, border: "1px solid hsl(var(--border))" }} formatter={(v: number) => `US$ ${$0(v)}`} />
-                <Bar dataKey="ingreso" name="Ingresos" fill="#74A67E" radius={[4, 4, 0, 0]} maxBarSize={36} />
-                <Bar dataKey="gasto" name="Gastos" fill="#C25E45" radius={[4, 4, 0, 0]} maxBarSize={36} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-      )}
 
-      {/* Category charts + donut */}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Card className="p-4">
-          <h3 className="font-bold text-sm mb-3 text-[#C25E45]">↓ Gastos por categoría</h3>
-          {topCategorias.gasto.length > 0 ? (
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={topCategorias.gasto.map(([cat, val]) => ({ cat: cat.length > 20 ? cat.slice(0, 20) + "…" : cat, val }))} layout="vertical">
-                  <XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${Math.round(v)}`} />
-                  <YAxis type="category" dataKey="cat" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={140} />
-                  <ReTooltip contentStyle={{ borderRadius: 8, border: "1px solid hsl(var(--border))" }} formatter={(v: number) => `US$ ${$0(v)}`} />
-                  <Bar dataKey="val" fill="#C25E45" radius={[0, 4, 4, 0]} maxBarSize={18} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <p className="py-8 text-center text-xs text-muted-foreground">Sin datos</p>
-          )}
-        </Card>
-        <Card className="p-4">
-          <h3 className="font-bold text-sm mb-3 text-[#74A67E]">↑ Ingresos por categoría</h3>
-          {topCategorias.ingreso.length > 0 ? (
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={topCategorias.ingreso.map(([cat, val]) => ({ cat: cat.length > 20 ? cat.slice(0, 20) + "…" : cat, val }))} layout="vertical">
-                  <XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${Math.round(v)}`} />
-                  <YAxis type="category" dataKey="cat" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={140} />
-                  <ReTooltip contentStyle={{ borderRadius: 8, border: "1px solid hsl(var(--border))" }} formatter={(v: number) => `US$ ${$0(v)}`} />
-                  <Bar dataKey="val" fill="#74A67E" radius={[0, 4, 4, 0]} maxBarSize={18} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <p className="py-8 text-center text-xs text-muted-foreground">Sin datos</p>
-          )}
-        </Card>
-      </div>
+          {/* ---------- Puntos de atención + moneda local ---------- */}
+          <div className="grid gap-3 lg:grid-cols-2">
+            {tendencia.length > 1 && (
+              <ReporteEjecutivo tx={tx} year={year} month={month} periodoLabel={periodoLabel} />
+            )}
 
-      {monedaDist.length > 1 && (
-        <Card className="p-4">
-          <h3 className="font-bold text-sm mb-3">Uso por moneda</h3>
-          <div className="h-56 max-w-xs mx-auto">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={monedaDist} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={3}>
-                  {monedaDist.map((entry, i) => (
-                    <Cell key={entry.name} fill={[ "#D4AC5C", "#6C97A0", "#74A67E" ][i % 3]} />
-                  ))}
-                </Pie>
-                <Legend formatter={(v) => <span className="text-xs">{v}</span>} />
-                <ReTooltip contentStyle={{ borderRadius: 8, border: "1px solid hsl(var(--border))" }} formatter={(v: number, n: string) => [`${v} movimientos`, n]} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-      )}
-
-      {/* Transaction table */}
-      {filteredTx.length > 0 && (
-        <Card className="p-4">
-          <h3 className="font-bold text-sm mb-3">Movimientos</h3>
-          <div className="overflow-x-auto border rounded-lg">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-muted/50 text-muted-foreground font-semibold text-[10px] uppercase tracking-wider">
-                  <th className="p-2 text-left">Fecha</th>
-                  <th className="p-2 text-left">Tipo</th>
-                  <th className="p-2 text-left">Categoría</th>
-                  <th className="p-2 text-left">Descripción</th>
-                  <th className="p-2 text-left">Moneda</th>
-                  <th className="p-2 text-right">Monto</th>
-                  <th className="p-2 text-right">USD</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredTx.slice(0, 20).map((r) => (
-                  <tr key={r.id} className="border-t hover:bg-muted/20">
-                    <td className="p-2 text-muted-foreground font-mono">{r.fecha}</td>
-                    <td className="p-2">
-                      <span className={"inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full " +
-                        (r.tipo === "Ingreso" ? "bg-[#74A67E]/15 text-[#74A67E]" : "bg-[#C25E45]/15 text-[#C25E45]")}>
-                        {r.tipo === "Ingreso" ? "↑" : "↓"} {r.tipo}
-                      </span>
-                    </td>
-                    <td className="p-2 text-muted-foreground">{r.categoria}</td>
-                    <td className="p-2 max-w-[200px] truncate text-foreground" title={r.descripcion}>{r.descripcion || "—"}</td>
-                    <td className="p-2 text-muted-foreground">{r.moneda || "USD"}</td>
-                    <td className="p-2 text-right font-mono">{$(Number(r.monto) || 0)}</td>
-                    <td className="p-2 text-right font-mono">{r.montoUsd != null ? `US$ ${$(Number(r.montoUsd))}` : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {filteredTx.length > 20 && (
-              <div className="p-2 text-center text-[11px] text-muted-foreground border-t">
-                Mostrando 20 de {filteredTx.length} movimientos
+            <Card className="p-4">
+              <div className="mb-2 flex items-baseline justify-between">
+                <h3 className="text-xs font-semibold">Movimientos en cada moneda</h3>
+                {tasaBcv && (
+                  <span className="text-[10px] text-muted-foreground">BCV {$(tasaBcv)} Bs/US$</span>
+                )}
               </div>
-            )}
+              <div className="grid gap-2 sm:grid-cols-3">
+                {(
+                  [
+                    ["Dólares", "US$", porMoneda.USD],
+                    ["Bolívares", "Bs.", porMoneda.Bolívares],
+                    ["Pesos", "COP $", porMoneda.Pesos],
+                  ] as const
+                ).map(([label, simbolo, v]) => (
+                  <div
+                    key={label}
+                    className={"rounded-lg border p-2.5 " + (v.n === 0 ? "opacity-50" : "")}
+                  >
+                    <p className="mb-1 flex items-baseline justify-between text-xs font-medium">
+                      {label}
+                      <span className="text-[10px] font-normal text-muted-foreground">
+                        {v.n} mov.
+                      </span>
+                    </p>
+                    <dl className="space-y-0.5 text-[11px]">
+                      <div className="flex justify-between gap-2">
+                        <dt className="text-muted-foreground">↑ Ingresos</dt>
+                        <dd className="font-semibold tabular-nums">
+                          {simbolo} {$0(v.ing)}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <dt className="text-muted-foreground">↓ Gastos</dt>
+                        <dd className="font-semibold tabular-nums">
+                          {simbolo} {$0(v.gas)}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-2 border-t pt-0.5">
+                        <dt className="text-muted-foreground">Balance</dt>
+                        <dd
+                          className="font-semibold tabular-nums"
+                          style={{ color: v.ing - v.gas >= 0 ? C_ING : C_GAS }}
+                        >
+                          {v.ing - v.gas < 0 ? "−" : ""}
+                          {simbolo} {$0(Math.abs(v.ing - v.gas))}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+                Cifras en la moneda original de cada movimiento, sin convertir. Los montos de
+                distinta moneda no se pueden sumar entre sí.
+              </p>
+            </Card>
           </div>
-        </Card>
+        </>
       )}
-
-      {/* Empty state */}
-      {filteredTx.length === 0 && (
-        <div className="py-16 text-center text-muted-foreground border-2 border-dashed border-border rounded-xl">
-          No hay movimientos que coincidan con estos filtros. Prueba a quitar alguno.
-        </div>
-      )}
-
-      <ReporteEjecutivo tx={tx} year={year} ingresos={ingresos} gastos={gastos} bcvRates={bcvRates} />
     </div>
   );
 }

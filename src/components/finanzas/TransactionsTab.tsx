@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  firmaTransaccion,
   useTransactions,
   type Student,
   type Transaction,
@@ -8,39 +9,87 @@ import {
   calcularCuotasDebidas,
   cuotaMensualUSD,
   currentYm,
+  formatTasa,
   precioClase,
+  redondearTasa,
 } from "@/lib/fees-logic";
 import { exportTransactionsExcel } from "@/lib/excel-export";
-import { parseExcelToTransactions } from "@/lib/excel-import";
+import { parseExcelToTransactions, rellenarTasasFaltantes } from "@/lib/excel-import";
 import { TransactionEditDialog } from "@/components/finanzas/TransactionEditDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Plus, Trash2, Download, Upload, Settings, Pencil, Save, X,
-  MessageCircle, ClipboardCopy,
+  Plus,
+  Trash2,
+  Download,
+  Upload,
+  Settings,
+  Pencil,
+  Save,
+  X,
+  MessageCircle,
+  ClipboardCopy,
 } from "lucide-react";
 import { toast } from "sonner";
 
 // ------------------------- Helpers -------------------------
 
 const MES_MAP: Record<string, string> = {
-  enero:"ene", febrero:"feb", marzo:"mar", abril:"abr", mayo:"may", junio:"jun",
-  julio:"jul", agosto:"ago", septiembre:"sep", octubre:"oct", noviembre:"nov", diciembre:"dic",
-  "01":"ene","02":"feb","03":"mar","04":"abr","05":"may","06":"jun",
-  "07":"jul","08":"ago","09":"sep","10":"oct","11":"nov","12":"dic",
+  enero: "ene",
+  febrero: "feb",
+  marzo: "mar",
+  abril: "abr",
+  mayo: "may",
+  junio: "jun",
+  julio: "jul",
+  agosto: "ago",
+  septiembre: "sep",
+  octubre: "oct",
+  noviembre: "nov",
+  diciembre: "dic",
+  "01": "ene",
+  "02": "feb",
+  "03": "mar",
+  "04": "abr",
+  "05": "may",
+  "06": "jun",
+  "07": "jul",
+  "08": "ago",
+  "09": "sep",
+  "10": "oct",
+  "11": "nov",
+  "12": "dic",
 };
 
 const MESES_NOMBRE = [
-  "enero", "febrero", "marzo", "abril", "mayo", "junio",
-  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "octubre",
+  "noviembre",
+  "diciembre",
 ];
 
 function mesLabel(ym: string): string {
@@ -167,15 +216,10 @@ function SimpleListEditor({
       </div>
       <ul className="grid gap-2 sm:grid-cols-2">
         {items.map((c, i) => (
-          <li
-            key={i}
-            className="flex items-center gap-1 rounded-md border bg-card px-2 py-1"
-          >
+          <li key={i} className="flex items-center gap-1 rounded-md border bg-card px-2 py-1">
             <Input
               value={c}
-              onChange={(e) =>
-                setItems(items.map((x, j) => (j === i ? e.target.value : x)))
-              }
+              onChange={(e) => setItems(items.map((x, j) => (j === i ? e.target.value : x)))}
               className="h-8 border-0 shadow-none focus-visible:ring-0"
             />
             <Button
@@ -241,39 +285,26 @@ function StudentEditDialog({
 
   const ymNow = currentYm();
   const cuotaAplicada = cuotaMensualUSD(draft, ymNow);
-  const lastYm = lastPay
-    ? (fechaToIso(lastPay.fecha) || "").slice(0, 7)
-    : null;
+  const lastYm = lastPay ? (fechaToIso(lastPay.fecha) || "").slice(0, 7) : null;
   const deuda = calcularCuotasDebidas(draft, lastYm, ymNow, lastPay?.monto);
   const esPorClase = draft.condicion === "ClasePorClase";
   const precioClaseActual = precioClase(ymNow);
 
-  const placeholderExamples = [
-    "$20.00",
-    "$15.00",
-    "$13.50",
-    "$0.00",
-    "$25.00",
-  ];
-  const placeholder =
-    placeholderExamples[draft.nombre.length % placeholderExamples.length];
+  const placeholderExamples = ["$20.00", "$15.00", "$13.50", "$0.00", "$25.00"];
+  const placeholder = placeholderExamples[draft.nombre.length % placeholderExamples.length];
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>
-            {student ? "Modificar integrante" : "Nuevo integrante"}
-          </DialogTitle>
+          <DialogTitle>{student ? "Modificar integrante" : "Nuevo integrante"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div>
             <label className="text-xs text-muted-foreground">Nombre</label>
             <Input
               value={draft.nombre}
-              onChange={(e) =>
-                setDraft({ ...draft, nombre: e.target.value })
-              }
+              onChange={(e) => setDraft({ ...draft, nombre: e.target.value })}
             />
           </div>
           <div>
@@ -298,9 +329,7 @@ function StudentEditDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-muted-foreground">
-                Condición
-              </label>
+              <label className="text-xs text-muted-foreground">Condición</label>
               <Select
                 value={draft.condicion ?? "Miembro"}
                 onValueChange={(v) =>
@@ -315,19 +344,13 @@ function StudentEditDialog({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Miembro">Miembro</SelectItem>
-                  <SelectItem value="Probacionista">
-                    Probacionista
-                  </SelectItem>
-                  <SelectItem value="ClasePorClase">
-                    Clase por clase
-                  </SelectItem>
+                  <SelectItem value="Probacionista">Probacionista</SelectItem>
+                  <SelectItem value="ClasePorClase">Clase por clase</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">
-                Actividad
-              </label>
+              <label className="text-xs text-muted-foreground">Actividad</label>
               <Select
                 value={draft.actividad ?? "Activo"}
                 onValueChange={(v) =>
@@ -352,9 +375,7 @@ function StudentEditDialog({
               id="celador"
               type="checkbox"
               checked={!!draft.celador}
-              onChange={(e) =>
-                setDraft({ ...draft, celador: e.target.checked })
-              }
+              onChange={(e) => setDraft({ ...draft, celador: e.target.checked })}
             />
             <label htmlFor="celador" className="text-sm">
               Es celador(a)
@@ -362,9 +383,7 @@ function StudentEditDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-muted-foreground">
-                Tarifa mensual USD
-              </label>
+              <label className="text-xs text-muted-foreground">Tarifa mensual USD</label>
               <Input
                 type="number"
                 step="0.01"
@@ -379,44 +398,30 @@ function StudentEditDialog({
               />
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">
-                Cuota mensual
-              </label>
+              <label className="text-xs text-muted-foreground">Cuota mensual</label>
               <p className="text-sm font-medium">${cuotaAplicada.toFixed(2)}</p>
             </div>
           </div>
           <div>
-            <label className="text-xs text-muted-foreground">
-              Teléfono (WhatsApp)
-            </label>
+            <label className="text-xs text-muted-foreground">Teléfono (WhatsApp)</label>
             <Input
               value={draft.telefono ?? ""}
               placeholder="+58 4XX-XXXXXXX"
-              onChange={(e) =>
-                setDraft({ ...draft, telefono: e.target.value })
-              }
+              onChange={(e) => setDraft({ ...draft, telefono: e.target.value })}
             />
           </div>
           <div>
-            <label className="text-xs text-muted-foreground">
-              Fecha de ingreso
-            </label>
+            <label className="text-xs text-muted-foreground">Fecha de ingreso</label>
             <Input
               type="date"
               value={draft.fechaIngreso ?? ""}
-              onChange={(e) =>
-                setDraft({ ...draft, fechaIngreso: e.target.value })
-              }
+              onChange={(e) => setDraft({ ...draft, fechaIngreso: e.target.value })}
             />
           </div>
           {esPorClase && (
             <div>
-              <label className="text-xs text-muted-foreground">
-                Precio por clase
-              </label>
-              <p className="text-sm font-medium">
-                ${precioClaseActual.toFixed(2)}
-              </p>
+              <label className="text-xs text-muted-foreground">Precio por clase</label>
+              <p className="text-sm font-medium">${precioClaseActual.toFixed(2)}</p>
             </div>
           )}
           {deuda.totalUSD > 0 && (
@@ -427,11 +432,7 @@ function StudentEditDialog({
         </div>
         <DialogFooter>
           {student && onDelete && (
-            <Button
-              variant="destructive"
-              onClick={onDelete}
-              className="mr-auto"
-            >
+            <Button variant="destructive" onClick={onDelete} className="mr-auto">
               <Trash2 className="mr-1 h-4 w-4" /> Eliminar
             </Button>
           )}
@@ -500,6 +501,33 @@ export function TransactionsTab({
   const [filterBanco, setFilterBanco] = useState<string>("");
   const [filterMes, setFilterMes] = useState<string>("");
 
+  /**
+   * Movimientos repetidos: mismos fecha, tipo, categoría, descripción, moneda
+   * y monto. Se marca la 2ª aparición en adelante (la 1ª se considera la
+   * original) para poder revisarlas y borrar las sobrantes.
+   */
+  const idsDuplicados = useMemo(() => {
+    const vistas = new Set<string>();
+    const dup = new Set<string>();
+    for (const t of tx.list) {
+      const firma = firmaTransaccion(t);
+      if (vistas.has(firma)) dup.add(t.id);
+      else vistas.add(firma);
+    }
+    return dup;
+  }, [tx.list]);
+
+  /** Movimientos en Bs/Pesos que aún no tienen tasa de cambio asignada. */
+  const sinTasaCount = useMemo(
+    () =>
+      tx.list.filter(
+        (t) =>
+          (t.moneda === "Bolívares" || t.moneda === "Pesos") &&
+          !(t.tasa != null && Number(t.tasa) > 0),
+      ).length,
+    [tx.list],
+  );
+
   const filtered = useMemo(() => {
     const sq = searchQ.trim().toLowerCase();
     return tx.list.filter((r) => {
@@ -519,11 +547,7 @@ export function TransactionsTab({
       if (filterTipo && r.tipo !== filterTipo) return false;
       if (filterMoneda && r.moneda !== filterMoneda) return false;
       if (filterCategoria && r.categoria !== filterCategoria) return false;
-      if (
-        filterBanco === "__sin_banco__" &&
-        (r.banco || "") !== ""
-      )
-        return false;
+      if (filterBanco === "__sin_banco__" && (r.banco || "") !== "") return false;
       if (
         filterBanco &&
         filterBanco !== "__sin_banco__" &&
@@ -599,8 +623,10 @@ export function TransactionsTab({
       if (batchField === "fecha") next.fecha = batchValue;
       else if (batchField === "tipo") next.tipo = batchValue as "Ingreso" | "Gasto";
       else if (batchField === "categoria") next.categoria = batchValue;
-      else if (batchField === "moneda") next.moneda = batchValue as "USD" | "Bolívares" | "Pesos" | "";
-      else if (batchField === "tasa") next.tasa = batchValue ? Number(batchValue) : null;
+      else if (batchField === "moneda")
+        next.moneda = batchValue as "USD" | "Bolívares" | "Pesos" | "";
+      else if (batchField === "tasa")
+        next.tasa = batchValue ? redondearTasa(Number(batchValue)) : null;
       else if (batchField === "banco") next.banco = batchValue;
       else if (batchField === "mes") next.mes = batchValue;
       else if (batchField === "descripcion") next.descripcion = batchValue;
@@ -625,11 +651,8 @@ export function TransactionsTab({
       return;
     }
     const label =
-      from || to
-        ? `entre ${from || "inicio"} y ${to || "hoy"}`
-        : "TODAS las transacciones";
-    if (!confirm(`¿Eliminar ${filtered.length} transacciones ${label}?`))
-      return;
+      from || to ? `entre ${from || "inicio"} y ${to || "hoy"}` : "TODAS las transacciones";
+    if (!confirm(`¿Eliminar ${filtered.length} transacciones ${label}?`)) return;
     const idsRemove = new Set(filtered.map((r) => r.id));
     tx.removeMany(idsRemove);
     toast.success(`${idsRemove.size} eliminadas`);
@@ -644,7 +667,10 @@ export function TransactionsTab({
             variant="outline"
             size="sm"
             onClick={() => {
-              function hoy(): string { const d=new Date(); return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`; }
+              function hoy(): string {
+                const d = new Date();
+                return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+              }
               const empty: Transaction = {
                 fecha: hoy(),
                 mes: "",
@@ -678,8 +704,27 @@ export function TransactionsTab({
                   toast.error("Excel vacío o formato no reconocido");
                   return;
                 }
-                tx.append(mapped);
-                toast.success(`${mapped.length} transacciones importadas`);
+                // Completa la tasa de los movimientos en Bs/Pesos que vengan
+                // sin ella, usando el histórico de tasas BCV ya cargado.
+                const r = rellenarTasasFaltantes(mapped, bcvRates);
+                tx.append(r.rows);
+                toast.success(`${r.rows.length} transacciones importadas`);
+                const completadas = r.bsExactas + r.bsAproximadas + r.pesos;
+                if (completadas > 0) {
+                  toast.info(
+                    `Se completó la tasa de ${completadas} movimiento(s): ` +
+                      `${r.bsExactas} con la tasa BCV exacta del día` +
+                      (r.bsAproximadas ? `, ${r.bsAproximadas} con la más cercana` : "") +
+                      (r.pesos ? `, ${r.pesos} en pesos con la tasa por defecto` : ""),
+                    { duration: 9000 },
+                  );
+                }
+                if (r.bsSinTasa > 0) {
+                  toast.warning(
+                    `${r.bsSinTasa} movimiento(s) en bolívares quedaron sin tasa porque no hay ninguna registrada para esas fechas. Cárgalas en la pestaña Tasas BCV y vuelve a importar, o complétalas a mano.`,
+                    { duration: 12000 },
+                  );
+                }
               } catch (err) {
                 toast.error(`Error al leer Excel: ${(err as Error).message}`);
               }
@@ -689,12 +734,47 @@ export function TransactionsTab({
           <Button
             variant="outline"
             size="sm"
-            onClick={() =>
-              document.getElementById("importExcel")?.click()
-            }
+            onClick={() => document.getElementById("importExcel")?.click()}
           >
             <Upload className="mr-1 h-4 w-4" /> Importar Excel
           </Button>
+          {idsDuplicados.size > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-pink-300 bg-pink-100 px-2 py-1 text-xs dark:border-pink-900 dark:bg-pink-950/40">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-pink-400" />
+              {idsDuplicados.size} repetida(s)
+            </span>
+          )}
+          {sinTasaCount > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (
+                  !confirm(
+                    `Se va a completar la tasa de ${sinTasaCount} movimiento(s) que están en bolívares o pesos sin tasa, usando la tasa BCV de su fecha (o la más cercana), y se recalculará su monto en dólares.\n\nLos movimientos que ya tienen tasa NO se tocan.\n\n¿Continuar?`,
+                  )
+                )
+                  return;
+                const r = rellenarTasasFaltantes(tx.list, bcvRates);
+                tx.replaceAll(r.rows);
+                const ok = r.bsExactas + r.bsAproximadas + r.pesos;
+                toast.success(
+                  `Se completaron ${ok} movimiento(s): ${r.bsExactas} con la tasa exacta del día` +
+                    (r.bsAproximadas ? `, ${r.bsAproximadas} con la más cercana` : "") +
+                    (r.pesos ? `, ${r.pesos} en pesos` : ""),
+                  { duration: 9000 },
+                );
+                if (r.bsSinTasa > 0) {
+                  toast.warning(
+                    `${r.bsSinTasa} movimiento(s) en bolívares siguen sin tasa: no hay ninguna registrada para esas fechas. Cárgalas en la pestaña Tasas BCV.`,
+                    { duration: 12000 },
+                  );
+                }
+              }}
+            >
+              Completar tasas ({sinTasaCount})
+            </Button>
+          )}
           <Input
             value={searchQ}
             onChange={(e) => setSearchQ(e.target.value)}
@@ -729,7 +809,14 @@ export function TransactionsTab({
           <Button onClick={exportExcel}>
             <Download className="mr-2 h-4 w-4" /> Excel
           </Button>
-          <Button variant={selectMode ? "default" : "ghost"} size="sm" onClick={() => { setSelectMode(!selectMode); if (selectMode) setSelectedIds(new Set()); }}>
+          <Button
+            variant={selectMode ? "default" : "ghost"}
+            size="sm"
+            onClick={() => {
+              setSelectMode(!selectMode);
+              if (selectMode) setSelectedIds(new Set());
+            }}
+          >
             Seleccionar
           </Button>
           <Button variant="ghost" onClick={eliminarRango}>
@@ -800,10 +887,7 @@ export function TransactionsTab({
                 </select>
               </th>
               <th className="py-0.5 px-2 font-medium">
-                <Select
-                  value={filterBanco || undefined}
-                  onValueChange={(v) => setFilterBanco(v)}
-                >
+                <Select value={filterBanco || undefined} onValueChange={(v) => setFilterBanco(v)}>
                   <SelectTrigger className="h-auto border-0 p-0 shadow-none text-xs font-medium text-muted-foreground">
                     <SelectValue placeholder="Banco…" />
                   </SelectTrigger>
@@ -814,9 +898,7 @@ export function TransactionsTab({
                         {b}
                       </SelectItem>
                     ))}
-                    <SelectItem value="__sin_banco__">
-                      (sin banco)
-                    </SelectItem>
+                    <SelectItem value="__sin_banco__">(sin banco)</SelectItem>
                   </SelectContent>
                 </Select>
               </th>
@@ -830,122 +912,116 @@ export function TransactionsTab({
           <tbody>
             {filtered.map((r) => {
               const isSelected = selectMode && selectedIds.has(r.id);
+              const esDup = idsDuplicados.has(r.id);
               return (
-              <tr key={r.id}
-                className={`border-b last:border-0 cursor-default ${isSelected ? "bg-primary/10 ring-1 ring-inset ring-primary" : selectMode ? "hover:bg-accent/40" : ""}`}
-                onClick={() => selectMode && toggleSelect(r.id)}
-              >
-                <td className="py-0.5 px-2">{r.fecha}</td>
-                <td className="py-0.5 px-2 text-xs">{r.tipo}</td>
-                <td className="py-0.5 px-2 text-xs">{r.categoria}</td>
-                <td className="py-0.5 px-2">{r.descripcion}</td>
-                <td className="py-0.5 px-2 text-xs">{r.mensualidad ? formatMes(r.mensualidad) : ""}</td>
-                <td className="py-0.5 px-2 text-xs">{r.moneda}</td>
-                <td className="py-0.5 px-2 text-xs text-muted-foreground">
-                  {r.banco || "—"}
-                </td>
-                <td className="py-0.5 px-2 text-right tabular-nums">
-                  {isNaN(Number(r.monto))
-                    ? r.monto
-                    : $(Number(r.monto))}
-                </td>
-                <td className="py-0.5 px-2 text-right tabular-nums text-xs">
-                  {r.tasa}
-                </td>
-                <td className="py-0.5 px-2 text-right tabular-nums font-medium">
-                  ${$(Number(r.montoUsd) || 0)}
-                </td>
-                <td className="py-0.5 px-2">
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => tx.duplicateAfter(r.id)}
-                      title="Duplicar fila debajo"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setEditing(r)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => tx.remove(r.id)}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-                </td>
-                <td className="py-0.5 px-2">
-                  {(() => {
-                    const s = findStudentInDesc(r.descripcion, students);
-                    if (!s)
-                      return (
-                        <span
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground"
-                          title="No se encontró alumno en la descripción"
-                        >
-                          <MessageCircle className="h-4 w-4 opacity-30" />
-                        </span>
-                      );
-                    if (!s.telefono)
-                      return (
-                        <button
-                          onClick={() => setEditTxStudent(s)}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
-                          title="Agregar teléfono"
-                        >
-                          <MessageCircle className="h-4 w-4 opacity-50" />
-                        </button>
-                      );
-                    const moneda =
-                      r.moneda === "Bolívares"
-                        ? "Bs"
-                        : r.moneda === "Pesos"
-                          ? "COP"
-                          : "USD";
-                    const concepto = r.mensualidad
-                      ? `mensualidad de ${r.mensualidad}`
-                      : r.descripcion || `pago`;
-                    const msg = `¡Hola, ${s.nombre.split(" ")[0]}! Te confirmamos la recepción de tu pago por un monto de $${$(Number(r.montoUsd) || 0)} (${r.monto} ${moneda}) correspondiente a: ${concepto}. Tu cuenta se encuentra al día. ¡Gracias por formar parte de nuestra escuela!`;
-                    const url = whatsappUrl(s.telefono, msg);
-                    return url ? (
-                      <>
-                        <a
-                          href={url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={() => logWhatsApp(s.nombre, msg)}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md hover:bg-accent"
-                          title={`Enviar WhatsApp a ${s.nombre}`}
-                        >
-                          <MessageCircle className="h-4 w-4 text-primary" />
-                        </a>
-                        <button
-                          onClick={() => copyAndLog(msg, s.nombre)}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
-                          title="Copiar mensaje"
-                        >
-                          <ClipboardCopy className="h-3.5 w-3.5" />
-                        </button>
-                      </>
-                    ) : null;
-                  })()}
-                </td>
-              </tr>
-            );
-          })}
+                <tr
+                  key={r.id}
+                  className={`border-b last:border-0 cursor-default ${
+                    isSelected
+                      ? "bg-primary/10 ring-1 ring-inset ring-primary"
+                      : esDup
+                        ? "bg-pink-100 dark:bg-pink-950/40"
+                        : selectMode
+                          ? "hover:bg-accent/40"
+                          : ""
+                  }`}
+                  title={esDup ? "Repetida: hay otro movimiento con los mismos datos" : undefined}
+                  onClick={() => selectMode && toggleSelect(r.id)}
+                >
+                  <td className="py-0.5 px-2">{r.fecha}</td>
+                  <td className="py-0.5 px-2 text-xs">{r.tipo}</td>
+                  <td className="py-0.5 px-2 text-xs">{r.categoria}</td>
+                  <td className="py-0.5 px-2">{r.descripcion}</td>
+                  <td className="py-0.5 px-2 text-xs">
+                    {r.mensualidad ? formatMes(r.mensualidad) : ""}
+                  </td>
+                  <td className="py-0.5 px-2 text-xs">{r.moneda}</td>
+                  <td className="py-0.5 px-2 text-xs text-muted-foreground">{r.banco || "—"}</td>
+                  <td className="py-0.5 px-2 text-right tabular-nums">
+                    {isNaN(Number(r.monto)) ? r.monto : $(Number(r.monto))}
+                  </td>
+                  <td className="py-0.5 px-2 text-right tabular-nums text-xs">
+                    {formatTasa(r.tasa)}
+                  </td>
+                  <td className="py-0.5 px-2 text-right tabular-nums font-medium">
+                    ${$(Number(r.montoUsd) || 0)}
+                  </td>
+                  <td className="py-0.5 px-2">
+                    <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => tx.duplicateAfter(r.id)}
+                        title="Duplicar fila debajo"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => setEditing(r)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => tx.remove(r.id)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </td>
+                  <td className="py-0.5 px-2">
+                    {(() => {
+                      const s = findStudentInDesc(r.descripcion, students);
+                      if (!s)
+                        return (
+                          <span
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground"
+                            title="No se encontró alumno en la descripción"
+                          >
+                            <MessageCircle className="h-4 w-4 opacity-30" />
+                          </span>
+                        );
+                      if (!s.telefono)
+                        return (
+                          <button
+                            onClick={() => setEditTxStudent(s)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+                            title="Agregar teléfono"
+                          >
+                            <MessageCircle className="h-4 w-4 opacity-50" />
+                          </button>
+                        );
+                      const moneda =
+                        r.moneda === "Bolívares" ? "Bs" : r.moneda === "Pesos" ? "COP" : "USD";
+                      const concepto = r.mensualidad
+                        ? `mensualidad de ${r.mensualidad}`
+                        : r.descripcion || `pago`;
+                      const msg = `¡Hola, ${s.nombre.split(" ")[0]}! Te confirmamos la recepción de tu pago por un monto de $${$(Number(r.montoUsd) || 0)} (${r.monto} ${moneda}) correspondiente a: ${concepto}. Tu cuenta se encuentra al día. ¡Gracias por formar parte de nuestra escuela!`;
+                      const url = whatsappUrl(s.telefono, msg);
+                      return url ? (
+                        <>
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => logWhatsApp(s.nombre, msg)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md hover:bg-accent"
+                            title={`Enviar WhatsApp a ${s.nombre}`}
+                          >
+                            <MessageCircle className="h-4 w-4 text-primary" />
+                          </a>
+                          <button
+                            onClick={() => copyAndLog(msg, s.nombre)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+                            title="Copiar mensaje"
+                          >
+                            <ClipboardCopy className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      ) : null;
+                    })()}
+                  </td>
+                </tr>
+              );
+            })}
             {!filtered.length && (
               <tr>
-                <td
-                  colSpan={12}
-                  className="py-8 text-center text-muted-foreground"
-                >
+                <td colSpan={12} className="py-8 text-center text-muted-foreground">
                   Sin transacciones
                 </td>
               </tr>
@@ -953,7 +1029,8 @@ export function TransactionsTab({
             {anyFilterActive && filtered.length > 1 && (
               <>
                 {(() => {
-                  const porMoneda: Record<string, { count: number; total: number; usd: number }> = {};
+                  const porMoneda: Record<string, { count: number; total: number; usd: number }> =
+                    {};
                   for (const r of filtered) {
                     const mon = r.moneda || "USD";
                     const cur = porMoneda[mon] ?? { count: 0, total: 0, usd: 0 };
@@ -991,7 +1068,8 @@ export function TransactionsTab({
                 })()}
               </>
             )}
-            {!anyFilterActive && filtered.length > 0 && (
+            {!anyFilterActive &&
+              filtered.length > 0 &&
               (() => {
                 const porMoneda: Record<string, { count: number; total: number; usd: number }> = {};
                 let totalUsd = 0;
@@ -1019,7 +1097,9 @@ export function TransactionsTab({
                       </tr>
                     ))}
                     <tr className="font-semibold bg-accent/10">
-                      <td className="py-0.5 px-2 text-xs" colSpan={7}>Total en USD ({filtered.length} filas)</td>
+                      <td className="py-0.5 px-2 text-xs" colSpan={7}>
+                        Total en USD ({filtered.length} filas)
+                      </td>
                       <td className="py-0.5 px-2" />
                       <td className="py-0.5 px-2" />
                       <td className="py-0.5 px-2 text-right tabular-nums">${$(totalUsd)}</td>
@@ -1027,8 +1107,7 @@ export function TransactionsTab({
                     </tr>
                   </>
                 );
-              })()
-            )}
+              })()}
           </tbody>
         </table>
       </div>
@@ -1049,13 +1128,24 @@ export function TransactionsTab({
 
       <Dialog open={batchDialog} onOpenChange={setBatchDialog}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Edición masiva</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Edición masiva</DialogTitle>
+          </DialogHeader>
           <p className="text-sm text-muted-foreground mb-3">
-            {selectedIds.size} transacciones seleccionadas. Elegí qué campo modificar y el nuevo valor.
+            {selectedIds.size} transacciones seleccionadas. Elegí qué campo modificar y el nuevo
+            valor.
           </p>
           <div className="space-y-3">
-            <Select value={batchField} onValueChange={(v) => { setBatchField(v); setBatchValue(""); }}>
-              <SelectTrigger><SelectValue placeholder="Campo a modificar…" /></SelectTrigger>
+            <Select
+              value={batchField}
+              onValueChange={(v) => {
+                setBatchField(v);
+                setBatchValue("");
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Campo a modificar…" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="categoria">Categoría</SelectItem>
                 <SelectItem value="fecha">Fecha</SelectItem>
@@ -1071,17 +1161,23 @@ export function TransactionsTab({
 
             {batchField === "categoria" && (
               <Select value={batchValue} onValueChange={setBatchValue}>
-                <SelectTrigger><SelectValue placeholder="Selecciona categoría…" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona categoría…" />
+                </SelectTrigger>
                 <SelectContent>
                   {[...ingresos, ...gastos].map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             )}
             {batchField === "tipo" && (
               <Select value={batchValue} onValueChange={setBatchValue}>
-                <SelectTrigger><SelectValue placeholder="Selecciona tipo…" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona tipo…" />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Ingreso">Ingreso</SelectItem>
                   <SelectItem value="Gasto">Gasto</SelectItem>
@@ -1090,7 +1186,9 @@ export function TransactionsTab({
             )}
             {batchField === "moneda" && (
               <Select value={batchValue} onValueChange={setBatchValue}>
-                <SelectTrigger><SelectValue placeholder="Selecciona moneda…" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona moneda…" />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="USD">USD</SelectItem>
                   <SelectItem value="Bolívares">Bolívares</SelectItem>
@@ -1154,8 +1252,12 @@ export function TransactionsTab({
             )}
           </div>
           <DialogFooter className="mt-3">
-            <Button variant="outline" onClick={() => setBatchDialog(false)}>Cancelar</Button>
-            <Button onClick={applyBatchEdit} disabled={!batchField || !batchValue}>Aplicar</Button>
+            <Button variant="outline" onClick={() => setBatchDialog(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={applyBatchEdit} disabled={!batchField || !batchValue}>
+              Aplicar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1225,9 +1327,7 @@ export function TransactionsTab({
         lastPay={null}
         onClose={() => setEditTxStudent(null)}
         onSave={(next) => {
-          setStudents(
-            students.map((s) => (s.nombre === next.nombre ? next : s)),
-          );
+          setStudents(students.map((s) => (s.nombre === next.nombre ? next : s)));
           setEditTxStudent(null);
           toast.success("Guardado");
         }}

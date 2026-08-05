@@ -10,7 +10,8 @@ import {
   loadTransactionsFromSupabase,
   loadBcvRatesFromSupabase,
 } from "@/lib/api/transactions.functions";
-import type { Transaction } from "@/lib/lists-store";
+import { syncStudentsToSupabase, loadStudentsFromSupabase } from "@/lib/api/students.functions";
+import type { Student, Transaction } from "@/lib/lists-store";
 import { supabase } from "@/lib/supabase";
 
 async function getAccessToken(): Promise<string | undefined> {
@@ -22,9 +23,16 @@ async function getAccessToken(): Promise<string | undefined> {
   }
 }
 
+function newId(): string {
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export function SupabaseSync({
   transactions,
   bcvRates,
+  students,
   onLoadFromCloud,
 }: {
   transactions: {
@@ -33,6 +41,7 @@ export function SupabaseSync({
     append: (rows: Omit<Transaction, "id">[]) => void;
   };
   bcvRates: { rates: Record<string, number>; merge: (next: Record<string, number>) => void };
+  students?: { list: Student[]; setAll: (next: Student[]) => void };
   onLoadFromCloud?: () => void;
 }) {
   const [syncing, setSyncing] = useState(false);
@@ -43,6 +52,8 @@ export function SupabaseSync({
   const syncBcv = useServerFn(syncBcvRatesToSupabase);
   const loadTx = useServerFn(loadTransactionsFromSupabase);
   const loadBcv = useServerFn(loadBcvRatesFromSupabase);
+  const syncStu = useServerFn(syncStudentsToSupabase);
+  const loadStu = useServerFn(loadStudentsFromSupabase);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -64,8 +75,29 @@ export function SupabaseSync({
         return;
       }
 
+      let stuCount = 0;
+      if (students) {
+        // Los alumnos que se agregaron localmente (Solvencias, import Excel)
+        // pueden no tener id todavía — se les asigna uno estable antes de subir.
+        const withIds = students.list.map((s) => (s.id ? s : { ...s, id: newId() }));
+        if (withIds.some((s, i) => s.id !== students.list[i].id)) {
+          students.setAll(withIds);
+        }
+        const stuResult = await syncStu({
+          data: { students: withIds as (Student & { id: string })[], accessToken },
+        });
+        if (!stuResult.ok) {
+          toast.error(`Error syncing alumnos: ${stuResult.error}`);
+          return;
+        }
+        stuCount = stuResult.count ?? 0;
+      }
+
       setLastSync(new Date().toLocaleString("es-VE"));
-      toast.success(`Sincronizado: ${txResult.count} transacciones, ${bcvResult.count} tasas`);
+      toast.success(
+        `Sincronizado: ${txResult.count} transacciones, ${bcvResult.count} tasas` +
+          (students ? `, ${stuCount} alumnos` : ""),
+      );
     } catch (e) {
       toast.error("Error de conexión al sincronizar");
     } finally {
@@ -74,6 +106,15 @@ export function SupabaseSync({
   };
 
   const handleLoad = async () => {
+    const hayLocal = transactions.list.length > 0 || (students?.list.length ?? 0) > 0;
+    if (
+      hayLocal &&
+      !confirm(
+        "Esto va a REEMPLAZAR las transacciones y alumnos que tienes en este dispositivo con lo que esté guardado en la nube. Si hiciste cambios aquí que aún no subiste, se van a perder. ¿Continuar?",
+      )
+    ) {
+      return;
+    }
     setLoading(true);
     try {
       const accessToken = await getAccessToken();
@@ -110,6 +151,15 @@ export function SupabaseSync({
       const bcvResult = await loadBcv({ data: { accessToken } });
       if (bcvResult.ok && Object.keys(bcvResult.data).length > 0) {
         bcvRates.merge(bcvResult.data);
+      }
+
+      if (students) {
+        const stuResult = await loadStu({ data: { accessToken } });
+        if (!stuResult.ok) {
+          toast.error(`Error cargando alumnos: ${stuResult.error}`);
+        } else if (stuResult.data.length > 0) {
+          students.setAll(stuResult.data as Student[]);
+        }
       }
 
       toast.success("Datos cargados desde la nube");
