@@ -36,6 +36,7 @@ import {
   Save,
   X,
   Upload,
+  UserPlus,
 } from "lucide-react";
 import { parseExcelToStudents } from "@/lib/excel-import";
 import { toast } from "sonner";
@@ -524,6 +525,46 @@ export default function SolvenciasTab({
   const [aulasOpen, setAulasOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [viewTxStudent, setViewTxStudent] = useState<Student | null>(null);
+  const [detectarOpen, setDetectarOpen] = useState(false);
+  const [detectados, setDetectados] = useState<{ nombre: string; pagos: number; aula: string }[]>(
+    [],
+  );
+
+  /**
+   * Nombres que aparecen en pagos de cuota (MIEMBROS / PROBAS / CLASE) pero
+   * que todavía no existen como alumno. Sirve para poblar la lista a partir
+   * de lo que ya se cargó por OCR, sin tener que escribirlos a mano.
+   */
+  const candidatosDesdeTx = useMemo(() => {
+    const existentes = new Set(students.map((s) => normalizeName(s.nombre)));
+    const conteo = new Map<string, { nombre: string; pagos: number }>();
+    for (const t of tx) {
+      if (t.tipo !== "Ingreso") continue;
+      if (!["MIEMBROS", "PROBAS", "CLASE"].includes(t.categoria)) continue;
+      // La descripción del libro diario suele ser el nombre del alumno.
+      // Se limpia lo que no es nombre (montos, "C/S abr-2026", etc.).
+      const limpio = (t.descripcion || "")
+        .replace(/c\/s\s+\S+/gi, "")
+        .replace(/[0-9]+([.,][0-9]+)?/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (limpio.length < 5) continue;
+      const clave = normalizeName(limpio);
+      if (existentes.has(clave)) continue;
+      // Ya coincide parcialmente con un alumno existente (nombre + apellido)?
+      const yaCoincide = students.some((s) => {
+        const nn = normalizeName(s.nombre);
+        const first = nn.split(" ")[0];
+        const last = nn.split(" ").slice(-1)[0];
+        return first && last && clave.includes(first) && clave.includes(last);
+      });
+      if (yaCoincide) continue;
+      const prev = conteo.get(clave);
+      if (prev) prev.pagos++;
+      else conteo.set(clave, { nombre: limpio, pagos: 1 });
+    }
+    return [...conteo.values()].sort((a, b) => b.pagos - a.pagos);
+  }, [tx, students]);
 
   // último pago por alumno
   const lastPayByStudent = useMemo(() => {
@@ -701,6 +742,18 @@ export default function SolvenciasTab({
             >
               <Upload className="mr-2 h-4 w-4" /> Importar Excel
             </Button>
+            {candidatosDesdeTx.length > 0 && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDetectados(candidatosDesdeTx.map((c) => ({ ...c, aula: "" })));
+                  setDetectarOpen(true);
+                }}
+              >
+                <UserPlus className="mr-2 h-4 w-4" />
+                Detectar desde pagos ({candidatosDesdeTx.length})
+              </Button>
+            )}
             <input
               type="file"
               id="importStudentsExcel"
@@ -931,6 +984,95 @@ export default function SolvenciasTab({
           toast.success("Agregado");
         }}
       />
+
+      {/* Alumnos detectados en los pagos que aún no existen en la lista */}
+      <Dialog open={detectarOpen} onOpenChange={setDetectarOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Alumnos detectados en los pagos</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Estos nombres aparecen en pagos de cuota (MIEMBROS, PROBAS o CLASE) pero todavía no
+            están en la lista. Revisa el nombre, asígnale un aula y quita los que no correspondan —
+            el texto viene del libro diario, así que puede traer errores.
+          </p>
+          <div className="max-h-[50vh] space-y-2 overflow-y-auto">
+            {detectados.map((d, i) => (
+              <div key={i} className="flex items-center gap-2 rounded border p-2">
+                <Input
+                  value={d.nombre}
+                  onChange={(e) =>
+                    setDetectados((prev) =>
+                      prev.map((x, j) => (j === i ? { ...x, nombre: e.target.value } : x)),
+                    )
+                  }
+                  className="h-8 flex-1"
+                />
+                <span
+                  className="shrink-0 text-[11px] text-muted-foreground"
+                  title="Cantidad de pagos encontrados con este nombre"
+                >
+                  {d.pagos} pago{d.pagos > 1 ? "s" : ""}
+                </span>
+                <Select
+                  value={d.aula || undefined}
+                  onValueChange={(v) =>
+                    setDetectados((prev) => prev.map((x, j) => (j === i ? { ...x, aula: v } : x)))
+                  }
+                >
+                  <SelectTrigger className="h-8 w-40 shrink-0">
+                    <SelectValue placeholder="Aula…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {aulas.map((a) => (
+                      <SelectItem key={a} value={a}>
+                        {a}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => setDetectados((prev) => prev.filter((_, j) => j !== i))}
+                  title="Quitar de la lista"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+            {detectados.length === 0 && (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No queda ninguno por agregar.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDetectarOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={detectados.length === 0}
+              onClick={() => {
+                const nuevos: Student[] = detectados
+                  .filter((d) => d.nombre.trim())
+                  .map((d) => ({
+                    nombre: d.nombre.trim(),
+                    aulas: d.aula ? [d.aula] : [],
+                    condicion: "Miembro",
+                    actividad: "Activo",
+                  }));
+                setStudents([...students, ...nuevos]);
+                setDetectarOpen(false);
+                toast.success(`${nuevos.length} alumno(s) agregados`);
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" /> Agregar {detectados.length}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={aulasOpen} onOpenChange={setAulasOpen}>
         <DialogContent>
