@@ -565,7 +565,22 @@ export default function SolvenciasTab({
    * de lo que ya se cargó por OCR, sin tener que escribirlos a mano.
    */
   const candidatosDesdeTx = useMemo(() => {
-    const existentes = new Set(students.map((s) => normalizeName(s.nombre)));
+    // Se descarta a quien ya esté en CUALQUIERA de las dos listas: la de
+    // solvencias y la de asistencias. Antes solo se miraba la de solvencias,
+    // así que alguien que ya pasaba lista aparecía igual como "detectado en
+    // pagos" y se podía crear por segunda vez.
+    const conocidos: string[] = students.map((s) => s.nombre);
+    const aulasActivas = new Set(attAulas.filter((a) => a.activa !== false).map((a) => a.nombre));
+    const vistos = new Set<string>();
+    for (const r of attRecords) {
+      if (!aulasActivas.has(r.aula)) continue;
+      const n = normalizeName(r.alumno);
+      if (n && !vistos.has(n)) {
+        vistos.add(n);
+        conocidos.push(r.alumno);
+      }
+    }
+
     const conteo = new Map<string, { nombre: string; pagos: number }>();
     for (const t of tx) {
       if (t.tipo !== "Ingreso") continue;
@@ -579,21 +594,16 @@ export default function SolvenciasTab({
         .trim();
       if (limpio.length < 5) continue;
       const clave = normalizeName(limpio);
-      if (existentes.has(clave)) continue;
-      // Ya coincide parcialmente con un alumno existente (nombre + apellido)?
-      const yaCoincide = students.some((s) => {
-        const nn = normalizeName(s.nombre);
-        const first = nn.split(" ")[0];
-        const last = nn.split(" ").slice(-1)[0];
-        return first && last && clave.includes(first) && clave.includes(last);
-      });
-      if (yaCoincide) continue;
+      // mismoNombre en vez de comparar nombre y apellido: esa regla daba por
+      // conocida a "Milagro Elena Contreras" porque ya existía "Milagro
+      // Elizabeth Contreras Márquez", y se perdía a una de las dos.
+      if (conocidos.some((n) => mismoNombre(clave, n))) continue;
       const prev = conteo.get(clave);
       if (prev) prev.pagos++;
       else conteo.set(clave, { nombre: limpio, pagos: 1 });
     }
     return [...conteo.values()].sort((a, b) => b.pagos - a.pagos);
-  }, [tx, students]);
+  }, [tx, students, attAulas, attRecords]);
 
   /**
    * Alumnos que ya están en asistencias, con las aulas donde aparecen.
