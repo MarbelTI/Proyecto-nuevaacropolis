@@ -873,9 +873,12 @@ export function TransactionsTab({
         Mostrando {filtered.length} de {tx.list.length}
       </p>
 
-      <div className="overflow-x-auto">
+      {/* El encabezado queda fijo y solo se desplazan las filas: con cientos de
+          movimientos, perder de vista los títulos y los filtros al bajar hacía
+          muy difícil saber qué columna se está mirando. */}
+      <div className="max-h-[65vh] overflow-auto rounded-md border">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-20 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
             <tr className="border-b text-left text-muted-foreground">
               <th className="py-0.5 px-2 font-medium">
                 <select
