@@ -79,6 +79,27 @@ export function canManageStudents(role: string): boolean {
   return role === "super_admin" || role === "celador_estudios";
 }
 
+/**
+ * Roles que pueden escribir asistencias. Es el mismo criterio que se aplica
+ * para archivar aulas: tecnología y control de estudio.
+ */
+export function canManageAsistencias(role: string): boolean {
+  return role === "super_admin" || role === "celador_estudios";
+}
+
+/**
+ * Roles que pueden leer asistencias. Finanzas queda fuera a propósito: no le
+ * hace falta para su trabajo, y lo que no hace falta no se concede.
+ */
+export function canReadAsistencias(role: string): boolean {
+  return (
+    role === "super_admin" ||
+    role === "celador_estudios" ||
+    role === "director" ||
+    role === "celador"
+  );
+}
+
 /** Cualquier rol que tenga algún tipo de acceso de lectura a alumnos. */
 export function canReadStudents(role: string): boolean {
   return (

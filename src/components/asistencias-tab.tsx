@@ -38,6 +38,7 @@ import {
   useReflexionesMeta,
   useReflexionAsistencia,
 } from "@/lib/attendance-store";
+import { AsistenciasSync } from "@/components/asistencias-sync";
 
 type UserPerms = {
   name: string;
@@ -782,12 +783,47 @@ export default function AsistenciasTab({
           <h3 className="font-semibold">Seleccionar archivo Excel</h3>
           <p className="mt-1 text-xs text-muted-foreground">2026 Asistencia Nueva Acropolis.xlsx</p>
         </label>
+        {/*
+          Quien entra desde otro equipo no tiene nada importado y caería aquí
+          sin salida: el Excel lo tiene una sola persona. Por eso la puerta a
+          la nube también está en esta pantalla, no solo dentro del módulo.
+        */}
+        <div className="mt-4 flex items-center gap-3 border-t pt-4">
+          <span className="text-xs text-muted-foreground">
+            ¿Alguien ya las cargó? Tráelas desde la nube en vez de importar.
+          </span>
+          <div className="ml-auto">
+            <AsistenciasSync
+              aulasMeta={aulasMeta}
+              setAulasMeta={setAulasMeta}
+              records={records}
+              setRecords={setRecords}
+              reflexionesMeta={reflexionesMeta}
+              setReflexionesMeta={setReflexionesMeta}
+              reflexionAsistencia={reflexionAsistencia}
+              setReflexionAsistencia={setReflexionAsistencia}
+              role={user.role}
+              soloCargar
+            />
+          </div>
+        </div>
       </Card>
     );
   }
 
   return (
     <div className="space-y-4">
+      <AsistenciasSync
+        aulasMeta={aulasMeta}
+        setAulasMeta={setAulasMeta}
+        records={records}
+        setRecords={setRecords}
+        reflexionesMeta={reflexionesMeta}
+        setReflexionesMeta={setReflexionesMeta}
+        reflexionAsistencia={reflexionAsistencia}
+        setReflexionAsistencia={setReflexionAsistencia}
+        role={user.role}
+      />
       <div className="flex flex-wrap items-center gap-3">
         <Select value={selectedAula} onValueChange={setSelectedAula}>
           <SelectTrigger className="w-48">

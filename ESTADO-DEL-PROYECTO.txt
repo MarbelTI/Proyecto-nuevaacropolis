@@ -102,6 +102,19 @@ ACCESO
 
 Commits, del más reciente al más viejo:
 
+         ASISTENCIAS EN LA NUBE. Hasta hoy el módulo vivía solo en el
+         navegador: nadie más veía lo cargado y si se borraba ese navegador
+         se perdía el año entero. Se crearon cuatro tablas (att_aulas,
+         att_asistencias, att_reflexiones, att_reflexion_asistencia) con sus
+         permisos, las funciones de servidor y los botones "Subir a nube" /
+         "Cargar desde nube".
+         Migración: 20260806000002_asistencias_en_la_nube.sql
+         Detalle importante: la subida REEMPLAZA, pero solo las aulas que
+         van en el envío. Así un celador que sincroniza no deja sin datos a
+         las demás aulas.
+         Escriben super_admin y control de estudio; leen además dirección y
+         celadores; finanzas no entra.
+
 c60cedf  Las notas del resumen mensual ya no se abren solas.
          El "hidden" estaba dentro de cada comentario, pero SheetJS lo lee
          del ARRAY que los contiene. Por eso Excel abría la hoja con todas
@@ -205,9 +218,14 @@ ERRORES IMPORTANTES QUE SE ENCONTRARON Y CORRIGIERON
     los datos. Ya existe el botón "Subir a nube" para transacciones, tasas y
     alumnos.
 
-[5] ASISTENCIAS Y REFLEXIONES NO TIENEN SINCRONIZACIÓN
-    SupabaseSync solo cubre transactions, bcv_rates y students. Falta crear
-    las tablas y el sync para asistencias.
+[5] AJUSTAR EL PERMISO DE LOS CELADORES EN ASISTENCIAS
+    Ya existe la sincronización de asistencias (ver sección 4), pero en la
+    base de datos los celadores leen TODAS las aulas, no solo la suya. En
+    pantalla la app sí los limita. No se pudo hacer en la base porque
+    profiles.aula_id es un integer que apunta a una tabla `aulas` que nunca
+    se creó. Al arreglar eso, cambiar el `using` de las políticas de celador.
+    Lo que se expone mientras tanto son nombres y marcas de asistencia — no
+    hay datos personales ni financieros ahí.
 
 [6] CONECTAR ALUMNOS A SUPABASE ANTES DE IMPORTAR LA HOJA "FICHA"
     Esto es de seguridad, no de comodidad. La hoja Ficha trae cédulas y
