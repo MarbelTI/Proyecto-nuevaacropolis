@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ChevronRight, HandCoins, Link2, X } from "lucide-react";
+import { AlertCircle, ChevronRight, HandCoins, Link2, X } from "lucide-react";
 import type { Student, Transaction } from "@/lib/lists-store";
 import { usePrestamoAliases, unir, separar, type GrupoPrestamo } from "@/lib/prestamos-alias";
 
@@ -90,6 +90,23 @@ function personaDelPrestamo(
   return desc;
 }
 
+/**
+ * Saca la tasa de la descripción: "Ricardo García: se presta 10%" → 0.10.
+ *
+ * Se escribe a mano en cada préstamo porque no todos llevan la misma, y
+ * algunos no llevan ninguna. No hay tasa por defecto a propósito: si no está
+ * escrita, no se estima nada. Inventar un 10% donde no lo hay sería peor que
+ * dejarlo vacío, porque nadie revisa una cifra que ya parece calculada.
+ */
+function tasaDeDescripcion(desc: string): number | null {
+  const m = (desc || "").match(/(\d+(?:[.,]\d+)?)\s*%/);
+  if (!m) return null;
+  const n = Number(m[1].replace(",", "."));
+  return isFinite(n) && n > 0 && n <= 100 ? n / 100 : null;
+}
+
+const mesDe = (iso: string) => iso.slice(0, 7);
+
 type Movimiento = {
   fecha: string;
   iso: string;
@@ -103,9 +120,18 @@ type Prestamo = {
   persona: string;
   prestado: number;
   abonado: number;
+  /** Intereses REALMENTE registrados en el libro. Es dinero, no estimación. */
   intereses: number;
   saldo: number;
   movimientos: Movimiento[];
+  /** Tasa escrita en la descripción, si la hay. */
+  tasa: number | null;
+  /** El préstamo salió del mes en que se dio: dentro del mismo mes no se cobra. */
+  cruzoDeMes: boolean;
+  /** Solo orientativo. NUNCA entra en los totales ni en el saldo. */
+  interesEstimado: number;
+  /** Cruzó de mes, tiene tasa, y lo cobrado se queda corto. */
+  faltaCobrarInteres: boolean;
 };
 
 export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: Student[] }) {
@@ -130,7 +156,18 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
       const clave = normalizar(persona);
       let p = porPersona.get(clave);
       if (!p) {
-        p = { persona, prestado: 0, abonado: 0, intereses: 0, saldo: 0, movimientos: [] };
+        p = {
+          persona,
+          prestado: 0,
+          abonado: 0,
+          intereses: 0,
+          saldo: 0,
+          movimientos: [],
+          tasa: null,
+          cruzoDeMes: false,
+          interesEstimado: 0,
+          faltaCobrarInteres: false,
+        };
         porPersona.set(clave, p);
       }
 
@@ -150,9 +187,44 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
     }
 
     const lista = [...porPersona.values()];
+    const mesActual = new Date().toISOString().slice(0, 7);
+
     for (const p of lista) {
       p.saldo = p.prestado - p.abonado;
       p.movimientos.sort((a, b) => a.iso.localeCompare(b.iso));
+
+      const entregas = p.movimientos.filter(
+        (m) => m.tipo === "Gasto" && !CAT_INTERES.includes(m.categoria),
+      );
+      const devoluciones = p.movimientos.filter(
+        (m) => m.tipo === "Ingreso" && !CAT_INTERES.includes(m.categoria),
+      );
+
+      // La tasa se busca primero en el movimiento donde se entregó el dinero,
+      // que es donde tiene sentido pactarla.
+      p.tasa =
+        entregas.map((m) => tasaDeDescripcion(m.descripcion)).find((t) => t != null) ??
+        p.movimientos.map((m) => tasaDeDescripcion(m.descripcion)).find((t) => t != null) ??
+        null;
+
+      const mesesEntrega = entregas.map((m) => mesDe(m.iso)).filter(Boolean);
+      const ultimaEntrega = mesesEntrega.length ? mesesEntrega[mesesEntrega.length - 1] : "";
+      const mesesDevolucion = devoluciones.map((m) => mesDe(m.iso)).filter(Boolean);
+      const ultimaDevolucion = mesesDevolucion.length
+        ? mesesDevolucion[mesesDevolucion.length - 1]
+        : "";
+
+      // Dentro del mismo mes no se cobra interés. Si sigue debiendo, se compara
+      // con el mes en curso; si ya pagó, con el mes en que terminó de pagar.
+      if (ultimaEntrega) {
+        p.cruzoDeMes =
+          p.saldo > 0.005
+            ? ultimaEntrega < mesActual
+            : !!ultimaDevolucion && ultimaDevolucion > ultimaEntrega;
+      }
+
+      p.interesEstimado = p.cruzoDeMes && p.tasa ? p.prestado * p.tasa : 0;
+      p.faltaCobrarInteres = p.interesEstimado > 0 && p.intereses < p.interesEstimado - 0.005;
     }
     // Primero quien más debe: es lo que hay que perseguir.
     return lista.sort((a, b) => b.saldo - a.saldo || a.persona.localeCompare(b.persona));
@@ -369,21 +441,40 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
                       <td className="p-2 text-right tabular-nums">${usd(p.prestado)}</td>
                       <td className="p-2 text-right tabular-nums">${usd(p.abonado)}</td>
                       <td className="p-2 text-right tabular-nums text-muted-foreground">
-                        {p.intereses > 0 ? `$${usd(p.intereses)}` : "—"}
+                        <div>{p.intereses > 0 ? `$${usd(p.intereses)}` : "—"}</div>
+                        {p.interesEstimado > 0 && (
+                          <div
+                            className="text-[10px] italic opacity-70"
+                            title={`Estimación: ${Math.round((p.tasa ?? 0) * 100)}% de $${usd(p.prestado)}. No entra en ningún total.`}
+                          >
+                            est. ${usd(p.interesEstimado)}
+                          </div>
+                        )}
                       </td>
                       <td className="p-2 text-right font-semibold tabular-nums">
                         ${usd(Math.max(0, p.saldo))}
                       </td>
                       <td className="p-2">
-                        {pagado ? (
-                          <span className="rounded-md border border-emerald-500/40 bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
-                            {p.saldo < -0.005 ? "Devolvió de más" : "Pagado"}
-                          </span>
-                        ) : (
-                          <span className="rounded-md border border-amber-500/40 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-                            Pendiente
-                          </span>
-                        )}
+                        <div className="flex flex-wrap items-center gap-1">
+                          {pagado ? (
+                            <span className="rounded-md border border-emerald-500/40 bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
+                              {p.saldo < -0.005 ? "Devolvió de más" : "Pagado"}
+                            </span>
+                          ) : (
+                            <span className="rounded-md border border-amber-500/40 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                              Pendiente
+                            </span>
+                          )}
+                          {p.faltaCobrarInteres && (
+                            <span
+                              className="inline-flex items-center gap-0.5 rounded-md border border-orange-500/40 bg-orange-50 px-1.5 py-0.5 text-[11px] text-orange-900 dark:bg-orange-950/40 dark:text-orange-200"
+                              title="Pasó de mes y el interés cobrado no llega a la estimación. Es un recordatorio, no una deuda calculada."
+                            >
+                              <AlertCircle className="h-3 w-3" />
+                              Revisar interés
+                            </span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                     {expandida && (
@@ -433,11 +524,24 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
           </p>
         )}
 
-        <p className="mt-3 border-t pt-3 text-[11px] text-muted-foreground">
-          Los préstamos no entran en Solvencias: la deuda de cuota social se calcula solo con
-          MIEMBROS, PROBAS y CLASE. Si la misma persona aparece escrita de varias formas, usa «Unir»
-          y quedará agrupada también para lo que se cargue en adelante.
-        </p>
+        <div className="mt-3 space-y-1.5 border-t pt-3 text-[11px] text-muted-foreground">
+          <p>
+            Los préstamos no entran en Solvencias: la deuda de cuota social se calcula solo con
+            MIEMBROS, PROBAS y CLASE. Si la misma persona aparece escrita de varias formas, márcalas
+            y usa «Unir»; queda agrupada también para lo que se cargue en adelante.
+          </p>
+          <p>
+            <span className="font-medium">Intereses.</span> La cifra de arriba es lo que realmente
+            se cobró. Para que aparezca la estimación en cursiva, escribe la tasa en la descripción
+            del préstamo — por ejemplo{" "}
+            <span className="font-medium">«Ricardo García: se presta 10%»</span>. Solo se estima si
+            el préstamo pasó de mes; dentro del mismo mes no se cobra interés.{" "}
+            <span className="font-medium">
+              La estimación no suma en ningún total ni aumenta el saldo:
+            </span>{" "}
+            es un recordatorio para revisar, no una deuda calculada.
+          </p>
+        </div>
       </Card>
 
       <Dialog open={uniendoAbierto} onOpenChange={(v) => !v && setUniendoAbierto(false)}>
