@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, Download, Plus, Pencil } from "lucide-react";
+import { Upload, Download, Plus, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import {
@@ -300,6 +300,73 @@ export default function AsistenciasTab({
         return semestre === 1 ? m <= 6 : m >= 7;
       }),
     [aulaReflexiones, semestre],
+  );
+
+  /**
+   * Numeración por TEMA, no por reflexión.
+   *
+   * Un tema puede tener más de una reflexión (dos semanas, dos entregas). Si
+   * se numeran de corrido, el mismo tema aparece como "#12" y "#13" y parece
+   * que fueran dos temas distintos. Aquí cada reflexión sabe a qué número de
+   * tema pertenece y si es la 1ª o la 2ª de ese tema.
+   */
+  const infoPorReflexion = useMemo(() => {
+    const porTema = new Map<string, ReflexionMeta[]>();
+    for (const r of aulaReflexiones) {
+      const clave = r.temaFecha || r.fecha || r.id;
+      const arr = porTema.get(clave);
+      if (arr) arr.push(r);
+      else porTema.set(clave, [r]);
+    }
+    const map: Record<string, { tema: number; orden: number; total: number }> = {};
+    let n = 0;
+    for (const arr of porTema.values()) {
+      n++;
+      arr.forEach((r, i) => {
+        map[r.id] = { tema: n, orden: i + 1, total: arr.length };
+      });
+    }
+    return map;
+  }, [aulaReflexiones]);
+
+  /** Añade otra reflexión al mismo tema (el caso de "este tema llevó dos"). */
+  const agregarReflexionAlTema = useCallback(
+    (ref: ReflexionMeta) => {
+      setReflexionesMeta((prev) => {
+        const idx = prev.findIndex((r) => r.id === ref.id);
+        const nueva: ReflexionMeta = {
+          id: `${ref.id}_x${Date.now().toString(36)}`,
+          aula: ref.aula,
+          year: ref.year,
+          titulo: ref.titulo,
+          fecha: ref.fecha,
+          temaFecha: ref.temaFecha ?? ref.fecha,
+        };
+        const next = [...prev];
+        next.splice(idx === -1 ? prev.length : idx + 1, 0, nueva);
+        return next;
+      });
+      toast.success("Se agregó otra reflexión a este tema");
+    },
+    [setReflexionesMeta],
+  );
+
+  /** Quita una reflexión y, con ella, las entregas que tuviera registradas. */
+  const eliminarReflexion = useCallback(
+    (ref: ReflexionMeta) => {
+      const entregas = reflexionAsistencia.filter((r) => r.reflexionId === ref.id).length;
+      if (
+        !confirm(
+          `¿Eliminar esta reflexión del tema?` +
+            (entregas > 0 ? `\n\nSe borran también ${entregas} entrega(s) ya registradas.` : ""),
+        )
+      )
+        return;
+      setReflexionesMeta((prev) => prev.filter((r) => r.id !== ref.id));
+      setReflexionAsistencia((prev) => prev.filter((r) => r.reflexionId !== ref.id));
+      toast.success("Reflexión eliminada");
+    },
+    [reflexionAsistencia, setReflexionesMeta, setReflexionAsistencia],
   );
 
   const reflectionGroups = useMemo(() => {
@@ -780,12 +847,12 @@ export default function AsistenciasTab({
                 <table
                   className="w-full text-xs border-collapse border-dashed border-[#bbb] table-fixed"
                   style={{
-                    minWidth: semestreFechas.length * 30 + 280 + semestreReflexiones.length * 32,
+                    minWidth: semestreFechas.length * 30 + 160 + semestreReflexiones.length * 30,
                   }}
                 >
                   <thead>
                     <tr>
-                      <th className="sticky left-0 bg-background z-10 p-1 text-left font-medium w-[280px] border-b border-r border-dashed border-[#bbb]">
+                      <th className="sticky left-0 bg-background z-10 p-1 text-left font-medium w-[160px] border-b border-r border-dashed border-[#bbb]">
                         Participante
                       </th>
                       {semestreMeses.map((m) => {
@@ -860,7 +927,7 @@ export default function AsistenciasTab({
                         return (
                           <th
                             key={g.refs[0].id}
-                            className="p-0 text-center align-top border-l border-b border-dashed border-[#bbb] w-[32px] relative group"
+                            className="p-0 text-center align-top border-l border-b border-dashed border-[#bbb] w-[30px] relative group"
                             title={`${g.title} — ${g.refs[0].fecha}`}
                           >
                             <div className="text-[9px] font-bold text-foreground leading-tight">
@@ -890,7 +957,7 @@ export default function AsistenciasTab({
                             return g.refs.map((ref, ri) => (
                               <th
                                 key={ref.id}
-                                className="p-0 text-center border-l border-b border-dashed border-[#bbb] w-[32px]"
+                                className="p-0 text-center border-l border-b border-dashed border-[#bbb] w-[30px]"
                               >
                                 <div className="text-[8px] text-muted-foreground font-medium">
                                   R{ri + 1}
@@ -924,7 +991,7 @@ export default function AsistenciasTab({
                             si el navegador no soporta color-mix se queda el
                             fondo sólido, que tampoco deja ver nada detrás. */}
                         <td
-                          className="sticky left-0 z-10 max-w-[280px] truncate border-b border-r border-dashed border-[#bbb] bg-background p-1 text-xs font-medium"
+                          className="sticky left-0 z-10 w-[160px] max-w-[160px] truncate border-b border-r border-dashed border-[#bbb] bg-background px-1.5 py-1 text-[11px] font-medium"
                           style={
                             fila % 2 === 1
                               ? {
@@ -983,7 +1050,7 @@ export default function AsistenciasTab({
                           return (
                             <td
                               key={ref.id}
-                              className="p-0 border-l border-b border-dashed border-[#bbb] w-[32px]"
+                              className="p-0 border-l border-b border-dashed border-[#bbb] w-[30px]"
                             >
                               <button
                                 className={`w-full h-7 text-[10px] font-bold cursor-pointer transition ${estClass} hover:ring-1 hover:ring-inset hover:ring-primary/50`}
@@ -997,61 +1064,6 @@ export default function AsistenciasTab({
                       </tr>
                     ))}
                   </tbody>
-                  {/* Cuántos asistieron cada día. Es lo primero que pregunta
-                      dirección y antes había que contarlo a ojo columna por
-                      columna. */}
-                  <tfoot>
-                    <tr className="bg-muted/40 text-[9px]">
-                      <td className="sticky left-0 z-10 border-r border-dashed border-[#bbb] bg-muted p-1 text-right text-[10px] font-bold">
-                        Asistieron
-                      </td>
-                      {semestreFechas.map((f) => {
-                        const presentes = alumnos.filter((a) => getAsistencia(a, f) === "A").length;
-                        const noHuboClase =
-                          alumnos.length > 0 && getAsistencia(alumnos[0], f) === "NC";
-                        const pct = alumnos.length ? presentes / alumnos.length : 0;
-                        return (
-                          <td
-                            key={f}
-                            className={`border-l border-dashed border-[#bbb] text-center tabular-nums ${
-                              noHuboClase
-                                ? "text-muted-foreground/40"
-                                : presentes === 0
-                                  ? "text-muted-foreground/30"
-                                  : pct < 0.5
-                                    ? "font-bold text-red-600"
-                                    : "text-muted-foreground"
-                            }`}
-                            title={
-                              noHuboClase
-                                ? "No hubo clase"
-                                : `${presentes} de ${alumnos.length} asistieron`
-                            }
-                          >
-                            {noHuboClase ? "—" : presentes}
-                          </td>
-                        );
-                      })}
-                      {semestreReflexiones.map((ref) => {
-                        const entregadas = alumnos.filter(
-                          (a) => getRefEstado(a, ref.id) === "E",
-                        ).length;
-                        return (
-                          <td
-                            key={ref.id}
-                            className={`border-l border-dashed border-[#bbb] text-center tabular-nums ${
-                              entregadas === 0
-                                ? "text-muted-foreground/30"
-                                : "text-muted-foreground"
-                            }`}
-                            title={`${entregadas} de ${alumnos.length} entregaron`}
-                          >
-                            {entregadas}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  </tfoot>
                 </table>
               )}
 
@@ -1077,8 +1089,16 @@ export default function AsistenciasTab({
                     const nuevoTitulo = limpio
                       ? `Reflexión ${numero}: ${limpio}`
                       : `Reflexión ${numero}`;
+                    // El nombre pertenece al TEMA, así que se aplica a todas
+                    // sus reflexiones: renombrar la 1ª y que la 2ª siguiera
+                    // diciendo otra cosa era justo la inconsistencia que había.
+                    const clave = ref.temaFecha || ref.fecha || ref.id;
                     setReflexionesMeta((prev) =>
-                      prev.map((r) => (r.id === ref.id ? { ...r, titulo: nuevoTitulo } : r)),
+                      prev.map((r) =>
+                        r.aula === ref.aula && (r.temaFecha || r.fecha || r.id) === clave
+                          ? { ...r, titulo: nuevoTitulo }
+                          : r,
+                      ),
                     );
                     // El tema del aula se mantiene en sincronía: la tabla de
                     // asistencia lo muestra sobre la columna de esa clase.
@@ -1100,15 +1120,19 @@ export default function AsistenciasTab({
                       </div>
                       <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {semestreReflexiones.map((ref) => {
-                          // El número sale de la lista del AÑO, no de la del
-                          // semestre: si no, la primera de julio se llamaría
-                          // "#1" cuando en realidad es la #12 del curso.
-                          const numero = aulaReflexiones.findIndex((r) => r.id === ref.id) + 1;
+                          // El número es el del TEMA dentro del año, no la
+                          // posición de la reflexión: dos reflexiones del mismo
+                          // tema comparten número y se distinguen con 1ª / 2ª.
+                          const info = infoPorReflexion[ref.id] ?? { tema: 1, orden: 1, total: 1 };
+                          const numero = info.tema;
                           const tema = temaDeTitulo(ref.titulo);
                           const entregadas = alumnos.filter(
                             (al) => getRefEstado(al, ref.id) === "E",
                           ).length;
                           const completo = alumnos.length > 0 && entregadas === alumnos.length;
+                          const asistieron = ref.fecha
+                            ? alumnos.filter((al) => getAsistencia(al, ref.fecha) === "A").length
+                            : 0;
                           return (
                             <div
                               key={ref.id}
@@ -1141,6 +1165,19 @@ export default function AsistenciasTab({
                                   )}
                                 </span>
                               )}
+                              {/* a: cuántos asistieron ese día · r: cuántos
+                                  entregaron · p: qué parte del tema es, cuando
+                                  el tema se dio en más de una clase. */}
+                              <span
+                                className={`shrink-0 tabular-nums text-[10px] ${
+                                  asistieron === 0
+                                    ? "text-muted-foreground/40"
+                                    : "text-muted-foreground"
+                                }`}
+                                title={`Asistieron ${asistieron} de ${alumnos.length}`}
+                              >
+                                a:{asistieron}/{alumnos.length}
+                              </span>
                               <span
                                 className={`shrink-0 tabular-nums text-[10px] ${
                                   entregadas === 0
@@ -1149,18 +1186,41 @@ export default function AsistenciasTab({
                                       ? "font-medium text-green-600"
                                       : "text-muted-foreground"
                                 }`}
+                                title={`Entregaron ${entregadas} de ${alumnos.length}`}
                               >
-                                {entregadas}/{alumnos.length}
+                                r:{entregadas}/{alumnos.length}
                               </span>
+                              {info.total > 1 && (
+                                <span
+                                  className="shrink-0 tabular-nums text-[10px] font-medium text-indigo-600"
+                                  title={`Parte ${info.orden} de ${info.total} de este tema`}
+                                >
+                                  p:{info.orden}/{info.total}
+                                </span>
+                              )}
                               <button
                                 className="shrink-0 text-muted-foreground hover:text-indigo-600"
-                                title="Cambiar el tema"
+                                title="Cambiar el nombre del tema"
                                 onClick={() => {
                                   setInlineRefId(ref.id);
                                   setInlineRefVal(tema);
                                 }}
                               >
                                 <Pencil className="h-3 w-3" />
+                              </button>
+                              <button
+                                className="shrink-0 text-muted-foreground hover:text-indigo-600"
+                                title="Este tema llevó otra reflexión"
+                                onClick={() => agregarReflexionAlTema(ref)}
+                              >
+                                <Plus className="h-3 w-3" />
+                              </button>
+                              <button
+                                className="shrink-0 text-muted-foreground hover:text-destructive"
+                                title="Quitar esta reflexión"
+                                onClick={() => eliminarReflexion(ref)}
+                              >
+                                <X className="h-3 w-3" />
                               </button>
                             </div>
                           );
