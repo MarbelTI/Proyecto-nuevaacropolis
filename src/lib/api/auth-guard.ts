@@ -12,6 +12,8 @@ export type AuthSession = {
   userId: string;
   email: string;
   role: string;
+  /** false = cuenta registrada pero aún no habilitada por un super_admin. */
+  aprobado: boolean;
 };
 
 /**
@@ -22,7 +24,7 @@ export type AuthSession = {
  */
 export async function getSessionUser(accessToken?: string): Promise<AuthSession | null> {
   if (DEV_BYPASS) {
-    return { userId: "dev-bypass", email: "dev@local", role: "super_admin" };
+    return { userId: "dev-bypass", email: "dev@local", role: "super_admin", aprobado: true };
   }
 
   const authHeader = getRequestHeader("authorization") ?? "";
@@ -47,11 +49,19 @@ export async function getSessionUser(accessToken?: string): Promise<AuthSession 
   // permite leer el propio perfil, así que esta consulta es segura con anon key.
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, aprobado")
     .eq("id", userId)
     .maybeSingle();
 
-  return { userId, email, role: profile?.role ?? "unknown" };
+  const aprobado = profile?.aprobado === true;
+  return {
+    userId,
+    email,
+    // Una cuenta sin aprobar no conserva su rol: se degrada a "pendiente",
+    // así ninguna comprobación de permisos puede darle acceso por descuido.
+    role: aprobado ? (profile?.role ?? "unknown") : "pendiente",
+    aprobado,
+  };
 }
 
 /** Roles que pueden escribir/leer datos financieros. */

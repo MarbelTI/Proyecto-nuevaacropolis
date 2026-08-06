@@ -4,7 +4,13 @@ import { getSessionUser } from "./auth-guard";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./env";
 
 export type UserRole =
-  "super_admin" | "finanzas" | "director" | "celador" | "celador_estudios" | "unknown";
+  | "super_admin"
+  | "finanzas"
+  | "director"
+  | "celador"
+  | "celador_estudios"
+  | "pendiente"
+  | "unknown";
 
 export type UserProfile = {
   id: string;
@@ -59,6 +65,14 @@ const ROLE_PERMS: Record<
     canEditAnyAula: true,
     readOnly: false,
   },
+  // Cuenta registrada pero todavía no habilitada: sin acceso a nada.
+  pendiente: {
+    canAccessExisting: false,
+    canAccessAsistencias: false,
+    canAccessDiagnostico: false,
+    canEditAnyAula: false,
+    readOnly: true,
+  },
   unknown: {
     canAccessExisting: false,
     canAccessAsistencias: false,
@@ -66,6 +80,19 @@ const ROLE_PERMS: Record<
     canEditAnyAula: false,
     readOnly: false,
   },
+};
+
+/** Minutos de inactividad tras los que se cierra la sesión, según el rol.
+ *  Un celador pasando lista puede estar horas sin tocar la pantalla; una
+ *  sesión de finanzas desatendida en una PC compartida es un riesgo real. */
+export const MINUTOS_INACTIVIDAD: Record<UserRole, number> = {
+  super_admin: 15,
+  finanzas: 30,
+  director: 30,
+  celador_estudios: 60,
+  celador: 480,
+  pendiente: 10,
+  unknown: 10,
 };
 
 export function getPermsForRole(role: UserRole) {
@@ -110,11 +137,13 @@ export const authCallback = createServerFn({ method: "POST" })
     // Buscar el perfil (creado por el trigger) y el full_name real.
     const { data: profile } = await supabase
       .from("profiles")
-      .select("full_name, role")
+      .select("full_name, role, aprobado")
       .eq("id", session.userId)
       .maybeSingle();
 
-    const roleFromDb = (profile?.role as UserRole) || role;
+    // getSessionUser ya degradó el rol a "pendiente" si la cuenta no está
+    // aprobada; se respeta esa decisión en vez de volver a leer role de la BD.
+    const roleFromDb = session.aprobado ? (profile?.role as UserRole) || role : "pendiente";
 
     return {
       ok: true,
@@ -124,6 +153,76 @@ export const authCallback = createServerFn({ method: "POST" })
         full_name: profile?.full_name || full_name,
         role: roleFromDb,
       },
+      aprobado: session.aprobado,
       perms: getPermsForRole(roleFromDb),
     };
+  });
+
+// ---------------- Aprobación de cuentas (solo super_admin) ----------------
+
+const PerfilPendiente = z.object({
+  id: z.string(),
+  email: z.string(),
+  full_name: z.string(),
+  role: z.string(),
+  created_at: z.string().optional(),
+});
+export type PerfilPendiente = z.infer<typeof PerfilPendiente>;
+
+/** Lista las cuentas que se registraron y esperan habilitación. */
+export const listarCuentasPendientes = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ accessToken: z.string().optional() }))
+  .handler(async ({ data }) => {
+    const session = await getSessionUser(data.accessToken);
+    if (!session || session.role !== "super_admin") {
+      return { ok: false, error: "No autorizado", data: [] as PerfilPendiente[] };
+    }
+    const { createClient } = await import("@supabase/supabase-js");
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      return { ok: false, error: "Supabase not configured", data: [] as PerfilPendiente[] };
+    }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
+    });
+    const { data: rows, error } = await supabase
+      .from("profiles")
+      .select("id, email, full_name, role, created_at")
+      .eq("aprobado", false)
+      .order("created_at", { ascending: true });
+    if (error) return { ok: false, error: error.message, data: [] as PerfilPendiente[] };
+    return { ok: true, data: (rows ?? []) as PerfilPendiente[] };
+  });
+
+/** Habilita (o rechaza) una cuenta, asignándole el rol que corresponda. */
+export const resolverCuentaPendiente = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      userId: z.string(),
+      aprobar: z.boolean(),
+      role: z.enum(["super_admin", "finanzas", "director", "celador", "celador_estudios"]),
+      accessToken: z.string().optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const session = await getSessionUser(data.accessToken);
+    if (!session || session.role !== "super_admin") {
+      return { ok: false, error: "No autorizado" };
+    }
+    // Un super_admin no puede quitarse a sí mismo el acceso por accidente.
+    if (data.userId === session.userId && !data.aprobar) {
+      return { ok: false, error: "No puedes desactivar tu propia cuenta" };
+    }
+    const { createClient } = await import("@supabase/supabase-js");
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      return { ok: false, error: "Supabase not configured" };
+    }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
+    });
+    const { error } = await supabase
+      .from("profiles")
+      .update({ aprobado: data.aprobar, role: data.role })
+      .eq("id", data.userId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
   });

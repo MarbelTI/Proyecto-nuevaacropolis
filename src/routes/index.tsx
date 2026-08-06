@@ -21,6 +21,9 @@ import { TasasBcvTab } from "@/components/finanzas/TasasBcvTab";
 import SolvenciasTab from "@/components/finanzas/SolvenciasTab";
 import { SupabaseSync } from "@/components/finanzas/SupabaseSync";
 import { AuthDialog, useAuth } from "@/components/finanzas/AuthDialog";
+import { CuentasPendientes } from "@/components/finanzas/CuentasPendientes";
+import { MINUTOS_INACTIVIDAD } from "@/lib/api/auth.functions";
+import { useIdleLogout } from "@/lib/use-idle-logout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -34,8 +37,21 @@ import {
   BarChart3,
   Users,
   CalendarCheck,
+  ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
+
+// Nombre legible del rol, para que en una PC compartida se vea de un vistazo
+// con qué cuenta se está trabajando.
+const ETIQUETA_ROL: Record<string, string> = {
+  super_admin: "Administradora",
+  finanzas: "Finanzas",
+  director: "Dirección (solo lectura)",
+  celador_estudios: "Control de estudio",
+  celador: "Celador",
+  pendiente: "Sin habilitar",
+  unknown: "Sin rol",
+};
 
 // Estilos del menú lateral: en escritorio cada ítem ocupa toda la fila.
 const NAV_ITEM =
@@ -115,6 +131,15 @@ function Index() {
   useEffect(() => {
     if (!authLoading && !auth.profile) setAuthDialogOpen(true);
   }, [authLoading, auth.profile]);
+
+  // Cierre por inactividad: el tiempo depende del rol, porque una sesión de
+  // finanzas desatendida en la PC compartida es mucho más delicada que la de
+  // un celador pasando lista.
+  const minutosInactividad = auth.profile ? (MINUTOS_INACTIVIDAD[auth.role] ?? 30) : 0;
+  const { segundosRestantes, seguirActivo } = useIdleLogout(minutosInactividad, () => {
+    logout();
+    toast.info("Se cerró la sesión por inactividad");
+  });
 
   const userInfo = auth.profile
     ? {
@@ -239,11 +264,24 @@ function Index() {
               Log
             </button>
             <div className="flex items-center gap-2">
+              {auth.role === "super_admin" && <CuentasPendientes />}
               <button
                 onClick={() => setAuthDialogOpen(true)}
-                className="rounded-lg bg-primary-foreground/10 px-2.5 py-1.5 text-xs hover:bg-primary-foreground/20 font-medium"
+                className="rounded-lg bg-primary-foreground/10 px-2.5 py-1.5 text-left text-xs hover:bg-primary-foreground/20"
+                title="Cambiar de usuario"
               >
-                {auth.profile ? auth.profile.full_name : "Iniciar sesión"}
+                {auth.profile ? (
+                  <>
+                    <span className="block font-medium leading-tight">
+                      {auth.profile.full_name}
+                    </span>
+                    <span className="block text-[10px] uppercase tracking-wide opacity-80">
+                      {ETIQUETA_ROL[auth.role] ?? auth.role}
+                    </span>
+                  </>
+                ) : (
+                  <span className="font-medium">Iniciar sesión</span>
+                )}
               </button>
               {auth.profile && (
                 <button
@@ -257,6 +295,18 @@ function Index() {
             </div>
           </div>
         </header>
+
+        {segundosRestantes != null && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-amber-400 bg-amber-50 px-4 py-3 text-sm dark:border-amber-800 dark:bg-amber-950/40">
+            <ShieldAlert className="h-4 w-4 shrink-0 text-amber-600" />
+            <span className="flex-1">
+              Por seguridad, la sesión se cerrará en <b>{segundosRestantes} s</b> por inactividad.
+            </span>
+            <Button size="sm" onClick={seguirActivo}>
+              Sigo aquí
+            </Button>
+          </div>
+        )}
 
         <AuthDialog
           open={authDialogOpen}
@@ -282,6 +332,22 @@ function Index() {
               Inicia sesión con tu correo y contraseña para continuar.
             </p>
             <Button onClick={() => setAuthDialogOpen(true)}>Iniciar sesión</Button>
+          </Card>
+        ) : auth.role === "pendiente" ? (
+          <Card className="mx-auto max-w-lg p-10 text-center">
+            <ShieldAlert className="mx-auto mb-3 h-10 w-10 text-amber-500" />
+            <h2 className="mb-2 text-lg font-bold">Tu cuenta está esperando aprobación</h2>
+            <p className="text-sm text-muted-foreground">
+              Se creó una cuenta con <b>{auth.profile.email}</b>, pero todavía no tiene acceso. La
+              administradora de la escuela debe habilitarla y asignarte un rol.
+            </p>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Si crees que es un error, avísale a quien administra el sistema. Cuando te habiliten,
+              cierra sesión y vuelve a entrar.
+            </p>
+            <Button variant="outline" className="mt-5" onClick={logout}>
+              <LogOut className="mr-2 h-4 w-4" /> Cerrar sesión
+            </Button>
           </Card>
         ) : (
           <Tabs
