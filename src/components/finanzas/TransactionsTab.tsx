@@ -138,6 +138,11 @@ function normalizeName(s: string) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+/** Compara ignorando mayúsculas y tildes: "bcion" encuentra "Bolívares Ción". */
+function contiene(texto: string | undefined, busqueda: string): boolean {
+  return normalizeName(texto ?? "").includes(normalizeName(busqueda));
+}
+
 function findStudentInDesc(desc: string, students: Student[]): Student | null {
   const n = normalizeName(desc);
   for (const s of students) {
@@ -487,7 +492,6 @@ export function TransactionsTab({
 }) {
   const [from, setFrom] = useState<string>("");
   const [to, setTo] = useState<string>("");
-  const [searchQ, setSearchQ] = useState("");
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [catOpen, setCatOpen] = useState(false);
   const [studentTx, setStudentTx] = useState<{
@@ -498,6 +502,7 @@ export function TransactionsTab({
   const [filterTipo, setFilterTipo] = useState<string>("");
   const [filterMoneda, setFilterMoneda] = useState<string>("");
   const [filterCategoria, setFilterCategoria] = useState<string>("");
+  const [filterDescripcion, setFilterDescripcion] = useState<string>("");
   const [filterBanco, setFilterBanco] = useState<string>("");
   const [filterMes, setFilterMes] = useState<string>("");
 
@@ -544,25 +549,25 @@ export function TransactionsTab({
     [tx.list],
   );
 
+  const catBuscada = filterCategoria.trim();
+  const descBuscada = filterDescripcion.trim();
+
   const filtered = useMemo(() => {
-    const sq = searchQ.trim().toLowerCase();
-    return tx.list.filter((r) => {
+    const pasa = tx.list.filter((r) => {
       const iso = fechaToIso(r.fecha);
-      if (!iso) return true;
-      if (from && iso < from) return false;
-      if (to && iso > to) return false;
-      if (filterMes && iso.slice(0, 7) !== filterMes) return false;
-      if (sq) {
-        const descOk = r.descripcion?.toLowerCase().includes(sq);
-        const catOk = r.categoria?.toLowerCase().includes(sq);
-        const nameOk = findStudentInDesc(r.descripcion, students)
-          ?.nombre.toLowerCase()
-          .includes(sq);
-        if (!descOk && !catOk && !nameOk) return false;
+      // Una fecha ilegible no debe desaparecer al filtrar por texto: solo se
+      // salta los filtros que dependen de la fecha.
+      if (iso) {
+        if (from && iso < from) return false;
+        if (to && iso > to) return false;
+        if (filterMes && iso.slice(0, 7) !== filterMes) return false;
       }
       if (filterTipo && r.tipo !== filterTipo) return false;
       if (filterMoneda && r.moneda !== filterMoneda) return false;
-      if (filterCategoria && r.categoria !== filterCategoria) return false;
+      // Coincidencia parcial, no exacta: escribir "alq" debe encontrar
+      // "Alquiler del local" mientras se teclea.
+      if (catBuscada && !contiene(r.categoria, catBuscada)) return false;
+      if (descBuscada && !contiene(r.descripcion, descBuscada)) return false;
       if (filterBanco === "__sin_banco__" && (r.banco || "") !== "") return false;
       if (
         filterBanco &&
@@ -573,29 +578,55 @@ export function TransactionsTab({
         return false;
       return true;
     });
+
+    // Siempre de la más antigua a la más reciente. Las fechas se guardan como
+    // texto dd/mm/aaaa, que ordenado tal cual pone el 02/01 antes del 15/12;
+    // por eso se compara la versión ISO. Las fechas ilegibles van al final
+    // para que salten a la vista y se puedan corregir.
+    return pasa
+      .map((r, i) => ({ r, iso: fechaToIso(r.fecha), i }))
+      .sort((a, b) => {
+        if (a.iso !== b.iso) {
+          if (!a.iso) return 1;
+          if (!b.iso) return -1;
+          return a.iso < b.iso ? -1 : 1;
+        }
+        return a.i - b.i; // mismo día: se respeta el orden de carga
+      })
+      .map((x) => x.r);
   }, [
     tx.list,
     from,
     to,
-    searchQ,
-    students,
     filterTipo,
     filterMoneda,
     filterBanco,
-    filterCategoria,
+    catBuscada,
+    descBuscada,
     filterMes,
   ]);
 
   const anyFilterActive = !!(
     from ||
     to ||
-    searchQ.trim() ||
     filterTipo ||
     filterMoneda ||
-    filterCategoria ||
+    catBuscada ||
+    descBuscada ||
     filterBanco ||
     filterMes
   );
+
+  const limpiarFiltros = () => {
+    setFrom("");
+    setTo("");
+    setFilterTipo("");
+    setFilterMoneda("");
+    setFilterCategoria("");
+    setFilterDescripcion("");
+    setFilterBanco("");
+    setFilterMes("");
+  };
 
   const mesOptions = useMemo(() => {
     const set = new Set<string>();
@@ -604,6 +635,13 @@ export function TransactionsTab({
       if (iso) set.add(iso.slice(0, 7));
     }
     return [...set].sort().reverse();
+  }, [tx.list]);
+
+  /** Categorías realmente presentes en los movimientos, para sugerirlas. */
+  const categoriaOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of tx.list) if (r.categoria?.trim()) set.add(r.categoria.trim());
+    return [...set].sort((a, b) => a.localeCompare(b, "es"));
   }, [tx.list]);
 
   const exportExcel = () => {
@@ -813,12 +851,6 @@ export function TransactionsTab({
               Completar tasas ({sinTasaCount})
             </Button>
           )}
-          <Input
-            value={searchQ}
-            onChange={(e) => setSearchQ(e.target.value)}
-            placeholder="Buscar en descripción…"
-            className="w-48"
-          />
           <label className="text-xs text-muted-foreground">Desde</label>
           <input
             type="date"
@@ -833,16 +865,8 @@ export function TransactionsTab({
             onChange={(e) => setTo(e.target.value)}
             className="rounded border bg-background px-2 py-1 text-sm"
           />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setFrom("");
-              setTo("");
-              setSearchQ("");
-            }}
-          >
-            Limpiar filtro
+          <Button variant="outline" size="sm" onClick={limpiarFiltros} disabled={!anyFilterActive}>
+            Limpiar filtros
           </Button>
           <Button onClick={exportExcel}>
             <Download className="mr-2 h-4 w-4" /> Excel
@@ -913,10 +937,25 @@ export function TransactionsTab({
                   value={filterCategoria}
                   onChange={(e) => setFilterCategoria(e.target.value)}
                   placeholder="Categoría…"
-                  className="w-full bg-transparent text-xs font-medium outline-none placeholder:text-muted-foreground/50"
+                  list="lista-categorias"
+                  className="w-full min-w-[110px] bg-transparent text-xs font-medium outline-none placeholder:text-muted-foreground/50"
+                />
+                {/* Sugiere las categorías que existen, pero deja escribir
+                    libremente para buscar por trozos de texto. */}
+                <datalist id="lista-categorias">
+                  {categoriaOptions.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
+              </th>
+              <th className="py-0.5 px-2 font-medium">
+                <input
+                  value={filterDescripcion}
+                  onChange={(e) => setFilterDescripcion(e.target.value)}
+                  placeholder="Descripción…"
+                  className="w-full min-w-[140px] bg-transparent text-xs font-medium outline-none placeholder:text-muted-foreground/50"
                 />
               </th>
-              <th className="py-0.5 px-2 font-medium">Descripción</th>
               <th className="py-0.5 px-2 font-medium">Mens.</th>
               <th className="py-0.5 px-2 font-medium">
                 <select

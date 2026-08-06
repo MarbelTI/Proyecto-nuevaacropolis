@@ -35,37 +35,59 @@ export function useAuth() {
     if (!hasSupabaseConfig || typeof window === "undefined") return;
     let mounted = true;
 
+    /**
+     * Valida el token contra el servidor y actualiza el perfil.
+     *
+     * Antes, cualquier fallo de esta llamada cerraba la sesión, y basta un
+     * servidor arrancando en frío o un parpadeo de internet para que falle:
+     * por eso la sesión se caía a los pocos segundos de entrar, sin tener
+     * nada que ver con el tiempo de inactividad.
+     *
+     * Ahora se reintenta una vez y, antes de cerrar, se le pregunta a
+     * Supabase si la sesión sigue viva. Solo se cierra si de verdad ya no lo
+     * está.
+     */
+    const validar = async (accessToken: string) => {
+      let res: Awaited<ReturnType<typeof authCallbackFn>> | null = null;
+      for (let intento = 0; intento < 2 && mounted; intento++) {
+        try {
+          res = await authCallbackFn({ data: { accessToken } });
+          if (res?.ok) break;
+        } catch {
+          res = null;
+        }
+        if (intento === 0) await new Promise((r) => setTimeout(r, 800));
+      }
+      if (!mounted) return;
+
+      if (res?.ok && res.profile) {
+        setSession({ ...res.perms, role: res.profile.role, profile: res.profile });
+        setLoading(false);
+        return;
+      }
+
+      const { data } = await supabase.auth.getSession();
+      if (!mounted) return;
+      if (!data.session) setSession(emptySession);
+      setLoading(false);
+    };
+
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, s) => {
       if (event === "PASSWORD_RECOVERY") setRecoveryOpen(true);
 
-      if (s) {
-        const res = await authCallbackFn({ data: { accessToken: s.access_token } });
-        if (!mounted) return;
-        if (res.ok && res.profile) {
-          setSession({ ...res.perms, role: res.profile.role, profile: res.profile });
-        } else {
+      if (event === "SIGNED_OUT" || !s) {
+        if (mounted) {
           setSession(emptySession);
+          setLoading(false);
         }
-      } else if (mounted) {
-        setSession(emptySession);
+        return;
       }
-      if (mounted) setLoading(false);
+      await validar(s.access_token);
     });
 
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        authCallbackFn({ data: { accessToken: data.session.access_token } }).then((res) => {
-          if (!mounted) return;
-          if (res.ok && res.profile) {
-            setSession({ ...res.perms, role: res.profile.role, profile: res.profile });
-          } else {
-            setSession(emptySession);
-          }
-          setLoading(false);
-        });
-      } else if (mounted) {
-        setLoading(false);
-      }
+      if (data.session) validar(data.session.access_token);
+      else if (mounted) setLoading(false);
     });
 
     return () => {
