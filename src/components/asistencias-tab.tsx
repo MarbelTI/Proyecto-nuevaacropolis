@@ -1402,7 +1402,12 @@ export default function AsistenciasTab({
             <TabsContent value="global">
               <Card className="p-4">
                 <h3 className="font-bold text-sm mb-3">Diagnóstico Global</h3>
-                <DiagnosticoGlobal aulasMeta={aulasMeta} records={records} />
+                <DiagnosticoGlobal
+                  aulasMeta={aulasMeta}
+                  records={records}
+                  reflexionesMeta={reflexionesMeta}
+                  reflexionAsistencia={reflexionAsistencia}
+                />
               </Card>
             </TabsContent>
           )}
@@ -1461,118 +1466,331 @@ export default function AsistenciasTab({
   );
 }
 
+/**
+ * Diagnóstico global: una fila por aula, para leer de un vistazo cuál va bien
+ * y cuál necesita atención.
+ *
+ * Antes eran cinco tarjetas de degradado por aula con texto de 8-9px: cinco
+ * colores compitiendo y nada comparable entre aulas, porque los números no
+ * quedaban alineados. Ahora es una tabla ordenada por asistencia, con barras
+ * que permiten comparar de arriba abajo sin leer las cifras.
+ *
+ * Colores validados contra daltonismo (ΔE 8.2 deutan, sobre el fondo claro):
+ * verde para asistencia, naranja para reflexiones. Cada barra va además con su
+ * porcentaje al lado, así que el color nunca es el único indicio.
+ */
+const C_ASIST = "#3F8A5F";
+const C_REFLEX = "#BF5A22";
+
+function Barra({ pct, color }: { pct: number; color: string }) {
+  return (
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+      <div
+        className="h-full rounded-full transition-all"
+        style={{ width: `${Math.max(0, Math.min(100, pct))}%`, backgroundColor: color }}
+      />
+    </div>
+  );
+}
+
 function DiagnosticoGlobal({
   aulasMeta,
   records,
+  reflexionesMeta,
+  reflexionAsistencia,
 }: {
   aulasMeta: AulaMeta[];
   records: AttendanceRecord[];
+  reflexionesMeta: ReflexionMeta[];
+  reflexionAsistencia: ReflexionAsistencia[];
 }) {
   const today =
     typeof window !== "undefined" ? new Date().toISOString().slice(0, 10) : "2026-12-31";
-  const cards = useMemo(() => {
-    return aulasMeta.map((aula) => {
-      const todas = generateFechas(aula.diaSemana, aula.year);
-      const fechas = todas.filter((f) => f <= today);
-      const nombres = new Set<string>();
-      for (const r of records) if (r.aula === aula.nombre) nombres.add(r.alumno);
-      const alumnos = Array.from(nombres).sort();
-      const totalClases = fechas.length;
-      let totalAsist = 0,
-        totalRef = 0;
-      for (const al of alumnos) {
-        for (const f of fechas) {
-          for (const r of records) {
-            if (r.aula !== aula.nombre || r.alumno !== al || r.fecha !== f) continue;
-            if (r.asistencia === "A") totalAsist++;
-            if (r.reflexion === "E") totalRef++;
-          }
-        }
+
+  const filas = useMemo(() => {
+    // Se indexa una sola vez. La versión anterior recorría records dentro de un
+    // bucle de alumnos dentro de otro de fechas: con 80 participantes y miles
+    // de registros eran millones de comparaciones en cada render.
+    const alumnosPorAula = new Map<string, Set<string>>();
+    const asistPorFecha = new Map<string, number>();
+    const sinClase = new Set<string>();
+    const asistPorAlumno = new Map<string, number>();
+
+    for (const r of records) {
+      let set = alumnosPorAula.get(r.aula);
+      if (!set) alumnosPorAula.set(r.aula, (set = new Set()));
+      set.add(r.alumno);
+      if (r.fecha > today) continue;
+      const k = `${r.aula}|${r.fecha}`;
+      if (r.asistencia === "A") {
+        asistPorFecha.set(k, (asistPorFecha.get(k) ?? 0) + 1);
+        const ka = `${r.aula}|${r.alumno}`;
+        asistPorAlumno.set(ka, (asistPorAlumno.get(ka) ?? 0) + 1);
+      } else if (r.asistencia === "NC") {
+        sinClase.add(k);
       }
-      const totalPosible = alumnos.length * totalClases;
-      const pctAsist = totalPosible ? +((totalAsist / totalPosible) * 100).toFixed(1) : 0;
-      const pctRef = totalPosible ? +((totalRef / totalPosible) * 100).toFixed(1) : 0;
-      let bestA = { nombre: "", val: 0 };
-      let bestR = { nombre: "", val: 0 };
-      for (const al of alumnos) {
-        let ca = 0,
-          cr = 0;
-        for (const f of fechas) {
-          for (const r of records) {
-            if (r.aula !== aula.nombre || r.alumno !== al || r.fecha !== f) continue;
-            if (r.asistencia === "A") ca++;
-            if (r.reflexion === "E") cr++;
-          }
+    }
+
+    // Las entregas viven en reflexionAsistencia, no en records.reflexion — ese
+    // campo lo deja vacío el importador, por lo que el diagnóstico mostraba
+    // 0% de reflexiones en todas las aulas.
+    const entregasPorRef = new Map<string, number>();
+    const entregasPorAlumno = new Map<string, number>();
+    for (const ra of reflexionAsistencia) {
+      if (ra.estado !== "E") continue;
+      entregasPorRef.set(ra.reflexionId, (entregasPorRef.get(ra.reflexionId) ?? 0) + 1);
+      const ka = `${ra.aula}|${ra.alumno}`;
+      entregasPorAlumno.set(ka, (entregasPorAlumno.get(ka) ?? 0) + 1);
+    }
+
+    return aulasMeta
+      .map((aula) => {
+        const planificadas = generateFechas(aula.diaSemana, aula.year);
+        const dadas = planificadas.filter(
+          (f) => f <= today && !sinClase.has(`${aula.nombre}|${f}`),
+        );
+        const alumnos = Array.from(alumnosPorAula.get(aula.nombre) ?? []).sort();
+
+        const posibleAsist = alumnos.length * dadas.length;
+        let totalAsist = 0;
+        let mejorClase = { fecha: "", n: 0 };
+        for (const f of dadas) {
+          const n = asistPorFecha.get(`${aula.nombre}|${f}`) ?? 0;
+          totalAsist += n;
+          if (n > mejorClase.n) mejorClase = { fecha: f, n };
         }
-        if (ca > bestA.val) bestA = { nombre: al, val: ca };
-        if (cr > bestR.val) bestR = { nombre: al, val: cr };
-      }
-      const planificadas = todas.length;
-      return {
-        nombre: aula.nombre,
-        alumnos: alumnos.length,
-        totalClases,
-        planificadas,
-        totalAsist,
-        totalRef,
-        pctAsist,
-        pctRef,
-        bestA,
-        bestR,
-      };
-    });
-  }, [aulasMeta, records, today]);
+
+        const refs = reflexionesMeta.filter((r) => r.aula === aula.nombre && r.fecha <= today);
+        const posibleRef = alumnos.length * refs.length;
+        let totalRef = 0;
+        let mejorRef = { titulo: "", n: 0 };
+        for (const r of refs) {
+          const n = entregasPorRef.get(r.id) ?? 0;
+          totalRef += n;
+          if (n > mejorRef.n) mejorRef = { titulo: temaDeTitulo(r.titulo) || r.titulo, n };
+        }
+
+        let masConstante = { nombre: "", n: 0 };
+        let masCumplido = { nombre: "", n: 0 };
+        for (const al of alumnos) {
+          const a = asistPorAlumno.get(`${aula.nombre}|${al}`) ?? 0;
+          if (a > masConstante.n) masConstante = { nombre: al, n: a };
+          const e = entregasPorAlumno.get(`${aula.nombre}|${al}`) ?? 0;
+          if (e > masCumplido.n) masCumplido = { nombre: al, n: e };
+        }
+
+        return {
+          nombre: aula.nombre,
+          celador: aula.celador,
+          dia: aula.diaSemana,
+          alumnos: alumnos.length,
+          dadas: dadas.length,
+          planificadas: planificadas.length,
+          totalAsist,
+          posibleAsist,
+          pctAsist: posibleAsist ? Math.round((totalAsist / posibleAsist) * 100) : 0,
+          refs: refs.length,
+          totalRef,
+          posibleRef,
+          pctRef: posibleRef ? Math.round((totalRef / posibleRef) * 100) : 0,
+          mejorClase,
+          mejorRef,
+          masConstante,
+          masCumplido,
+        };
+      })
+      .sort((a, b) => b.pctAsist - a.pctAsist);
+  }, [aulasMeta, records, reflexionesMeta, reflexionAsistencia, today]);
+
+  const global = useMemo(() => {
+    const t = filas.reduce(
+      (acc, f) => ({
+        alumnos: acc.alumnos + f.alumnos,
+        asist: acc.asist + f.totalAsist,
+        posAsist: acc.posAsist + f.posibleAsist,
+        ref: acc.ref + f.totalRef,
+        posRef: acc.posRef + f.posibleRef,
+      }),
+      { alumnos: 0, asist: 0, posAsist: 0, ref: 0, posRef: 0 },
+    );
+    return {
+      ...t,
+      pctAsist: t.posAsist ? Math.round((t.asist / t.posAsist) * 100) : 0,
+      pctRef: t.posRef ? Math.round((t.ref / t.posRef) * 100) : 0,
+    };
+  }, [filas]);
+
+  if (!filas.length) {
+    return <p className="py-8 text-center text-sm text-muted-foreground">No hay aulas cargadas.</p>;
+  }
+
+  const enRiesgo = filas.filter((f) => f.pctAsist < 50);
 
   return (
     <div className="space-y-4">
-      {cards.map((c) => {
-        return (
-          <div key={c.nombre} className="grid grid-cols-5 gap-1.5 text-[10px]">
-            <div className="rounded-lg bg-gradient-to-br from-slate-200 to-slate-300 p-1.5 text-center flex flex-col justify-center">
-              <div className="text-[9px] text-slate-600 font-medium leading-tight">Aula</div>
-              <div className="text-[11px] font-bold text-slate-800 leading-tight break-words">
-                {c.nombre}
-              </div>
+      {/* Cuatro cifras de cabecera: lo que se pregunta primero. */}
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {[
+          { et: "Aulas activas", v: String(filas.length), pie: `${global.alumnos} participantes` },
+          {
+            et: "Asistencia general",
+            v: `${global.pctAsist}%`,
+            pie: `${global.asist} de ${global.posAsist}`,
+            color: C_ASIST,
+          },
+          {
+            et: "Reflexiones entregadas",
+            v: `${global.pctRef}%`,
+            pie: `${global.ref} de ${global.posRef}`,
+            color: C_REFLEX,
+          },
+          {
+            et: "Aulas bajo 50%",
+            v: String(enRiesgo.length),
+            pie: enRiesgo.length ? enRiesgo.map((f) => f.nombre).join(", ") : "ninguna",
+          },
+        ].map((k) => (
+          <div key={k.et} className="rounded-lg border bg-card px-3 py-2">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{k.et}</div>
+            <div
+              className="text-xl font-bold leading-tight"
+              style={k.color ? { color: k.color } : undefined}
+            >
+              {k.v}
             </div>
-            <div className="rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 p-1.5 text-center">
-              <div className="text-[9px] text-blue-600 font-medium">Participantes</div>
-              <div className="text-sm font-bold text-blue-700">{c.alumnos}</div>
-              <div className="text-[8px] text-blue-500/70">
-                {c.totalClases}/{c.planificadas} clases
-              </div>
-            </div>
-            <div className="rounded-lg bg-gradient-to-br from-green-50 to-green-100 p-1.5 text-center">
-              <div className="text-[9px] text-green-600 font-medium">Asistencia</div>
-              <div className="text-sm font-bold text-green-700">{c.pctAsist}%</div>
-              <div className="text-[8px] text-green-500/70">
-                {c.totalAsist}/{c.alumnos * c.totalClases}
-              </div>
-            </div>
-            <div className="rounded-lg bg-gradient-to-br from-indigo-50 to-indigo-100 p-1.5 text-center">
-              <div className="text-[9px] text-indigo-600 font-medium">Reflexiones</div>
-              <div className="text-sm font-bold text-indigo-700">{c.pctRef}%</div>
-              <div className="text-[8px] text-indigo-500/70">
-                {c.totalRef}/{c.alumnos * c.totalClases}
-              </div>
-            </div>
-            <div className="rounded-lg bg-gradient-to-br from-purple-50 to-purple-100 p-1.5 text-center flex flex-col justify-center">
-              <div className="text-[9px] text-purple-600 font-medium">Destacados</div>
-              <div
-                className="text-[9px] font-bold text-purple-700 leading-tight truncate"
-                title={`Asistencia: ${c.bestA.nombre} (${c.bestA.val}/${c.totalClases})`}
-              >
-                A: {c.bestA.nombre}
-              </div>
-              <div
-                className="text-[9px] font-bold text-purple-700 leading-tight truncate"
-                title={`Reflexiones: ${c.bestR.nombre} (${c.bestR.val}/${c.totalClases})`}
-              >
-                R: {c.bestR.nombre}
-              </div>
+            <div className="truncate text-[10px] text-muted-foreground" title={k.pie}>
+              {k.pie}
             </div>
           </div>
-        );
-      })}
+        ))}
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[860px] text-xs">
+          <thead>
+            <tr className="border-b text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+              <th className="py-1.5 pr-2 font-medium">Aula</th>
+              <th className="py-1.5 px-2 text-right font-medium">Part.</th>
+              <th className="py-1.5 px-2 text-right font-medium">Clases</th>
+              <th className="py-1.5 px-2 font-medium" style={{ width: 150 }}>
+                Asistencia
+              </th>
+              <th className="py-1.5 px-2 font-medium" style={{ width: 150 }}>
+                Reflexiones
+              </th>
+              <th className="py-1.5 px-2 font-medium">Clase más concurrida</th>
+              <th className="py-1.5 pl-2 font-medium">Más constante</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map((f) => (
+              // Al pasar el mouse toda la fila se pone en negrita: con ocho
+              // aulas de cifras parecidas es fácil saltar de renglón a media
+              // lectura.
+              <tr
+                key={f.nombre}
+                className="border-b border-muted/40 transition-colors hover:bg-primary/5 hover:font-semibold"
+              >
+                <td className="py-1.5 pr-2">
+                  <div className="font-medium">{f.nombre}</div>
+                  <div className="text-[10px] font-normal text-muted-foreground">
+                    {f.dia} · {f.celador || "sin celador"}
+                  </div>
+                </td>
+                <td className="px-2 text-right tabular-nums">{f.alumnos}</td>
+                <td className="px-2 text-right tabular-nums text-muted-foreground">
+                  {f.dadas}
+                  <span className="text-[10px] font-normal">/{f.planificadas}</span>
+                </td>
+                <td className="px-2">
+                  <div className="mb-0.5 flex items-baseline justify-between gap-1">
+                    <span
+                      className="tabular-nums"
+                      style={{ color: f.pctAsist < 50 ? undefined : C_ASIST }}
+                    >
+                      {f.pctAsist}%
+                    </span>
+                    <span className="text-[10px] font-normal text-muted-foreground tabular-nums">
+                      {f.totalAsist}/{f.posibleAsist}
+                    </span>
+                  </div>
+                  <Barra pct={f.pctAsist} color={f.pctAsist < 50 ? "#B4342A" : C_ASIST} />
+                </td>
+                <td className="px-2">
+                  <div className="mb-0.5 flex items-baseline justify-between gap-1">
+                    <span className="tabular-nums" style={{ color: C_REFLEX }}>
+                      {f.pctRef}%
+                    </span>
+                    <span className="text-[10px] font-normal text-muted-foreground tabular-nums">
+                      {f.totalRef}/{f.posibleRef}
+                    </span>
+                  </div>
+                  <Barra pct={f.pctRef} color={C_REFLEX} />
+                </td>
+                <td className="px-2">
+                  {f.mejorClase.fecha ? (
+                    <>
+                      <div className="tabular-nums">
+                        {isoToDiaMes(f.mejorClase.fecha)}{" "}
+                        <span className="text-[10px] font-normal text-muted-foreground">
+                          {f.mejorClase.n}/{f.alumnos}
+                        </span>
+                      </div>
+                      {f.mejorRef.titulo && (
+                        <div
+                          className="truncate text-[10px] font-normal text-muted-foreground"
+                          title={`Reflexión más entregada: ${f.mejorRef.titulo} (${f.mejorRef.n})`}
+                        >
+                          {f.mejorRef.titulo}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground/50">—</span>
+                  )}
+                </td>
+                <td className="max-w-[150px] pl-2">
+                  <div className="truncate" title={f.masConstante.nombre}>
+                    {f.masConstante.nombre || "—"}
+                    {f.masConstante.n > 0 && (
+                      <span className="ml-1 text-[10px] font-normal text-muted-foreground tabular-nums">
+                        {f.masConstante.n}/{f.dadas}
+                      </span>
+                    )}
+                  </div>
+                  {f.masCumplido.nombre && (
+                    <div
+                      className="truncate text-[10px] font-normal text-muted-foreground"
+                      title={`Más reflexiones entregadas: ${f.masCumplido.nombre}`}
+                    >
+                      {f.masCumplido.nombre} · {f.masCumplido.n} refl.
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 font-bold">
+              <td className="py-1.5 pr-2">Total</td>
+              <td className="px-2 text-right tabular-nums">{global.alumnos}</td>
+              <td className="px-2" />
+              <td className="px-2 tabular-nums" style={{ color: C_ASIST }}>
+                {global.pctAsist}%
+              </td>
+              <td className="px-2 tabular-nums" style={{ color: C_REFLEX }}>
+                {global.pctRef}%
+              </td>
+              <td colSpan={2} />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <p className="text-[10px] text-muted-foreground">
+        Las clases marcadas «no hubo clase» quedan fuera del cálculo. Los porcentajes se cuentan
+        hasta hoy, no sobre el año completo.
+      </p>
     </div>
   );
 }
