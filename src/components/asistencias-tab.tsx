@@ -66,6 +66,18 @@ function nextMark(current: "" | "A" | "I" | "NC"): "" | "A" | "I" | "NC" {
   if (current === "I") return "NC";
   return "";
 }
+/**
+ * El importador guarda el título como "Reflexión 3: SETH - NEFTIS". La tabla
+ * muestra el número y el tema en columnas separadas, así que aquí se separa.
+ * Devuelve cadena vacía cuando el tema todavía no tiene nombre.
+ */
+function temaDeTitulo(titulo: string): string {
+  const conTema = titulo.match(/^\s*Reflexi[óo]n\s+\d+\s*:\s*(.+)$/i);
+  if (conTema) return conTema[1].trim();
+  if (/^\s*Reflexi[óo]n\s+\d+\s*$/i.test(titulo)) return "";
+  return titulo.trim();
+}
+
 function nextRef(current: "" | "E" | "NE" | "SE"): "" | "E" | "NE" | "SE" {
   if (current === "") return "E";
   if (current === "E") return "NE";
@@ -94,10 +106,10 @@ export default function AsistenciasTab({
   const [refDialogOpen, setRefDialogOpen] = useState(false);
   const [refTitulo, setRefTitulo] = useState("");
   const [refFecha, setRefFecha] = useState(new Date().toISOString().slice(0, 10));
-  const [editingTemaFecha, setEditingTemaFecha] = useState<string | null>(null);
-  const [editingTemaVal, setEditingTemaVal] = useState("");
   const [editingRefId, setEditingRefId] = useState<string | null>(null);
-  const [editingRefCount, setEditingRefCount] = useState(1);
+  // Edición del tema dentro de la propia tabla, sin abrir diálogo.
+  const [inlineRefId, setInlineRefId] = useState<string | null>(null);
+  const [inlineRefVal, setInlineRefVal] = useState("");
 
   const allowedAulas = useMemo(() => {
     if (user.canEditAnyAula) return aulasMeta.map((a) => a.nombre);
@@ -252,14 +264,6 @@ export default function AsistenciasTab({
     }
     return map;
   }, [reflexionesHoy]);
-
-  const refCountForFecha = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const ref of aulaReflexiones) {
-      if (ref.temaFecha) map[ref.temaFecha] = (map[ref.temaFecha] || 0) + 1;
-    }
-    return map;
-  }, [aulaReflexiones]);
 
   const reflectionGroups = useMemo(() => {
     const groups: { isGroup: boolean; refs: typeof aulaReflexiones; title: string }[] = [];
@@ -468,39 +472,6 @@ export default function AsistenciasTab({
       }),
     );
   };
-
-  const syncReflexionesForTema = useCallback(
-    (aulaNombre: string, fecha: string, titulo: string, count: number) => {
-      const currentLinked = reflexionesMeta.filter(
-        (r) => r.aula === aulaNombre && r.temaFecha === fecha,
-      );
-      const currentCount = currentLinked.length;
-      const currentIds = currentLinked.map((r) => r.id);
-      if (currentCount === count) return;
-      setReflexionesMeta((prev) => {
-        const updated = prev.filter((r) => !(r.aula === aulaNombre && r.temaFecha === fecha));
-        for (let i = 0; i < count; i++) {
-          const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-          updated.push({
-            id,
-            aula: aulaNombre,
-            year: currentAula?.year ?? 2026,
-            titulo: `Reflexión: ${titulo}`,
-            fecha,
-            temaFecha: fecha,
-          });
-        }
-        return updated;
-      });
-      if (currentCount > count) {
-        const removeIds = currentIds.slice(count);
-        setReflexionAsistencia((prev) =>
-          prev.filter((r) => !(r.aula === aulaNombre && removeIds.includes(r.reflexionId))),
-        );
-      }
-    },
-    [currentAula?.year, reflexionesMeta],
-  );
 
   const topicNumByFecha = useMemo(() => {
     const map: Record<string, number> = {};
@@ -896,129 +867,114 @@ export default function AsistenciasTab({
                 </table>
               )}
 
-              {/* Temas */}
-              {(() => {
-                let counter = 0;
-                const all: { fecha: string; tema: string; idx: number }[] = [];
-                for (const f of fechas) {
-                  const t = currentAula?.temas[f];
-                  if (t) {
-                    counter++;
-                    all.push({ fecha: f, tema: t, idx: counter });
-                  }
-                }
-                if (!all.length) return null;
-                const fmt = (iso: string) => {
-                  const [y, m, d] = iso.split("-");
-                  return `${m}/${d}`;
-                };
-                const saveTemaEditing = (fecha: string) => {
-                  updateTema(currentAula!.nombre, fecha, editingTemaVal);
-                  syncReflexionesForTema(
-                    currentAula!.nombre,
-                    fecha,
-                    editingTemaVal.trim() || editingTemaVal,
-                    editingRefCount,
+              {/* Temas y reflexiones — un solo bloque, en rejilla.
+                  Antes esto eran DOS listas con la misma información: una tira
+                  de temas separados por barras y, debajo, las reflexiones una
+                  por línea. Cada tema tiene exactamente una reflexión, así que
+                  van juntos, cuatro por fila, y el tema se edita en su tarjeta. */}
+              {aulaReflexiones.length > 0 &&
+                (() => {
+                  const totalPosible = aulaReflexiones.length * alumnos.length;
+                  const totalEntregadas = alumnos.reduce(
+                    (sum, al) =>
+                      sum + aulaReflexiones.filter((r) => getRefEstado(al, r.id) === "E").length,
+                    0,
                   );
-                  setEditingTemaFecha(null);
-                };
-                return (
-                  <div className="mt-4">
-                    <div className="font-bold text-[11px] mb-1">Temas</div>
-                    <div className="text-[11px] flex flex-wrap gap-x-1 gap-y-1">
-                      {all.map((r, i) => (
-                        <span key={r.fecha} className="inline-flex items-baseline gap-0.5">
-                          {i > 0 && <span className="text-muted-foreground mx-0.5">|</span>}
-                          {editingTemaFecha === r.fecha ? (
-                            <span className="inline-flex items-center gap-1">
-                              <span className="text-muted-foreground shrink-0">{fmt(r.fecha)}</span>
-                              <input
-                                autoFocus
-                                className="w-20 text-[10px] rounded border border-indigo-300 bg-indigo-50 px-1 py-0"
-                                value={editingTemaVal}
-                                onChange={(e) => setEditingTemaVal(e.target.value)}
-                                onBlur={() => saveTemaEditing(r.fecha)}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") saveTemaEditing(r.fecha);
-                                  if (e.key === "Escape") setEditingTemaFecha(null);
-                                }}
-                              />
-                              <span className="text-muted-foreground text-[9px]">R:</span>
-                              <input
-                                type="number"
-                                min={1}
-                                max={9}
-                                className="w-9 text-[10px] rounded border border-indigo-300 bg-indigo-50 px-1 py-0 text-center"
-                                value={editingRefCount}
-                                onChange={(e) =>
-                                  setEditingRefCount(Math.max(1, parseInt(e.target.value) || 1))
-                                }
-                              />
-                            </span>
-                          ) : (
-                            <>
-                              <span className="text-muted-foreground shrink-0">{fmt(r.fecha)}</span>
-                              <span className="font-medium text-muted-foreground shrink-0">
-                                #{r.idx}
-                              </span>
-                              <span className="text-foreground">{r.tema}</span>
-                              <span className="text-[9px] text-muted-foreground">
-                                ({refCountForFecha[r.fecha] || 1}R)
-                              </span>
-                              <button
-                                className="text-muted-foreground hover:text-indigo-600 align-middle"
-                                onClick={() => {
-                                  setEditingTemaFecha(r.fecha);
-                                  setEditingTemaVal(r.tema);
-                                  setEditingRefCount(refCountForFecha[r.fecha] || 1);
-                                }}
-                              >
-                                <Pencil className="h-3 w-3 inline" />
-                              </button>
-                            </>
-                          )}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Reflexiones totales */}
-              {aulaReflexiones.length > 0 && (
-                <div className="mt-4 text-[11px] space-y-0.5">
-                  <div className="font-bold mb-1">Reflexiones</div>
-                  {aulaReflexiones.map((ref) => {
-                    const entregadas = alumnos.filter(
-                      (al) => getRefEstado(al, ref.id) === "E",
-                    ).length;
-                    return (
-                      <div key={ref.id} className="flex items-baseline gap-2">
-                        <span className="font-medium text-muted-foreground shrink-0">
-                          {ref.fecha}
-                        </span>
-                        <span className="text-foreground truncate">{ref.titulo}</span>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">
-                          {entregadas}E/{alumnos.length}
+                  const pctTotal = totalPosible
+                    ? Math.round((totalEntregadas / totalPosible) * 100)
+                    : 0;
+                  const guardarTema = (ref: ReflexionMeta, numero: number) => {
+                    const limpio = inlineRefVal.trim();
+                    const nuevoTitulo = limpio
+                      ? `Reflexión ${numero}: ${limpio}`
+                      : `Reflexión ${numero}`;
+                    setReflexionesMeta((prev) =>
+                      prev.map((r) => (r.id === ref.id ? { ...r, titulo: nuevoTitulo } : r)),
+                    );
+                    // El tema del aula se mantiene en sincronía: la tabla de
+                    // asistencia lo muestra sobre la columna de esa clase.
+                    if (ref.temaFecha && currentAula)
+                      updateTema(currentAula.nombre, ref.temaFecha, limpio);
+                    setInlineRefId(null);
+                  };
+                  return (
+                    <div className="mt-4">
+                      <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-2 text-[11px]">
+                        <span className="font-bold">Temas y reflexiones</span>
+                        <span className="text-muted-foreground">
+                          {aulaReflexiones.length} temas · {alumnos.length} alumnos ·{" "}
+                          <span className="tabular-nums">
+                            {totalEntregadas}/{totalPosible}
+                          </span>{" "}
+                          entregas ({pctTotal}%)
                         </span>
                       </div>
-                    );
-                  })}
-                  <div className="flex items-baseline gap-2 pt-1 border-t border-dashed border-[#bbb] font-bold">
-                    <span>Total general</span>
-                    <span>
-                      {aulaReflexiones.length} reflexiones · {alumnos.length} alumnos ·{" "}
-                      {alumnos.reduce(
-                        (sum, al) =>
-                          sum +
-                          aulaReflexiones.filter((ref) => getRefEstado(al, ref.id) === "E").length,
-                        0,
-                      )}
-                      E entregadas
-                    </span>
-                  </div>
-                </div>
-              )}
+                      <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        {aulaReflexiones.map((ref, i) => {
+                          const numero = i + 1;
+                          const tema = temaDeTitulo(ref.titulo);
+                          const entregadas = alumnos.filter(
+                            (al) => getRefEstado(al, ref.id) === "E",
+                          ).length;
+                          const completo = alumnos.length > 0 && entregadas === alumnos.length;
+                          return (
+                            <div
+                              key={ref.id}
+                              className="rounded-md border bg-card px-2 py-1 hover:border-indigo-300"
+                            >
+                              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                                <span className="font-semibold text-foreground">#{numero}</span>
+                                <span>{ref.fecha ? isoToShort(ref.fecha) : "—"}</span>
+                                <span
+                                  className={`ml-auto tabular-nums ${
+                                    entregadas === 0
+                                      ? "text-muted-foreground/40"
+                                      : completo
+                                        ? "font-medium text-green-600"
+                                        : ""
+                                  }`}
+                                >
+                                  {entregadas}/{alumnos.length}
+                                </span>
+                                <button
+                                  className="shrink-0 hover:text-indigo-600"
+                                  title="Cambiar el tema"
+                                  onClick={() => {
+                                    setInlineRefId(ref.id);
+                                    setInlineRefVal(tema);
+                                  }}
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </button>
+                              </div>
+                              {inlineRefId === ref.id ? (
+                                <input
+                                  autoFocus
+                                  className="mt-0.5 w-full rounded border border-indigo-300 bg-indigo-50 px-1 py-0 text-[11px]"
+                                  value={inlineRefVal}
+                                  onChange={(e) => setInlineRefVal(e.target.value)}
+                                  onBlur={() => guardarTema(ref, numero)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") guardarTema(ref, numero);
+                                    if (e.key === "Escape") setInlineRefId(null);
+                                  }}
+                                />
+                              ) : (
+                                <div className="truncate text-[11px]" title={tema || undefined}>
+                                  {tema || (
+                                    <span className="italic text-muted-foreground/50">
+                                      sin título todavía
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
             </Card>
           </TabsContent>
 
