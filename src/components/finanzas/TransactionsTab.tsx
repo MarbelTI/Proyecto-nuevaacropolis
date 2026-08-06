@@ -877,7 +877,10 @@ export function TransactionsTab({
           movimientos, perder de vista los títulos y los filtros al bajar hacía
           muy difícil saber qué columna se está mirando. */}
       <div className="max-h-[65vh] overflow-auto rounded-md border">
-        <table className="w-full text-sm">
+        {/* whitespace-nowrap en todas las celdas: con el menú lateral la tabla
+            perdió ancho y los textos largos partían las filas en dos líneas.
+            La descripción se recorta con "…" en vez de envolver. */}
+        <table className="w-full text-xs [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
           <thead className="sticky top-0 z-20 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
             <tr className="border-b text-left text-muted-foreground">
               <th className="py-0.5 px-2 font-medium">
@@ -969,39 +972,57 @@ export function TransactionsTab({
                   title={esDup ? "Repetida: hay otro movimiento con los mismos datos" : undefined}
                   onClick={() => selectMode && toggleSelect(r.id)}
                 >
-                  <td className="py-0.5 px-2">{r.fecha}</td>
-                  <td className="py-0.5 px-2 text-xs">{r.tipo}</td>
-                  <td className="py-0.5 px-2 text-xs">{r.categoria}</td>
-                  <td className="py-0.5 px-2">{r.descripcion}</td>
-                  <td className="py-0.5 px-2 text-xs">
-                    {r.mensualidad ? formatMes(r.mensualidad) : ""}
+                  <td className="px-2 py-0.5">{r.fecha}</td>
+                  <td className="px-2 py-0.5">{r.tipo}</td>
+                  <td className="max-w-[130px] truncate px-2 py-0.5" title={r.categoria}>
+                    {r.categoria}
                   </td>
-                  <td className="py-0.5 px-2 text-xs">{r.moneda}</td>
-                  <td className="py-0.5 px-2 text-xs text-muted-foreground">{r.banco || "—"}</td>
-                  <td className="py-0.5 px-2 text-right tabular-nums">
+                  <td className="max-w-[220px] truncate px-2 py-0.5" title={r.descripcion}>
+                    {r.descripcion}
+                  </td>
+                  <td className="px-2 py-0.5">{r.mensualidad ? formatMes(r.mensualidad) : ""}</td>
+                  <td className="px-2 py-0.5">{r.moneda}</td>
+                  <td
+                    className="max-w-[110px] truncate px-2 py-0.5 text-muted-foreground"
+                    title={r.banco || ""}
+                  >
+                    {r.banco || "—"}
+                  </td>
+                  <td className="px-2 py-0.5 text-right tabular-nums">
                     {isNaN(Number(r.monto)) ? r.monto : $(Number(r.monto))}
                   </td>
-                  <td className="py-0.5 px-2 text-right tabular-nums text-xs">
-                    {formatTasa(r.tasa)}
-                  </td>
-                  <td className="py-0.5 px-2 text-right tabular-nums font-medium">
+                  <td className="px-2 py-0.5 text-right tabular-nums">{formatTasa(r.tasa)}</td>
+                  <td className="px-2 py-0.5 text-right font-medium tabular-nums">
                     ${$(Number(r.montoUsd) || 0)}
                   </td>
-                  <td className="py-0.5 px-2">
-                    <div className="flex gap-1">
+                  <td className="px-1 py-0.5">
+                    <div className="flex gap-0.5">
                       <Button
                         variant="ghost"
                         size="icon"
+                        className="h-6 w-6"
                         onClick={() => tx.duplicateAfter(r.id)}
                         title="Duplicar fila debajo"
                       >
-                        <Plus className="h-4 w-4" />
+                        <Plus className="h-3.5 w-3.5" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => setEditing(r)}>
-                        <Pencil className="h-4 w-4" />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => setEditing(r)}
+                        title="Modificar"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => tx.remove(r.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => tx.remove(r.id)}
+                        title="Eliminar"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
                       </Button>
                     </div>
                   </td>
@@ -1011,20 +1032,20 @@ export function TransactionsTab({
                       if (!s)
                         return (
                           <span
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground"
                             title="No se encontró alumno en la descripción"
                           >
-                            <MessageCircle className="h-4 w-4 opacity-30" />
+                            <MessageCircle className="h-3.5 w-3.5 opacity-30" />
                           </span>
                         );
                       if (!s.telefono)
                         return (
                           <button
                             onClick={() => setEditTxStudent(s)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
                             title="Agregar teléfono"
                           >
-                            <MessageCircle className="h-4 w-4 opacity-50" />
+                            <MessageCircle className="h-3.5 w-3.5 opacity-50" />
                           </button>
                         );
                       const moneda =
@@ -1041,14 +1062,14 @@ export function TransactionsTab({
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={() => logWhatsApp(s.nombre, msg)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-md hover:bg-accent"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
                             title={`Enviar WhatsApp a ${s.nombre}`}
                           >
-                            <MessageCircle className="h-4 w-4 text-primary" />
+                            <MessageCircle className="h-3.5 w-3.5 text-primary" />
                           </a>
                           <button
                             onClick={() => copyAndLog(msg, s.nombre)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
                             title="Copiar mensaje"
                           >
                             <ClipboardCopy className="h-3.5 w-3.5" />

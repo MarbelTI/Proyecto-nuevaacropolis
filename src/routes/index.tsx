@@ -55,8 +55,8 @@ const ETIQUETA_ROL: Record<string, string> = {
 
 // Estilos del menú lateral: en escritorio cada ítem ocupa toda la fila.
 const NAV_ITEM =
-  "w-full justify-start gap-2 px-3 py-2 text-sm lg:w-full data-[state=active]:bg-background data-[state=active]:shadow-sm";
-const NAV_ICON = "h-4 w-4 shrink-0";
+  "w-full justify-start gap-2 px-2.5 py-1.5 text-[13px] lg:w-full data-[state=active]:bg-background data-[state=active]:shadow-sm";
+const NAV_ICON = "h-3.5 w-3.5 shrink-0";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -362,7 +362,9 @@ function Index() {
             className="flex flex-col gap-4 lg:flex-row lg:items-start"
           >
             {/* Sidebar de navegación: vertical en escritorio, horizontal en móvil */}
-            <TabsList className="h-auto w-full shrink-0 flex-row flex-wrap justify-start gap-1 rounded-xl p-2 lg:w-56 lg:flex-col lg:flex-nowrap lg:items-stretch">
+            {/* Menú lateral fijo: se queda a la vista al desplazar contenidos
+                largos (transacciones, asistencias) sin robarle ancho a la tabla. */}
+            <TabsList className="h-auto w-full shrink-0 flex-row flex-wrap justify-start gap-1 rounded-xl p-1.5 lg:sticky lg:top-4 lg:w-44 lg:flex-col lg:flex-nowrap lg:items-stretch lg:self-start">
               {userInfo.canAccessExisting && (
                 <TabsTrigger value="ocr" className={NAV_ITEM}>
                   <ScanText className={NAV_ICON} /> Registro OCR
