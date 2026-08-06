@@ -51,6 +51,25 @@ export function cuotaMensualUSD(student: Student, yearMonth: string): number {
   return 20;
 }
 
+/**
+ * true si la cuota de esa persona está puesta a mano en su ficha, sea cual sea
+ * el importe — incluido 0.
+ *
+ * Hace falta para distinguir dos ceros que significan cosas distintas:
+ *   - "no paga cuota social porque así se decidió" (membresía, becado)
+ *   - "no tiene cuota fija asignada" (probacionistas, que pagan por curso)
+ * El primero es una respuesta definitiva; el segundo, la ausencia de dato.
+ */
+export function cuotaEsExplicita(student: Student, yearMonth: string): boolean {
+  if (typeof student.cuotaOverride === "number") return true;
+  const ym = Number(yearMonth.replace("-", ""));
+  return (student.cuotaOverridesTemporales ?? []).some((o) => {
+    const desde = Number(o.desde.replace("-", ""));
+    const hasta = o.hasta ? Number(o.hasta.replace("-", "")) : Infinity;
+    return ym >= desde && ym <= hasta;
+  });
+}
+
 /** Calcula cuotas debidas mes a mes desde el arranque (o último pago) hasta hoy. */
 export function calcularCuotasDebidas(
   student: Student,
@@ -72,8 +91,15 @@ export function calcularCuotasDebidas(
   let guard = 0;
   while (cur <= currentYm && guard++ < 120) {
     let c = cuotaMensualUSD(student, cur);
-    // Probacionistas y otros sin cuota fija: usar el monto del último pago como referencia
-    if (c <= 0 && lastPayAmount && lastPayAmount > 0) c = lastPayAmount;
+    // Quien no tiene cuota fija (probacionistas) igual debe algo: se usa como
+    // referencia lo que pagó la última vez.
+    //
+    // Pero si la cuota está puesta a mano en 0, ese 0 es la respuesta y no se
+    // toca. Si no, a quien está exento de cuota social le reaparecería una
+    // deuda cada mes solo por haber hecho algún pago suelto alguna vez.
+    if (c <= 0 && !cuotaEsExplicita(student, cur) && lastPayAmount && lastPayAmount > 0) {
+      c = lastPayAmount;
+    }
     if (c > 0) detalle.push({ ym: cur, cuota: c });
     cur = nextYm(cur);
   }
