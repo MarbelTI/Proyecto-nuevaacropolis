@@ -126,8 +126,7 @@ function elegirProveedor() {
         headers: {
           Authorization: `Bearer ${orKey}`,
           "HTTP-Referer": "https://nueva-acropolis-sc.vercel.app",
-          // Sin tilde a propósito: las cabeceras HTTP solo admiten ASCII.
-          "X-Title": "Mnemosine",
+          "X-Title": "SISFIA",
         },
       }),
     };
