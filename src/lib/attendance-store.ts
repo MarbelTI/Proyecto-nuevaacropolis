@@ -32,6 +32,14 @@ export type AulaMeta = {
   condicion: "Miembro" | "Probacionista";
   year: number;
   temas: Record<string, string>; // ISO date -> topic name
+  /**
+   * false = aula archivada. Cuando un grupo se gradúa y pasa a otra aula, la
+   * anterior queda vacía y no debe aparecer en el día a día ni en el
+   * diagnóstico, pero SU HISTORIAL NO SE BORRA: la asistencia de ese año
+   * sigue haciendo falta para los reportes. Ausente = activa (las aulas que
+   * ya estaban guardadas antes de existir este campo).
+   */
+  activa?: boolean;
 };
 
 export type AttendanceRecord = {

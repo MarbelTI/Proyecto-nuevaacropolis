@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
   useState,
   Fragment,
@@ -24,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, Download, Plus, Pencil, X } from "lucide-react";
+import { Upload, Download, Plus, Pencil, X, Archive, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import {
@@ -130,11 +131,20 @@ export default function AsistenciasTab({
   const [inlineRefId, setInlineRefId] = useState<string | null>(null);
   const [inlineRefVal, setInlineRefVal] = useState("");
 
+  // Las aulas archivadas se ocultan salvo que se pidan expresamente.
+  const [verArchivadas, setVerArchivadas] = useState(false);
+  const archivadasCount = useMemo(
+    () => aulasMeta.filter((a) => a.activa === false).length,
+    [aulasMeta],
+  );
+
   const allowedAulas = useMemo(() => {
-    if (user.canEditAnyAula) return aulasMeta.map((a) => a.nombre);
-    if (user.celadorAula) return [user.celadorAula];
+    const visibles = aulasMeta.filter((a) => verArchivadas || a.activa !== false);
+    if (user.canEditAnyAula) return visibles.map((a) => a.nombre);
+    if (user.celadorAula)
+      return visibles.some((a) => a.nombre === user.celadorAula) ? [user.celadorAula] : [];
     return [];
-  }, [user, aulasMeta]);
+  }, [user, aulasMeta, verArchivadas]);
 
   const [selectedAula, setSelectedAula] = useState<string>(
     allowedAulas.length > 0 ? allowedAulas[0] : "",
@@ -145,7 +155,12 @@ export default function AsistenciasTab({
       setImporting(true);
       try {
         const result = await importFromExcel(file);
-        setAulasMeta(result.aulas);
+        // Reimportar no debe resucitar las aulas archivadas: el Excel no sabe
+        // cuáles se dieron de baja, así que se conserva ese estado por nombre.
+        setAulasMeta((prev) => {
+          const archivadas = new Set(prev.filter((a) => a.activa === false).map((a) => a.nombre));
+          return result.aulas.map((a) => (archivadas.has(a.nombre) ? { ...a, activa: false } : a));
+        });
         setRecords(result.records);
         setReflexionesMeta(result.reflexionesMeta);
         setReflexionAsistencia(result.reflexionAsistencia);
@@ -166,6 +181,36 @@ export default function AsistenciasTab({
   const currentAula = useMemo(
     () => aulasMeta.find((a) => a.nombre === selectedAula),
     [aulasMeta, selectedAula],
+  );
+
+  // Si el aula seleccionada deja de estar visible (se archivó, o se dejaron de
+  // mostrar las archivadas), se pasa a la primera disponible en vez de dejar
+  // la pantalla en blanco.
+  useEffect(() => {
+    if (allowedAulas.length && !allowedAulas.includes(selectedAula)) {
+      setSelectedAula(allowedAulas[0]);
+    }
+  }, [allowedAulas, selectedAula]);
+
+  /** Archiva o reactiva un aula. Nunca borra su historial. */
+  const alternarArchivo = useCallback(
+    (aula: AulaMeta) => {
+      const archivando = aula.activa !== false;
+      if (
+        archivando &&
+        !confirm(
+          `¿Archivar el aula ${aula.nombre}?\n\n` +
+            `Deja de aparecer en el selector, en las asistencias y en el diagnóstico global.\n\n` +
+            `NO se borra nada: su historial se conserva y puedes reactivarla cuando quieras.`,
+        )
+      )
+        return;
+      setAulasMeta((prev) =>
+        prev.map((a) => (a.nombre === aula.nombre ? { ...a, activa: !archivando } : a)),
+      );
+      toast.success(archivando ? `${aula.nombre} archivada` : `${aula.nombre} reactivada`);
+    },
+    [setAulasMeta],
   );
 
   const fechas = useMemo(
@@ -734,11 +779,15 @@ export default function AsistenciasTab({
             <SelectValue placeholder="Seleccionar aula" />
           </SelectTrigger>
           <SelectContent>
-            {allowedAulas.map((a) => (
-              <SelectItem key={a} value={a}>
-                {a}
-              </SelectItem>
-            ))}
+            {allowedAulas.map((a) => {
+              const archivada = aulasMeta.find((x) => x.nombre === a)?.activa === false;
+              return (
+                <SelectItem key={a} value={a}>
+                  {a}
+                  {archivada && " (archivada)"}
+                </SelectItem>
+              );
+            })}
           </SelectContent>
         </Select>
         {currentAula && (
@@ -747,7 +796,45 @@ export default function AsistenciasTab({
             {fechas.length} clases
           </span>
         )}
-        <div className="ml-auto flex gap-2">
+        {currentAula?.activa === false && (
+          <span className="rounded-md border border-amber-400 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+            Archivada · solo consulta
+          </span>
+        )}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {archivadasCount > 0 && (
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={verArchivadas}
+                onChange={(e) => setVerArchivadas(e.target.checked)}
+              />
+              Ver archivadas ({archivadasCount})
+            </label>
+          )}
+          {currentAula && user.canEditAnyAula && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs"
+              onClick={() => alternarArchivo(currentAula)}
+              title={
+                currentAula.activa === false
+                  ? "Volver a mostrar esta aula"
+                  : "Ocultarla del día a día sin borrar su historial"
+              }
+            >
+              {currentAula.activa === false ? (
+                <>
+                  <RotateCcw className="mr-1 h-4 w-4" /> Reactivar
+                </>
+              ) : (
+                <>
+                  <Archive className="mr-1 h-4 w-4" /> Archivar aula
+                </>
+              )}
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={() => openRefDialog()}>
             <Plus className="mr-1 h-4 w-4" />
             Reflexión
@@ -1403,7 +1490,7 @@ export default function AsistenciasTab({
               <Card className="p-4">
                 <h3 className="font-bold text-sm mb-3">Diagnóstico Global</h3>
                 <DiagnosticoGlobal
-                  aulasMeta={aulasMeta}
+                  aulasMeta={aulasMeta.filter((a) => a.activa !== false)}
                   records={records}
                   reflexionesMeta={reflexionesMeta}
                   reflexionAsistencia={reflexionAsistencia}
