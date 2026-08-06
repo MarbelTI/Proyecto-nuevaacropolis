@@ -145,6 +145,29 @@ function normalizeName(s: string) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+/**
+ * \u00bfSon la misma persona escrita de dos formas?
+ *
+ * Solo cuando todas las palabras de un nombre est\u00e1n dentro del otro:
+ * "Carlos Jimenez" \u2286 "Carlos Angel Jimenez" \u2192 s\u00ed.
+ *
+ * Comparar \u00fanicamente nombre y apellido no sirve, y el caso real que lo
+ * demuestra son las dos Milagro Contreras de la escuela: "Milagro Elena
+ * Contreras" (control de estudio, Krishna III) y "Milagro Elizabeth Contreras
+ * M\u00e1rquez" (celadora de Krishna II). Comparten nombre y apellido pero son dos
+ * personas distintas; el segundo nombre es justo lo que las diferencia.
+ */
+function mismoNombre(a: string, b: string): boolean {
+  const ta = normalizeName(a).split(/\s+/).filter(Boolean);
+  const tb = normalizeName(b).split(/\s+/).filter(Boolean);
+  if (!ta.length || !tb.length) return false;
+  const corto = ta.length <= tb.length ? ta : tb;
+  const largo = ta.length <= tb.length ? tb : ta;
+  // Con una sola palabra en com\u00fan no alcanza: har\u00eda iguales a dos hermanos.
+  if (corto.length < 2) return false;
+  return corto.every((t) => largo.includes(t));
+}
+
 function normalizePhone(raw: string | undefined): string | null {
   if (!raw) return null;
   const digits = raw.replace(/\D+/g, "");
@@ -602,7 +625,10 @@ export default function SolvenciasTab({
             nombre,
             aulas: new Set(),
             primera: "",
-            celador: normalizeName(aula.celador || "") === clave,
+            // El celador aparece en la lista de su propia aula, pero el nombre
+            // de la hoja de configuración suele venir más corto que el de la
+            // lista ("Milagro Elizabeth Contreras" vs "…Contreras Márquez").
+            celador: !!aula.celador && mismoNombre(aula.celador, nombre),
           }),
         );
       }
@@ -625,26 +651,32 @@ export default function SolvenciasTab({
    */
   const previaAsistencias = useMemo(() => {
     const exactos = new Map(students.map((s, i) => [normalizeName(s.nombre), i]));
-    const buscarParecido = (clave: string): number | undefined => {
-      const idx = exactos.get(clave);
-      if (idx !== undefined) return idx;
-      const p = clave.split(" ").filter(Boolean);
-      if (p.length < 2) return undefined;
-      const nom = p[0];
-      const ape = p[p.length - 1];
+
+    /**
+     * Devuelve a quién corresponde ese nombre entre los ya registrados.
+     *
+     * Un candidato que encaja con VARIOS existentes no se resuelve solo: se
+     * deja como persona nueva y se avisa. Fusionar a dos personas distintas
+     * pierde a una de las dos y le mezcla los pagos; tener dos fichas de la
+     * misma se ve a simple vista y se une después.
+     */
+    const buscar = (clave: string): { idx?: number; ambiguo: string[] } => {
+      const exacto = exactos.get(clave);
+      if (exacto !== undefined) return { idx: exacto, ambiguo: [] };
+      const candidatos: number[] = [];
       for (let i = 0; i < students.length; i++) {
-        const nn = normalizeName(students[i].nombre);
-        if (nn.includes(nom) && nn.includes(ape)) return i;
+        if (mismoNombre(clave, students[i].nombre)) candidatos.push(i);
       }
-      return undefined;
+      if (candidatos.length === 1) return { idx: candidatos[0], ambiguo: [] };
+      return { ambiguo: candidatos.map((i) => students[i].nombre) };
     };
 
-    const nuevos: { clave: string; nombre: string; aulas: string[] }[] = [];
+    const nuevos: { clave: string; nombre: string; aulas: string[]; ambiguo: string[] }[] = [];
     const unir: { nombre: string; con: string; agrega: string[] }[] = [];
     for (const [clave, info] of desdeAsistencias) {
-      const idx = buscarParecido(clave);
+      const { idx, ambiguo } = buscar(clave);
       if (idx === undefined) {
-        nuevos.push({ clave, nombre: info.nombre, aulas: [...info.aulas] });
+        nuevos.push({ clave, nombre: info.nombre, aulas: [...info.aulas], ambiguo });
         continue;
       }
       const faltan = [...info.aulas].filter((a) => !students[idx].aulas.includes(a));
@@ -652,7 +684,7 @@ export default function SolvenciasTab({
         unir.push({ nombre: info.nombre, con: students[idx].nombre, agrega: faltan });
       }
     }
-    return { nuevos, unir, buscarParecido };
+    return { nuevos, unir, buscar };
   }, [desdeAsistencias, students]);
 
   const traerDeAsistencias = () => {
@@ -660,7 +692,7 @@ export default function SolvenciasTab({
     let creados = 0;
     let actualizados = 0;
     for (const [clave, info] of desdeAsistencias) {
-      const idx = previaAsistencias.buscarParecido(clave);
+      const { idx } = previaAsistencias.buscar(clave);
       const aulasInfo = [...info.aulas];
       if (idx === undefined) {
         const meta = attAulas.find((a) => a.nombre === aulasInfo[0]);
@@ -1134,14 +1166,19 @@ export default function SolvenciasTab({
                 </p>
                 <div className="rounded-md border">
                   {previaAsistencias.nuevos.map((n) => (
-                    <div
-                      key={n.clave}
-                      className="flex items-baseline justify-between gap-2 border-b px-2 py-1 text-xs last:border-0"
-                    >
-                      <span>{n.nombre}</span>
-                      <span className="shrink-0 text-[11px] text-muted-foreground">
-                        {n.aulas.join(", ")}
-                      </span>
+                    <div key={n.clave} className="border-b px-2 py-1 text-xs last:border-0">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span>{n.nombre}</span>
+                        <span className="shrink-0 text-[11px] text-muted-foreground">
+                          {n.aulas.join(", ")}
+                        </span>
+                      </div>
+                      {n.ambiguo.length > 0 && (
+                        <div className="mt-0.5 text-[11px] text-amber-700 dark:text-amber-400">
+                          ⚠ Se parece a {n.ambiguo.map((x) => `«${x}»`).join(" y ")}. Se crea aparte
+                          por si acaso; si resulta ser la misma persona, únelas a mano.
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
