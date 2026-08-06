@@ -11,6 +11,7 @@ import {
   useTransactions,
 } from "@/lib/lists-store";
 import { useAulasMeta, useAttendance } from "@/lib/attendance-store";
+import { NOMBRE_APP, SUBTITULO, TITULO_PAGINA, DESCRIPCION } from "@/lib/branding";
 import AsistenciasTab from "@/components/asistencias-tab";
 import { OcrTab } from "@/components/finanzas/OcrTab";
 import { TransactionsTab } from "@/components/finanzas/TransactionsTab";
@@ -46,7 +47,7 @@ import { toast } from "sonner";
 // Nombre legible del rol, para que en una PC compartida se vea de un vistazo
 // con qué cuenta se está trabajando.
 const ETIQUETA_ROL: Record<string, string> = {
-  super_admin: "Administradora",
+  super_admin: "Tecnologías",
   finanzas: "Finanzas",
   director: "Dirección (solo lectura)",
   celador_estudios: "Control de estudio",
@@ -66,14 +67,7 @@ const NAV_SUB =
 
 export const Route = createFileRoute("/")({
   head: () => ({
-    meta: [
-      { title: "Mnemósine — Sistema Financiero Acropolitano" },
-      {
-        name: "description",
-        content:
-          "Mnemósine: OCR del libro diario, transacciones, análisis, solvencias y tasas BCV para Nueva Acrópolis Venezuela.",
-      },
-    ],
+    meta: [{ title: TITULO_PAGINA }, { name: "description", content: DESCRIPCION }],
   }),
   component: Index,
 });
@@ -215,10 +209,10 @@ function Index() {
               className="h-14 w-14 rounded-full ring-2 ring-accent"
             />
             <div className="flex-1 min-w-[220px]">
-              <h1 className="text-xl font-bold leading-tight">Mnemósine</h1>
+              <h1 className="text-xl font-bold leading-tight">{NOMBRE_APP}</h1>
               <p className="text-xs opacity-90">
                 <ScanText className="mr-1 inline h-3 w-3" />
-                Sistema Financiero Acropolitano · Nueva Acrópolis Venezuela
+                {SUBTITULO}
               </p>
             </div>
 
@@ -334,7 +328,7 @@ function Index() {
           </Card>
         ) : !auth.profile ? (
           <Card className="p-12 text-center">
-            <h2 className="text-lg font-bold mb-2">Bienvenido a Mnemósine</h2>
+            <h2 className="text-lg font-bold mb-2">Bienvenido a {NOMBRE_APP}</h2>
             <p className="text-muted-foreground mb-4">
               Inicia sesión con tu correo y contraseña para continuar.
             </p>

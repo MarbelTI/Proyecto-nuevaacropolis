@@ -10,6 +10,7 @@ import {
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
+import { TITULO_PAGINA, DESCRIPCION, SUBTITULO, SEDE } from "@/lib/branding";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "../components/ui/sonner";
 
@@ -78,18 +79,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Mnemósine — Sistema Financiero Acropolitano" },
-      {
-        name: "description",
-        content:
-          "Mnemósine: sistema financiero para Nueva Acrópolis Venezuela. Lector OCR del libro diario, transacciones, análisis, solvencias y tasas BCV.",
-      },
-      { name: "author", content: "Nueva Acrópolis Venezuela" },
-      { property: "og:title", content: "Mnemósine — Sistema Financiero Acropolitano" },
-      { property: "og:description", content: "Sistema financiero para Nueva Acrópolis Venezuela." },
+      { title: TITULO_PAGINA },
+      { name: "description", content: DESCRIPCION },
+      { name: "author", content: SEDE },
+      { property: "og:title", content: TITULO_PAGINA },
+      { property: "og:description", content: SUBTITULO },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:title", content: "Mnemósine — Sistema Financiero Acropolitano" },
+      { name: "twitter:title", content: TITULO_PAGINA },
       {
         name: "twitter:description",
         content: "Sistema financiero para Nueva Acrópolis Venezuela.",
