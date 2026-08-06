@@ -502,19 +502,35 @@ export function TransactionsTab({
   const [filterMes, setFilterMes] = useState<string>("");
 
   /**
-   * Movimientos repetidos: mismos fecha, tipo, categoría, descripción, moneda
-   * y monto. Se marca la 2ª aparición en adelante (la 1ª se considera la
-   * original) para poder revisarlas y borrar las sobrantes.
+   * Movimientos repetidos: los que coinciden en TODOS sus campos con otro.
+   * Se marcan todas las filas del grupo (no solo la segunda) para poder ver
+   * el par completo y decidir cuál borrar.
    */
   const idsDuplicados = useMemo(() => {
-    const vistas = new Set<string>();
-    const dup = new Set<string>();
+    const porFirma = new Map<string, string[]>();
     for (const t of tx.list) {
       const firma = firmaTransaccion(t);
-      if (vistas.has(firma)) dup.add(t.id);
-      else vistas.add(firma);
+      const ids = porFirma.get(firma);
+      if (ids) ids.push(t.id);
+      else porFirma.set(firma, [t.id]);
+    }
+    const dup = new Set<string>();
+    for (const ids of porFirma.values()) {
+      if (ids.length > 1) for (const id of ids) dup.add(id);
     }
     return dup;
+  }, [tx.list]);
+
+  /** Cuántas filas sobran realmente (una de cada grupo es la buena). */
+  const sobrantesDuplicados = useMemo(() => {
+    const porFirma = new Map<string, number>();
+    for (const t of tx.list) {
+      const firma = firmaTransaccion(t);
+      porFirma.set(firma, (porFirma.get(firma) ?? 0) + 1);
+    }
+    let sobran = 0;
+    for (const n of porFirma.values()) if (n > 1) sobran += n - 1;
+    return sobran;
   }, [tx.list]);
 
   /** Movimientos en Bs/Pesos que aún no tienen tasa de cambio asignada. */
@@ -739,9 +755,31 @@ export function TransactionsTab({
             <Upload className="mr-1 h-4 w-4" /> Importar Excel
           </Button>
           {idsDuplicados.size > 0 && (
-            <span className="inline-flex items-center gap-1.5 rounded-md border border-pink-300 bg-pink-100 px-2 py-1 text-xs dark:border-pink-900 dark:bg-pink-950/40">
+            <span className="inline-flex items-center gap-2 rounded-md border border-pink-300 bg-pink-100 px-2 py-1 text-xs dark:border-pink-900 dark:bg-pink-950/40">
               <span className="inline-block h-2.5 w-2.5 rounded-sm bg-pink-400" />
-              {idsDuplicados.size} repetida(s)
+              {idsDuplicados.size} fila(s) repetidas · sobran {sobrantesDuplicados}
+              <button
+                className="underline hover:no-underline"
+                onClick={() => {
+                  if (
+                    !confirm(
+                      `Se van a eliminar ${sobrantesDuplicados} fila(s) repetidas, dejando una sola de cada grupo.\n\nSolo se borran movimientos idénticos en TODOS sus campos.\n\n¿Continuar?`,
+                    )
+                  )
+                    return;
+                  const vistas = new Set<string>();
+                  const aBorrar = new Set<string>();
+                  for (const t of tx.list) {
+                    const firma = firmaTransaccion(t);
+                    if (vistas.has(firma)) aBorrar.add(t.id);
+                    else vistas.add(firma);
+                  }
+                  tx.removeMany(aBorrar);
+                  toast.success(`${aBorrar.size} fila(s) repetidas eliminadas`);
+                }}
+              >
+                Eliminar sobrantes
+              </button>
             </span>
           )}
           {sinTasaCount > 0 && (

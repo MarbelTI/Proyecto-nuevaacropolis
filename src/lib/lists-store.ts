@@ -439,33 +439,55 @@ export function useBcvRates(): {
 /**
  * "Huella" de un movimiento, para detectar que ya fue registrado.
  *
- * Se comparan fecha, tipo, categoría, descripción, moneda y monto. NO se
- * incluyen tasa ni montoUsd (pueden variar si se recalcularon), ni el banco
- * (suele quedar vacío al venir del OCR). La descripción se normaliza sin
- * tildes ni mayúsculas para que "José Pérez" y "jose perez" cuenten igual.
+ * Compara TODOS los campos visibles: fecha, mes, tipo, categoría,
+ * descripción, mensualidad, moneda, banco, monto, tasa y monto en USD.
+ *
+ * Es importante que estén todos: un alumno puede pagar dos mensualidades
+ * distintas el mismo día y por el mismo monto (ene-26 y feb-26). Si se
+ * ignorara `mensualidad`, esos dos pagos legítimos se marcarían como
+ * repetidos.
+ *
+ * El texto se normaliza sin tildes, sin mayúsculas y sin espacios de más,
+ * para que "José  Pérez" y "jose perez" cuenten como el mismo.
  */
 export function firmaTransaccion(t: {
   fecha: string;
+  mes?: string;
   tipo: string;
   categoria: string;
   descripcion: string;
+  mensualidad?: string;
   moneda: string;
+  banco?: string;
   monto: number | string;
+  tasa?: number | string | null;
+  montoUsd?: number | string;
 }): string {
-  const desc = String(t.descripcion ?? "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const monto = Math.round((Number(t.monto) || 0) * 100) / 100;
+  const texto = (v: unknown) =>
+    String(v ?? "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  // Los importes se comparan redondeados a 2 decimales: 170 y 170.004 son el
+  // mismo pago, y así no dependemos de cómo se guardó el número.
+  const num = (v: unknown) => {
+    const n = Number(v);
+    return isFinite(n) ? Math.round(n * 100) / 100 : 0;
+  };
   return [
-    String(t.fecha ?? "").trim(),
-    String(t.tipo ?? "").trim(),
-    String(t.categoria ?? "").trim(),
-    desc,
-    String(t.moneda ?? "").trim(),
-    monto,
+    texto(t.fecha),
+    texto(t.mes),
+    texto(t.tipo),
+    texto(t.categoria),
+    texto(t.descripcion),
+    texto(t.mensualidad),
+    texto(t.moneda),
+    texto(t.banco),
+    num(t.monto),
+    num(t.tasa),
+    num(t.montoUsd),
   ].join("|");
 }
 
