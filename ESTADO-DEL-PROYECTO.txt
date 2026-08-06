@@ -1,0 +1,330 @@
+===============================================================================
+ESTADO DEL PROYECTO — Mnemósine (internamente SISFIA)
+Nueva Acrópolis San Cristóbal
+Última actualización: 6 de agosto de 2026
+===============================================================================
+
+CÓMO USAR ESTE ARCHIVO
+----------------------
+Este documento existe para arrancar un chat nuevo sin tener que releer
+conversaciones viejas. Al abrir una sesión nueva con Claude, basta decir:
+"lee ESTADO-DEL-PROYECTO.txt" y con eso tiene el contexto completo.
+
+Manténlo actualizado. Cuando se cierre un pendiente, muévelo a "YA HECHO" con
+una línea de qué quedó. Cuando aparezca algo nuevo, agrégalo a "PENDIENTE".
+
+
+===============================================================================
+1. QUIÉN ES QUIÉN
+===============================================================================
+
+Nancy Margelys — Tecnologías. Super admin. Dueña del proyecto.
+  Dos cuentas, ambas suyas, ambas super_admin:
+    - la personal
+    - tecnologiasnuevaacropolissc@gmail.com
+
+Manuela — Finanzas. Lleva el control económico en Excel manual desde enero.
+  ACCESO: solo nombre y teléfono de los miembros (para WhatsApp).
+  NO debe ver cédulas, correos ni direcciones.
+
+Karina y Milagro Elena Contreras — Control de estudio (celador_estudios).
+  Sí ven datos personales. Pueden archivar aulas.
+
+Javier Bastidas (javier7bastidas@gmail.com) — Programa, tiene acceso al
+  repositorio de código.
+  NO debe tener acceso a finanzas ni a cuotas de miembros.
+  >>> Por eso los Excel NUNCA van al repositorio. Ver sección 6.
+
+OJO — HAY DOS MILAGROS. No son la misma persona y el sistema ya las separa:
+  - Milagro Elizabeth Contreras Márquez — Krishna II — es CELADORA
+  - Milagro Elena Contreras            — Krishna III — es ESTUDIOS
+
+
+===============================================================================
+2. QUÉ ES EL SISTEMA Y CÓMO ESTÁ HECHO
+===============================================================================
+
+Nombre visible: Mnemósine
+Nombre interno: SISFIA (así nació el proyecto)
+
+IMPORTANTE: el nombre visible puede volver a cambiar. Por eso vive en UN SOLO
+archivo: src/lib/branding.ts. Se cambia ahí y queda cambiado en toda la app.
+
+NO renombrar nada interno. Las claves de localStorage empiezan por "sisfia_";
+si se renombran, todos los usuarios pierden sus datos locales.
+
+Stack:
+  - TanStack Start (createServerFn / useServerFn) + TanStack Router
+  - React 19, TypeScript estricto
+  - Tailwind CSS v4 + shadcn/ui
+  - Supabase: Auth, Postgres con RLS, funciones SECURITY DEFINER
+  - SheetJS (xlsx) para importar y exportar Excel
+  - Despliegue: Vercel, automático en cada push a main
+
+Dónde viven los datos HOY:
+  - Transacciones, tasas BCV, alumnos  -> localStorage + sincronización manual
+                                          a Supabase (botón "Subir a nube")
+  - Asistencias y reflexiones          -> SOLO localStorage. No hay sync todavía.
+
+Los correos en las migraciones se guardan como hash md5, nunca en texto plano.
+
+
+===============================================================================
+3. MÓDULOS Y EN QUÉ ESTADO ESTÁN
+===============================================================================
+
+FINANZAS
+  OCR del libro diario ................. funciona
+  Transacciones (tabla, filtros) ....... funciona
+  Dashboard ............................ funciona
+  Análisis anual ....................... funciona
+  Resumen mensual + export Excel ....... funciona (notas ya ocultas, ver 4)
+  Informe OINA ......................... funciona
+  Tasas BCV ............................ funciona
+  Solvencias ........................... funciona, primera vista lista
+
+ASISTENCIAS
+  Importar Excel de asistencia ......... funciona
+  Cuadrícula de asistencia ............. funciona
+  Temas y reflexiones .................. funciona
+  Diagnóstico Global ................... rehecho como dashboard ejecutivo
+  Archivar aulas ....................... funciona
+
+ACCESO
+  Login Supabase ....................... funciona
+  Roles y aprobación de cuentas ........ funciona
+  Cierre por inactividad ............... funciona
+
+
+===============================================================================
+4. LO QUE SE HIZO EN LA ÚLTIMA TANDA (agosto 2026)
+===============================================================================
+
+Commits, del más reciente al más viejo:
+
+c60cedf  Las notas del resumen mensual ya no se abren solas.
+         El "hidden" estaba dentro de cada comentario, pero SheetJS lo lee
+         del ARRAY que los contiene. Por eso Excel abría la hoja con todas
+         las notas encima tapando las cifras. Verificado descomprimiendo el
+         .xlsx: la versión vieja escribía <x:Visible/>, la nueva no.
+
+ce34b6b  Carpeta datos-privados/ y .gitignore para *.xlsx, *.xls, *.csv.
+
+d40c827  "Detectar desde pagos" ahora mira las DOS listas (solvencias Y
+         asistencias). Antes solo miraba solvencias, así que alguien que ya
+         estaba en una lista podía crearse por segunda vez.
+
+2639026  Arreglado: no fusionar a dos personas con nombre parecido.
+         Era el caso de las dos Milagros. La regla nueva (mismoNombre) exige
+         que todos los nombres del más corto estén en el más largo, y pide
+         mínimo 2 palabras para no unir a dos hermanos.
+
+e84e20d  Solvencias: traer integrantes desde asistencias, con vista previa
+         que separa nuevos / unir / ambiguo antes de aplicar nada.
+
+113befe  Archivar aulas solo para Tecnologías y control de estudio.
+
+2b1cf99  Archivar aulas sin perder su historial. Un aula archivada no aparece
+         en el resumen ni en asistencias, pero sus datos siguen ahí.
+
+44b1cbf  Diagnóstico Global rehecho: 4 indicadores arriba, tabla ordenada por
+         aula con barras, la fila se resalta al pasar el mouse.
+
+3bc241a  Arreglo de un comentario JSX mal puesto que rompió la compilación en
+         43e8f32. Vercel pudo haber desplegado la versión rota un rato.
+
+43e8f32  Temas repartidos a lo largo del año (antes todos caían en el primer
+         semestre) y celdas del mismo tamaño en ambos semestres.
+
+e826f5f  Gestionar reflexiones por tema (agregar +, eliminar x, renombrar)
+         y totales dentro de la tarjeta del tema (a: 5/9  r: 9/9  p:1/2).
+
+9e0b81c  Columna de nombres opaca al hacer scroll (antes los nombres se
+         montaban sobre las fechas). Reflexiones divididas por semestre.
+
+d557cf5  NC aplica a toda la columna, con confirmación si el día ya tiene
+         marcas. Verde/naranja/gris más legibles.
+
+3497b7b  Cada tema en una sola línea, fecha con mes en letras (13-ene).
+
+96dd873  El nombre visible pasa a un solo archivo: src/lib/branding.ts
+
+2a2b60a  Segunda cuenta de administradora y corrección de la migración 006.
+
+97b605c  Cambio de nombre visible: SISFIA -> Mnemósine
+
+
+ERRORES IMPORTANTES QUE SE ENCONTRARON Y CORRIGIERON
+----------------------------------------------------
+- El importador de asistencias se saltaba 15 alumnos. Buscaba los datos a
+  partir de la fila 9 fija, pero empiezan en la 7. Ahora busca la fila de
+  encabezado por el "#". Pasó de 65 a 80 alumnos. Entre los perdidos estaban
+  Milagro Contreras y Javier Bastidas.
+
+- Las reflexiones nunca se contaban. El análisis leía records[].reflexion,
+  que el importador siempre dejaba vacío; las entregas viven en otra
+  estructura (reflexionAsistencia). Además el porcentaje se calculaba contra
+  el número de clases (52) en vez del número de reflexiones (17).
+
+- Los nombres de los temas no se detectaban. Están en dos sitios distintos
+  según el aula: sobre las columnas "1era" y en un bloque "Temas" más abajo.
+
+- Migración 006 te habría dejado fuera del sistema. Marcaba como
+  "super_admin desconocido" un hash que era tu propio correo
+  tecnologiasnuevaacropolissc@gmail.com. Se borró y se reemplazó por
+  20260806000001_segunda_cuenta_admin.sql, que YA CORRISTE.
+
+- Había DOS repositorios git apuntando al mismo remoto. El de afuera tenía
+  user.email = tu@email.com. Ese era el origen del misterio de "marjosavi481"
+  y del bloqueo de Vercel. El .git de afuera se renombró a
+  _git_viejo_se_puede_borrar.
+
+
+===============================================================================
+5. PENDIENTE — POR ORDEN DE URGENCIA
+===============================================================================
+
+[1] REIMPORTAR EL EXCEL DE ASISTENCIAS
+    Los arreglos de nombres de temas, reparto de temas en el año y alumnos
+    recuperados NO se aplican solos a lo ya cargado. Hay que volver a
+    importar la hoja para que surtan efecto.
+
+[2] MOVER "PLANTILLA SISTEMATIZADA ECONOMIA.xlsx" A datos-privados/
+    Tiene 63 personas, 46 cédulas y 60 teléfonos. Está en la carpeta del
+    repo. Ya está en .gitignore así que no se sube, pero mejor tenerlo donde
+    corresponde.
+    (Verificado: ese archivo NUNCA llegó a GitHub. Quedó en un commit local
+    suelto que no se publicó.)
+
+[3] CONCILIACIÓN CONTRA EL EXCEL DE MANUELA — diseñado, no construido
+    Ver sección 7. Es la función que confirma que los totales del sistema
+    coinciden con lo que ella lleva a mano desde enero.
+
+[4] SINCRONIZAR TODO A SUPABASE
+    Hoy casi todo vive en localStorage. Si se pierde el navegador, se pierden
+    los datos. Ya existe el botón "Subir a nube" para transacciones, tasas y
+    alumnos.
+
+[5] ASISTENCIAS Y REFLEXIONES NO TIENEN SINCRONIZACIÓN
+    SupabaseSync solo cubre transactions, bcv_rates y students. Falta crear
+    las tablas y el sync para asistencias.
+
+[6] CONECTAR ALUMNOS A SUPABASE ANTES DE IMPORTAR LA HOJA "FICHA"
+    Esto es de seguridad, no de comodidad. La hoja Ficha trae cédulas y
+    direcciones. Si se importa antes de tener las reglas de acceso en la base
+    de datos, Manuela (finanzas) podría verlas. Primero las reglas, después
+    la importación.
+
+[7] MÁS ADELANTE
+    - No hay pruebas automáticas ni CI.
+    - Hay migraciones de datos escritas a mano dentro de lists-store.ts.
+    - Analizar imágenes de recibos por OCR en lote (idea que quedó abierta).
+
+
+===============================================================================
+6. REGLAS DE SEGURIDAD QUE NO SE NEGOCIAN
+===============================================================================
+
+1. El repositorio es privado y solo 3 personas de la escuela tienen acceso.
+
+2. Ningún Excel, CSV ni dato real entra al repositorio.
+   Ya está en .gitignore: *.xlsx, *.xls, *.csv, datos-privados/*
+   Lo que entra al historial de Git es muy difícil de sacar después: borrar
+   el archivo en un commit posterior NO lo quita de la historia.
+
+3. Los datos personales de los alumnos (cédula, correo, dirección) son para
+   control de estudio y super_admin. Finanzas solo ve nombre y teléfono.
+
+4. Los correos en migraciones van como hash md5, nunca en texto plano.
+
+5. Nunca pegar credenciales de Supabase en un chat.
+
+6. Quien tiene acceso al código NO tiene por qué tener acceso a los datos.
+   Esa es la razón de ser de datos-privados/.
+
+
+===============================================================================
+7. LA PLANTILLA DE MANUELA — ANÁLISIS Y PLAN DE CONCILIACIÓN
+===============================================================================
+
+Archivo analizado: PLANTILLA SISTEMATIZADA ECONOMIA.xlsx
+Este es el modelo de informe que ella entrega. Los próximos serán parecidos.
+
+TIENE TRES HOJAS:
+
+  "PLANTILLA SISTEMATIZADA ECONOM "
+     Padrón de miembros agrupado por aula (KRISHNA I MARTES, etc.)
+     Columnas: NOMBRE / CEDULA / TELEFONO / CUMPLEAÑOS / INGRESO / REC.MIEMBRO
+     63 personas, 46 cédulas, 60 teléfonos. Sirve para cruzar con Solvencias.
+
+  "ECONOMIA DICIEMBRE24"   <-- ESTA ES LA DE LA CONCILIACIÓN
+     La fila 1 tiene los nombres de categoría como ENCABEZADOS DE COLUMNA,
+     y los montos individuales van listados hacia abajo en cada columna.
+     Categorías vistas: MIEMBROS, PROBAS, INTERESES PTAMO, VETERINARA,
+     CLASE, FILOART, RECITAL, MTC, CENA, FRANELAS, PROFESOR, ALQUI,
+     MILAGRO ELENEA, ELECTRIC, HIDRO, PUBLICIDAD, MANTENIMI, INTERNET.
+
+  "Hoja1"
+     Hoja de trabajo: libro diario (Fecha, Descripción, Monto, Moneda, Tasa,
+     Total Usd), un bloque de solvencias (Nombre, Meses Pagados, Abonos,
+     Saldo Pendiente USD) y las tasas BCV.
+
+EL HALLAZGO CLAVE
+  Nuestro export de "Resumen Mensual" YA usa esa misma estructura: categorías
+  como columnas, montos hacia abajo. Eso hace la conciliación casi directa.
+
+CÓMO SERÍA LA CONCILIACIÓN
+  1. Cargar su hoja "ECONOMIA <MES><AÑO>".
+  2. Sumar cada columna de su hoja.
+  3. Sumar cada categoría nuestra del mismo mes.
+  4. Mostrar una tabla comparativa: categoría / lo de ella / lo nuestro /
+     diferencia, con las diferencias resaltadas.
+
+DOS DETALLES A RESOLVER AL CONSTRUIRLO
+  a) Ella pone los egresos en columnas aparte (ALQUI, ELECTRIC...) SIN signo
+     negativo. Nosotros los guardamos negativos. Hay que comparar por valor
+     absoluto por categoría, no sumas globales.
+
+  b) Sus nombres de categoría vienen abreviados: ALQUI, MANTENIMI, ELECTRIC.
+     Hay que mapearlos a nuestras categorías UNA VEZ y guardar ese mapa, para
+     que ella no tenga que cambiar su forma de trabajar.
+
+
+===============================================================================
+8. ARCHIVOS CLAVE — DÓNDE ESTÁ CADA COSA
+===============================================================================
+
+src/lib/branding.ts .................. nombre visible de la app (cambiar aquí)
+src/lib/attendance-store.ts .......... importador y modelo de asistencias
+src/lib/excel-export.ts .............. Resumen Mensual, Transacciones, OINA
+src/lib/excel-import.ts .............. importación de transacciones
+src/lib/lists-store.ts ............... transacciones, categorías, tasas
+src/lib/students-data.ts ............. alumnos y solvencias
+src/lib/fees-logic.ts ................ cálculo de cuotas
+src/lib/api/auth-guard.ts ............ protección de las funciones de servidor
+src/lib/api/env.ts ................... lectura de variables de entorno
+
+src/components/asistencias-tab.tsx ... toda la sección de asistencias
+src/components/finanzas/ ............. todas las pestañas de finanzas
+src/routes/index.tsx ................. página principal y menú
+
+supabase/migrations/ ................. 10 migraciones, la última es
+                                       20260806000001_segunda_cuenta_admin.sql
+
+datos-privados/ ...................... aquí van los Excel reales. No se sube.
+.gitignore ........................... excluye *.xlsx, *.xls, *.csv
+
+
+===============================================================================
+9. OPERACIÓN DEL DÍA A DÍA
+===============================================================================
+
+Ver la app en local:      npm run dev
+Compilar para verificar:  npm run build
+Subir a producción:       git push   (Vercel despliega solo, ~1 minuto)
+
+Correr una migración: se pega el contenido del .sql en el editor SQL de
+Supabase y se ejecuta. Las migraciones están escritas para poder correrse
+más de una vez sin romper nada.
+
+Rama de trabajo: main. Todo está subido y sincronizado con GitHub.
