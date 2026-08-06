@@ -46,7 +46,18 @@ type UserPerms = {
   canAccessDiagnostico: boolean;
   canEditAnyAula: boolean;
   celadorAula?: string;
+  role?: string;
 };
+
+/**
+ * Archivar un aula y consultar las archivadas es cosa de tecnología y de
+ * control de estudio: son quienes llevan el registro de qué grupos siguen
+ * abiertos. No se apoya en canEditAnyAula ni en canAccessDiagnostico porque
+ * esos permisos también los tiene dirección, que entra solo a leer.
+ */
+function puedeArchivarAulas(role?: string): boolean {
+  return role === "super_admin" || role === "celador_estudios";
+}
 
 const isoToDisplay = (iso: string) => {
   const [y, m, d] = iso.split("-");
@@ -131,7 +142,9 @@ export default function AsistenciasTab({
   const [inlineRefId, setInlineRefId] = useState<string | null>(null);
   const [inlineRefVal, setInlineRefVal] = useState("");
 
-  // Las aulas archivadas se ocultan salvo que se pidan expresamente.
+  // Las aulas archivadas se ocultan salvo que se pidan expresamente, y solo
+  // tecnología y control de estudio pueden pedirlas.
+  const puedeArchivar = puedeArchivarAulas(user.role);
   const [verArchivadas, setVerArchivadas] = useState(false);
   const archivadasCount = useMemo(
     () => aulasMeta.filter((a) => a.activa === false).length,
@@ -139,12 +152,14 @@ export default function AsistenciasTab({
   );
 
   const allowedAulas = useMemo(() => {
-    const visibles = aulasMeta.filter((a) => verArchivadas || a.activa !== false);
+    const visibles = aulasMeta.filter(
+      (a) => (verArchivadas && puedeArchivar) || a.activa !== false,
+    );
     if (user.canEditAnyAula) return visibles.map((a) => a.nombre);
     if (user.celadorAula)
       return visibles.some((a) => a.nombre === user.celadorAula) ? [user.celadorAula] : [];
     return [];
-  }, [user, aulasMeta, verArchivadas]);
+  }, [user, aulasMeta, verArchivadas, puedeArchivar]);
 
   const [selectedAula, setSelectedAula] = useState<string>(
     allowedAulas.length > 0 ? allowedAulas[0] : "",
@@ -802,7 +817,7 @@ export default function AsistenciasTab({
           </span>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          {archivadasCount > 0 && (
+          {puedeArchivar && archivadasCount > 0 && (
             <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
               <input
                 type="checkbox"
@@ -812,7 +827,7 @@ export default function AsistenciasTab({
               Ver archivadas ({archivadasCount})
             </label>
           )}
-          {currentAula && user.canEditAnyAula && (
+          {currentAula && puedeArchivar && (
             <Button
               variant="ghost"
               size="sm"
