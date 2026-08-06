@@ -1,8 +1,17 @@
 import { Fragment, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { ChevronRight, HandCoins } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { ChevronRight, HandCoins, Link2, X } from "lucide-react";
 import type { Student, Transaction } from "@/lib/lists-store";
+import { usePrestamoAliases, unir, separar, type GrupoPrestamo } from "@/lib/prestamos-alias";
 
 /**
  * Categorías que son movimiento de préstamo y NO cuota social.
@@ -37,17 +46,35 @@ function normalizar(s: string): string {
 /**
  * Saca de quién es el préstamo a partir de la descripción.
  *
- * Lo acordado es escribir el nombre delante de dos puntos:
- *     "Margelys Santos : abono de agosto"
- * Eso es lo primero que se mira. Pero los movimientos que ya están cargados
- * no llevan esa forma, así que si no hay dos puntos se busca dentro de la
- * descripción a alguien de la lista de integrantes. Solo si tampoco aparece
- * se usa la descripción entera, y entonces esa fila se ve rara a propósito:
- * es la señal de que hay que corregirla.
+ * El orden importa:
+ *
+ * 1. Las equivalencias que cargó la administradora. Mandan sobre todo lo
+ *    demás porque son una decisión explícita: si dijo que "profesor" es
+ *    Ricardo García, no hay nada que discutir.
+ * 2. Lo que va antes de los dos puntos ("Ricardo García: abono"), que es la
+ *    forma acordada de escribirlo.
+ * 3. Un nombre de la lista de integrantes que aparezca en la descripción.
+ *    Esto rescata lo que ya estaba cargado sin tocarlo.
+ * 4. La descripción entera. Esa fila se ve rara a propósito: es la señal de
+ *    que hay que unirla a alguien.
  */
-function personaDelPrestamo(descripcion: string, nombresConocidos: string[]): string {
+function personaDelPrestamo(
+  descripcion: string,
+  nombresConocidos: string[],
+  grupos: GrupoPrestamo[],
+): string {
   const desc = (descripcion || "").trim();
   if (!desc) return "(sin descripción)";
+  const plano = normalizar(desc);
+
+  // La clave más larga primero: si alguien configuró "Ricardo" y también
+  // "Ricardo García" para personas distintas, gana la más específica.
+  const claves = grupos
+    .flatMap((g) => g.claves.map((c) => ({ persona: g.persona, clave: c })))
+    .sort((a, b) => b.clave.length - a.clave.length);
+  for (const { persona, clave } of claves) {
+    if (plano.includes(normalizar(clave))) return persona;
+  }
 
   const dosPuntos = desc.indexOf(":");
   if (dosPuntos > 0) {
@@ -55,9 +82,6 @@ function personaDelPrestamo(descripcion: string, nombresConocidos: string[]): st
     if (antes) return antes;
   }
 
-  const plano = normalizar(desc);
-  // El más largo primero: si alguien se llama "Ana" y otra "Ana María", debe
-  // ganar el nombre completo.
   const porLargo = [...nombresConocidos].sort((a, b) => b.length - a.length);
   for (const nombre of porLargo) {
     if (plano.includes(normalizar(nombre))) return nombre;
@@ -87,6 +111,10 @@ type Prestamo = {
 export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: Student[] }) {
   const [busqueda, setBusqueda] = useState("");
   const [abierta, setAbierta] = useState<string | null>(null);
+  const [grupos, setGrupos] = usePrestamoAliases();
+  const [uniendo, setUniendo] = useState<string | null>(null);
+  const [destino, setDestino] = useState("");
+  const [verGrupos, setVerGrupos] = useState(false);
 
   const prestamos = useMemo<Prestamo[]>(() => {
     const nombres = students.map((s) => s.nombre).filter(Boolean);
@@ -97,7 +125,7 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
       const esInteres = CAT_INTERES.includes(t.categoria);
       if (!esPrestamo && !esInteres) continue;
 
-      const persona = personaDelPrestamo(t.descripcion, nombres);
+      const persona = personaDelPrestamo(t.descripcion, nombres, grupos);
       const clave = normalizar(persona);
       let p = porPersona.get(clave);
       if (!p) {
@@ -127,7 +155,7 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
     }
     // Primero quien más debe: es lo que hay que perseguir.
     return lista.sort((a, b) => b.saldo - a.saldo || a.persona.localeCompare(b.persona));
-  }, [tx, students]);
+  }, [tx, students, grupos]);
 
   const visibles = useMemo(() => {
     const q = normalizar(busqueda);
@@ -146,6 +174,13 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
     return { prestado, abonado, intereses, pendiente, conSaldo };
   }, [prestamos]);
 
+  const confirmarUnion = () => {
+    if (!uniendo || !destino.trim()) return;
+    setGrupos(unir(grupos, destino, uniendo));
+    setUniendo(null);
+    setDestino("");
+  };
+
   if (!prestamos.length) {
     return (
       <Card className="p-6">
@@ -158,8 +193,7 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
         </p>
         <p className="mt-2 text-xs text-muted-foreground">
           Al registrar uno, escribe el nombre delante de dos puntos para que quede asignado a esa
-          persona. Por ejemplo:{" "}
-          <span className="font-medium">Margelys Santos : abono de agosto</span>
+          persona. Por ejemplo: <span className="font-medium">Ricardo García: abono</span>
         </p>
       </Card>
     );
@@ -190,13 +224,58 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
             <HandCoins className="h-4 w-4 text-muted-foreground" />
             <h2 className="text-sm font-semibold">Préstamos por persona</h2>
           </div>
-          <Input
-            className="ml-auto h-8 w-56"
-            placeholder="Buscar persona..."
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-          />
+          <div className="ml-auto flex items-center gap-2">
+            {grupos.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs"
+                onClick={() => setVerGrupos((v) => !v)}
+              >
+                <Link2 className="mr-1 h-3.5 w-3.5" />
+                Nombres unidos ({grupos.length})
+              </Button>
+            )}
+            <Input
+              className="h-8 w-56"
+              placeholder="Buscar persona..."
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+            />
+          </div>
         </div>
+
+        {verGrupos && (
+          <div className="mb-3 rounded-lg border bg-muted/30 p-3">
+            <p className="mb-2 text-xs text-muted-foreground">
+              Cada movimiento cuya descripción contenga una de estas palabras se suma a esa persona.
+            </p>
+            <div className="space-y-1.5">
+              {grupos.map((g) => (
+                <div key={g.persona} className="flex flex-wrap items-center gap-1.5 text-xs">
+                  <span className="font-medium">{g.persona}</span>
+                  <span className="text-muted-foreground">←</span>
+                  {g.claves.map((c) => (
+                    <span
+                      key={c}
+                      className="inline-flex items-center gap-1 rounded-md border bg-background px-1.5 py-0.5"
+                    >
+                      {c}
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground"
+                        title={`Dejar de asociar «${c}» con ${g.persona}`}
+                        onClick={() => setGrupos(separar(grupos, g.persona, c))}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -208,6 +287,7 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
                 <th className="p-2 text-right font-medium">Intereses</th>
                 <th className="p-2 text-right font-medium">Saldo</th>
                 <th className="p-2 text-left font-medium">Estado</th>
+                <th className="p-2"></th>
               </tr>
             </thead>
             <tbody>
@@ -250,10 +330,24 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
                           </span>
                         )}
                       </td>
+                      <td className="p-2 text-right">
+                        <button
+                          type="button"
+                          className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                          title="Unir esta fila con otra persona"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setUniendo(p.persona);
+                            setDestino("");
+                          }}
+                        >
+                          Unir
+                        </button>
+                      </td>
                     </tr>
                     {expandida && (
                       <tr className="border-b bg-muted/20">
-                        <td colSpan={6} className="p-2">
+                        <td colSpan={7} className="p-2">
                           <table className="w-full text-xs">
                             <thead>
                               <tr className="text-muted-foreground">
@@ -300,10 +394,51 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
 
         <p className="mt-3 border-t pt-3 text-[11px] text-muted-foreground">
           Los préstamos no entran en Solvencias: la deuda de cuota social se calcula solo con
-          MIEMBROS, PROBAS y CLASE. Para que un movimiento quede asignado a alguien, escribe el
-          nombre delante de dos puntos en la descripción.
+          MIEMBROS, PROBAS y CLASE. Si la misma persona aparece escrita de varias formas, usa «Unir»
+          y quedará agrupada también para lo que se cargue en adelante.
         </p>
       </Card>
+
+      <Dialog open={uniendo != null} onOpenChange={(v) => !v && setUniendo(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Unir «{uniendo}» con otra persona</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Todo movimiento cuya descripción contenga «{uniendo}» pasará a contarse como la
+              persona que escribas aquí. Se aplica también a lo que se cargue después.
+            </p>
+            <div>
+              <label className="text-xs text-muted-foreground">Nombre definitivo</label>
+              <Input
+                list="personas-prestamo"
+                value={destino}
+                autoFocus
+                placeholder="Ricardo García"
+                onChange={(e) => setDestino(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && confirmarUnion()}
+              />
+              <datalist id="personas-prestamo">
+                {prestamos.map((p) => (
+                  <option key={p.persona} value={p.persona} />
+                ))}
+                {students.map((s) => (
+                  <option key={s.nombre} value={s.nombre} />
+                ))}
+              </datalist>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setUniendo(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={confirmarUnion} disabled={!destino.trim()}>
+              Unir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
