@@ -10,12 +10,19 @@ const K_REF_ASIST = "sisfia_reflexiones_asist_v1";
 
 function load<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
-  try { const v = localStorage.getItem(key); return v ? (JSON.parse(v) as T) : fallback; }
-  catch { return fallback; }
+  try {
+    const v = localStorage.getItem(key);
+    return v ? (JSON.parse(v) as T) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 function save<T>(key: string, val: T) {
-  try { localStorage.setItem(key, JSON.stringify(val)); }
-  catch { /* ignore */ }
+  try {
+    localStorage.setItem(key, JSON.stringify(val));
+  } catch {
+    /* ignore */
+  }
 }
 
 export type AulaMeta = {
@@ -53,8 +60,13 @@ export type ReflexionAsistencia = {
 
 export function generateFechas(diaSemana: string, year: number): string[] {
   const dayMap: Record<string, number> = {
-    "Domingo": 0, "Lunes": 1, "Martes": 2, "Miércoles": 3,
-    "Jueves": 4, "Viernes": 5, "Sábado": 6,
+    Domingo: 0,
+    Lunes: 1,
+    Martes: 2,
+    Miércoles: 3,
+    Jueves: 4,
+    Viernes: 5,
+    Sábado: 6,
   };
   const target = dayMap[diaSemana];
   if (target === undefined) return [];
@@ -63,7 +75,10 @@ export function generateFechas(diaSemana: string, year: number): string[] {
   while (d.getDay() !== target) d.setDate(d.getDate() + 1);
   while (d.getFullYear() === year && dates.length < 52) {
     const iso = d.toISOString().slice(0, 10);
-    if (iso.endsWith("-01-01")) { d.setDate(d.getDate() + 7); continue; }
+    if (iso.endsWith("-01-01")) {
+      d.setDate(d.getDate() + 7);
+      continue;
+    }
     dates.push(iso);
     d.setDate(d.getDate() + 7);
   }
@@ -72,37 +87,60 @@ export function generateFechas(diaSemana: string, year: number): string[] {
 
 export function useAulasMeta(): [AulaMeta[], Dispatch<SetStateAction<AulaMeta[]>>] {
   const [items, setItems] = useState<AulaMeta[]>(() => load<AulaMeta[]>(K_AULAS, []));
-  useEffect(() => { save(K_AULAS, items); }, [items]);
+  useEffect(() => {
+    save(K_AULAS, items);
+  }, [items]);
   return [items, setItems];
 }
 
-export function useAttendance(): [AttendanceRecord[], Dispatch<SetStateAction<AttendanceRecord[]>>] {
-  const [items, setItems] = useState<AttendanceRecord[]>(() => load<AttendanceRecord[]>(K_ASIST, []));
-  useEffect(() => { save(K_ASIST, items); }, [items]);
+export function useAttendance(): [
+  AttendanceRecord[],
+  Dispatch<SetStateAction<AttendanceRecord[]>>,
+] {
+  const [items, setItems] = useState<AttendanceRecord[]>(() =>
+    load<AttendanceRecord[]>(K_ASIST, []),
+  );
+  useEffect(() => {
+    save(K_ASIST, items);
+  }, [items]);
   return [items, setItems];
 }
 
 export function useCurrentUser(): [string, Dispatch<SetStateAction<string>>] {
   const [user, setUser] = useState<string>(() => load<string>(K_USER, ""));
-  useEffect(() => { save(K_USER, user); }, [user]);
+  useEffect(() => {
+    save(K_USER, user);
+  }, [user]);
   return [user, setUser];
 }
 
 export function useReflexionesMeta(): [ReflexionMeta[], Dispatch<SetStateAction<ReflexionMeta[]>>] {
   const [items, setItems] = useState<ReflexionMeta[]>(() => load<ReflexionMeta[]>(K_REF_META, []));
-  useEffect(() => { save(K_REF_META, items); }, [items]);
+  useEffect(() => {
+    save(K_REF_META, items);
+  }, [items]);
   return [items, setItems];
 }
 
-export function useReflexionAsistencia(): [ReflexionAsistencia[], Dispatch<SetStateAction<ReflexionAsistencia[]>>] {
-  const [items, setItems] = useState<ReflexionAsistencia[]>(() => load<ReflexionAsistencia[]>(K_REF_ASIST, []));
-  useEffect(() => { save(K_REF_ASIST, items); }, [items]);
+export function useReflexionAsistencia(): [
+  ReflexionAsistencia[],
+  Dispatch<SetStateAction<ReflexionAsistencia[]>>,
+] {
+  const [items, setItems] = useState<ReflexionAsistencia[]>(() =>
+    load<ReflexionAsistencia[]>(K_REF_ASIST, []),
+  );
+  useEffect(() => {
+    save(K_REF_ASIST, items);
+  }, [items]);
   return [items, setItems];
 }
 
-export function importFromExcel(
-  file: File,
-): Promise<{ aulas: AulaMeta[]; records: AttendanceRecord[]; reflexionesMeta: ReflexionMeta[]; reflexionAsistencia: ReflexionAsistencia[] }> {
+export function importFromExcel(file: File): Promise<{
+  aulas: AulaMeta[];
+  records: AttendanceRecord[];
+  reflexionesMeta: ReflexionMeta[];
+  reflexionAsistencia: ReflexionAsistencia[];
+}> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -126,9 +164,23 @@ export function importFromExcel(
           const nombre = (data[2]?.[1] || "").trim();
           const diaSemana = (data[3]?.[1] || "").trim();
           const celador = (data[4]?.[1] || "").trim();
-          const condicion = ((data[6]?.[1] || "").trim() === "Probacionista" ? "Probacionista" : "Miembro") as "Miembro" | "Probacionista";
 
-          const headerRow = data[6] || [];
+          // La fila de encabezado es la que empieza con "#". Antes se daba por
+          // hecho que estaba en data[6] y que los alumnos arrancaban en
+          // data[9]; en realidad arrancan justo debajo del encabezado, así que
+          // se perdían los dos primeros integrantes de CADA aula.
+          let headerIdx = 6;
+          for (let i = 0; i < Math.min(data.length, 20); i++) {
+            if (String(data[i]?.[0] ?? "").trim() === "#") {
+              headerIdx = i;
+              break;
+            }
+          }
+          const headerRow = data[headerIdx] || [];
+          const primeraFilaAlumno = headerIdx + 1;
+          const condicion = (
+            (headerRow[1] || "").trim() === "Probacionista" ? "Probacionista" : "Miembro"
+          ) as "Miembro" | "Probacionista";
 
           // Collect date columns (serial numbers > 40000)
           const dateCols: number[] = [];
@@ -143,21 +195,12 @@ export function importFromExcel(
             }
           }
 
-          // Collect temas from row 5 (index 5 = row 6 in Excel)
-          const temaRow = data[5] || [];
-          const temas: Record<string, string> = {};
-          for (let i = 0; i < dateCols.length; i++) {
-            const col = dateCols[i];
-            const val = String(temaRow[col] ?? "").trim();
-            if (val && val !== "Tema:" && isNaN(Number(val))) {
-              temas[fechas[i]] = val;
-            }
-          }
-
           // Detect reflexion column pairs ("1era","2da") from the header row
           const refCols: number[] = [];
           for (let c = 2; c < headerRow.length; c++) {
-            const v = String(headerRow[c] ?? "").trim().toLowerCase();
+            const v = String(headerRow[c] ?? "")
+              .trim()
+              .toLowerCase();
             if (v === "1era" || v === "1ra" || v === "2da") {
               refCols.push(c);
             }
@@ -167,40 +210,71 @@ export function importFromExcel(
             refPairs.push([refCols[i], refCols[i + 1]]);
           }
 
+          // Los temas viven en la fila de arriba del encabezado, pero dentro
+          // del bloque de reflexiones: una celda por tema, encima de su
+          // columna "1era". Antes se buscaban en las columnas de fechas —donde
+          // no hay nada— y además se descartaba cualquier valor numérico, así
+          // que las aulas con temas numerados ("1", "2", …) se quedaban sin
+          // ninguno.
+          const temaRow = data[headerIdx - 1] || [];
+          const temaPorReflexion = refPairs.map(([c1]) => String(temaRow[c1] ?? "").trim());
+
+          const temas: Record<string, string> = {};
+          for (let i = 0; i < refPairs.length; i++) {
+            const fecha = fechas[i];
+            if (fecha && temaPorReflexion[i]) temas[fecha] = temaPorReflexion[i];
+          }
+
           aulas.push({ nombre, celador, diaSemana, condicion, year: 2026, temas });
 
-          // Create ReflexionMeta for each reflexion date
-          const reflexionIdsByDate: Record<string, string> = {};
-          for (let i = 0; i < Math.min(dateCols.length, refPairs.length); i++) {
-            const fecha = fechas[i];
-            const id = "ref_" + Date.now().toString(36) + "_" + i + "_" + sheetName.replace(/\s/g, "");
-            const titulo = temas[fecha] ? `Reflexión: ${temas[fecha]}` : `Reflexión ${isoToShort(fecha)}`;
-            reflexionIdsByDate[fecha] = id;
+          // Una ReflexionMeta por tema. El id es determinista (aula + número
+          // de tema) para que al reimportar el archivo las entregas ya
+          // registradas sigan apuntando a la misma reflexión; con ids basados
+          // en Date.now() cada importación las dejaba huérfanas.
+          const reflexionIdPorIndice: string[] = [];
+          for (let i = 0; i < refPairs.length; i++) {
+            const fecha = fechas[i] ?? fechas[fechas.length - 1] ?? "";
+            const id = `ref_${sheetName.replace(/\s/g, "_")}_${i + 1}`;
+            const tema = temaPorReflexion[i];
+            const titulo = tema
+              ? `Reflexión ${i + 1}: ${tema}`
+              : `Reflexión ${i + 1}${fecha ? ` (${isoToShort(fecha)})` : ""}`;
+            reflexionIdPorIndice[i] = id;
             reflexionesMeta.push({ id, aula: nombre, year: 2026, titulo, fecha, temaFecha: fecha });
           }
 
-          // Parse student attendance data starting from row 9 (0-indexed)
-          for (let r = 9; r < data.length; r++) {
+          // Los alumnos empiezan justo debajo del encabezado.
+          for (let r = primeraFilaAlumno; r < data.length; r++) {
             const row = data[r];
             const numCol = row[0]?.toString() ?? "";
             const alumno = String(row[1] ?? "").trim();
             if (!alumno || alumno === "#N/A" || !/^\d+$/.test(numCol)) continue;
 
             // Skip rows with no attendance or reflexion data at all
-            const hasAny = dateCols.some((c) => {
-              const v = String(row[c] ?? "").trim().toUpperCase();
-              return v === "A" || v === "I" || v === "NC";
-            }) || refPairs.some(([c1, c2]) => {
-              const v1 = String(row[c1] ?? "").trim().toUpperCase();
-              const v2 = String(row[c2] ?? "").trim().toUpperCase();
-              return v1 === "E" || v2 === "E";
-            });
+            const hasAny =
+              dateCols.some((c) => {
+                const v = String(row[c] ?? "")
+                  .trim()
+                  .toUpperCase();
+                return v === "A" || v === "I" || v === "NC";
+              }) ||
+              refPairs.some(([c1, c2]) => {
+                const v1 = String(row[c1] ?? "")
+                  .trim()
+                  .toUpperCase();
+                const v2 = String(row[c2] ?? "")
+                  .trim()
+                  .toUpperCase();
+                return v1 === "E" || v2 === "E";
+              });
             if (!hasAny) continue;
 
             // Attendance marks
             for (let i = 0; i < dateCols.length; i++) {
               const c = dateCols[i];
-              const mark = String(row[c] ?? "").trim().toUpperCase();
+              const mark = String(row[c] ?? "")
+                .trim()
+                .toUpperCase();
               let asistencia: "" | "A" | "I" | "NC" = "";
               if (mark === "A") asistencia = "A";
               else if (mark === "I") asistencia = "I";
@@ -208,17 +282,26 @@ export function importFromExcel(
               records.push({ aula: nombre, alumno, fecha: fechas[i], asistencia, reflexion: "" });
             }
 
-            // Reflexion marks — create ReflexionAsistencia only for entries with "E"
-            for (let i = 0; i < Math.min(dateCols.length, refPairs.length); i++) {
+            // Entregas de reflexiones. Se recorren TODOS los temas: antes el
+            // bucle se cortaba con Math.min(dateCols.length, …), que mezclaba
+            // el número de clases con el de temas sin motivo.
+            for (let i = 0; i < refPairs.length; i++) {
               const [c1, c2] = refPairs[i];
-              const v1 = String(row[c1] ?? "").trim().toUpperCase();
-              const v2 = String(row[c2] ?? "").trim().toUpperCase();
-              if (v1 === "E" || v2 === "E") {
-                const reflexionId = reflexionIdsByDate[fechas[i]];
-                if (reflexionId) {
-                  reflexionAsistencia.push({ aula: nombre, alumno, reflexionId, estado: "E" });
-                }
-              }
+              const v1 = String(row[c1] ?? "")
+                .trim()
+                .toUpperCase();
+              const v2 = String(row[c2] ?? "")
+                .trim()
+                .toUpperCase();
+              const entregada = v1 === "E" || v2 === "E";
+              const noEntregada = v1 === "NE" || v2 === "NE";
+              if (!entregada && !noEntregada) continue;
+              reflexionAsistencia.push({
+                aula: nombre,
+                alumno,
+                reflexionId: reflexionIdPorIndice[i],
+                estado: entregada ? "E" : "NE",
+              });
             }
           }
         }
@@ -243,11 +326,41 @@ function serialToIso(serial: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export const USERS: { name: string; canAccessExisting: boolean; canAccessAsistencias: boolean; canAccessDiagnostico: boolean; canEditAnyAula: boolean }[] = [
-  { name: "Manuela Zambrano", canAccessExisting: true, canAccessAsistencias: false, canAccessDiagnostico: false, canEditAnyAula: false },
-  { name: "Margelys Santos", canAccessExisting: true, canAccessAsistencias: true, canAccessDiagnostico: true, canEditAnyAula: true },
-  { name: "Ricardo Garcia", canAccessExisting: true, canAccessAsistencias: true, canAccessDiagnostico: true, canEditAnyAula: true },
-  { name: "Karina Rodrigues", canAccessExisting: true, canAccessAsistencias: true, canAccessDiagnostico: true, canEditAnyAula: true },
+export const USERS: {
+  name: string;
+  canAccessExisting: boolean;
+  canAccessAsistencias: boolean;
+  canAccessDiagnostico: boolean;
+  canEditAnyAula: boolean;
+}[] = [
+  {
+    name: "Manuela Zambrano",
+    canAccessExisting: true,
+    canAccessAsistencias: false,
+    canAccessDiagnostico: false,
+    canEditAnyAula: false,
+  },
+  {
+    name: "Margelys Santos",
+    canAccessExisting: true,
+    canAccessAsistencias: true,
+    canAccessDiagnostico: true,
+    canEditAnyAula: true,
+  },
+  {
+    name: "Ricardo Garcia",
+    canAccessExisting: true,
+    canAccessAsistencias: true,
+    canAccessDiagnostico: true,
+    canEditAnyAula: true,
+  },
+  {
+    name: "Karina Rodrigues",
+    canAccessExisting: true,
+    canAccessAsistencias: true,
+    canAccessDiagnostico: true,
+    canEditAnyAula: true,
+  },
 ];
 
 export function getUserInfo(name: string, aulasMeta: AulaMeta[]) {
@@ -256,12 +369,20 @@ export function getUserInfo(name: string, aulasMeta: AulaMeta[]) {
   const celadorAula = aulasMeta.find((a) => a.celador.toLowerCase() === name.toLowerCase());
   if (celadorAula) {
     return {
-      name, canAccessExisting: false, canAccessAsistencias: true, canAccessDiagnostico: false,
-      canEditAnyAula: false, celadorAula: celadorAula.nombre,
+      name,
+      canAccessExisting: false,
+      canAccessAsistencias: true,
+      canAccessDiagnostico: false,
+      canEditAnyAula: false,
+      celadorAula: celadorAula.nombre,
     };
   }
   return {
-    name, canAccessExisting: false, canAccessAsistencias: false, canAccessDiagnostico: false,
-    canEditAnyAula: false, celadorAula: undefined as string | undefined,
+    name,
+    canAccessExisting: false,
+    canAccessAsistencias: false,
+    canAccessDiagnostico: false,
+    canEditAnyAula: false,
+    celadorAula: undefined as string | undefined,
   };
 }
