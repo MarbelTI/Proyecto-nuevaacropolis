@@ -844,10 +844,15 @@ export default function AsistenciasTab({
                   No hay clases en este semestre.
                 </p>
               ) : (
+                {/* Ancho FIJO, no w-full: con table-fixed y ancho al 100%, el
+                    segundo semestre —que tiene menos columnas— estiraba las
+                    celdas hasta verse desproporcionado y parecía otra pantalla.
+                    Fijando el ancho, la celda mide 30px en los dos semestres y
+                    lo único que cambia es cuántas hay. */}
                 <table
-                  className="w-full text-xs border-collapse border-dashed border-[#bbb] table-fixed"
+                  className="text-xs border-collapse border-dashed border-[#bbb] table-fixed"
                   style={{
-                    minWidth: semestreFechas.length * 30 + 160 + semestreReflexiones.length * 30,
+                    width: semestreFechas.length * 30 + 160 + semestreReflexiones.length * 30,
                   }}
                 >
                   <thead>
@@ -1084,6 +1089,17 @@ export default function AsistenciasTab({
                   const pctTotal = totalPosible
                     ? Math.round((totalEntregadas / totalPosible) * 100)
                     : 0;
+                  // Asistencia contada solo en las clases donde hubo tema, para
+                  // que el denominador sea el mismo que el de las entregas y
+                  // las dos cifras se puedan comparar de un vistazo.
+                  const totalAsistencias = semestreReflexiones.reduce(
+                    (sum, r) =>
+                      sum +
+                      (r.fecha
+                        ? alumnos.filter((al) => getAsistencia(al, r.fecha) === "A").length
+                        : 0),
+                    0,
+                  );
                   const guardarTema = (ref: ReflexionMeta, numero: number) => {
                     const limpio = inlineRefVal.trim();
                     const nuevoTitulo = limpio
@@ -1112,6 +1128,10 @@ export default function AsistenciasTab({
                         <span className="font-bold">Temas y reflexiones</span>
                         <span className="text-muted-foreground">
                           {semestreReflexiones.length} temas · {alumnos.length} alumnos ·{" "}
+                          <span className="tabular-nums">
+                            {totalAsistencias}/{totalPosible}
+                          </span>{" "}
+                          asistencias ·{" "}
                           <span className="tabular-nums">
                             {totalEntregadas}/{totalPosible}
                           </span>{" "}

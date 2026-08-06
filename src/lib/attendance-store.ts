@@ -250,9 +250,25 @@ export function importFromExcel(file: File): Promise<{
             return temaPorNumero[i + 1] ?? "";
           });
 
+          /**
+           * A qué clase corresponde cada tema.
+           *
+           * El Excel no dice en qué fecha se dio cada tema, así que se reparten
+           * a lo largo del año: 17 temas en 52 clases significa que cada uno
+           * dura unas tres semanas. Antes se les daban las N PRIMERAS fechas,
+           * con lo que los 17 temas caían entre enero y mayo y el segundo
+           * semestre quedaba sin ninguno.
+           */
+          const fechaDeTema = (i: number): string => {
+            if (!fechas.length) return "";
+            if (refPairs.length <= 1) return fechas[0];
+            const paso = fechas.length / refPairs.length;
+            return fechas[Math.min(fechas.length - 1, Math.floor(i * paso))];
+          };
+
           const temas: Record<string, string> = {};
           for (let i = 0; i < refPairs.length; i++) {
-            const fecha = fechas[i];
+            const fecha = fechaDeTema(i);
             if (fecha && temaPorReflexion[i]) temas[fecha] = temaPorReflexion[i];
           }
 
@@ -264,7 +280,7 @@ export function importFromExcel(file: File): Promise<{
           // en Date.now() cada importación las dejaba huérfanas.
           const reflexionIdPorIndice: string[] = [];
           for (let i = 0; i < refPairs.length; i++) {
-            const fecha = fechas[i] ?? fechas[fechas.length - 1] ?? "";
+            const fecha = fechaDeTema(i);
             const id = `ref_${sheetName.replace(/\s/g, "_")}_${i + 1}`;
             const tema = temaPorReflexion[i];
             // Sin nombre de tema se queda solo el número: la fecha ya se
