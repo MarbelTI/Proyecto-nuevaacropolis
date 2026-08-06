@@ -35,6 +35,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
   Plus,
   Trash2,
   Download,
@@ -45,6 +52,8 @@ import {
   X,
   MessageCircle,
   ClipboardCopy,
+  MoreHorizontal,
+  ListChecks,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -704,8 +713,11 @@ export function TransactionsTab({
       toast.error("Nada que eliminar en el rango");
       return;
     }
-    const label =
-      from || to ? `entre ${from || "inicio"} y ${to || "hoy"}` : "TODAS las transacciones";
+    // Sin ningún filtro puesto, "lo filtrado" es absolutamente todo: el aviso
+    // tiene que decirlo con todas sus letras antes de borrar.
+    const label = anyFilterActive
+      ? "que estás viendo ahora (las que pasan los filtros activos)"
+      : "TODAS las transacciones, porque no hay ningún filtro puesto";
     if (!confirm(`¿Eliminar ${filtered.length} transacciones ${label}?`)) return;
     const idsRemove = new Set(filtered.map((r) => r.id));
     tx.removeMany(idsRemove);
@@ -785,13 +797,6 @@ export function TransactionsTab({
               e.target.value = "";
             }}
           />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => document.getElementById("importExcel")?.click()}
-          >
-            <Upload className="mr-1 h-4 w-4" /> Importar Excel
-          </Button>
           {idsDuplicados.size > 0 && (
             <span className="inline-flex items-center gap-2 rounded-md border border-pink-300 bg-pink-100 px-2 py-1 text-xs dark:border-pink-900 dark:bg-pink-950/40">
               <span className="inline-block h-2.5 w-2.5 rounded-sm bg-pink-400" />
@@ -868,29 +873,53 @@ export function TransactionsTab({
           <Button variant="outline" size="sm" onClick={limpiarFiltros} disabled={!anyFilterActive}>
             Limpiar filtros
           </Button>
-          <Button onClick={exportExcel}>
-            <Download className="mr-2 h-4 w-4" /> Excel
+          <Button size="sm" onClick={exportExcel}>
+            <Download className="mr-1.5 h-4 w-4" /> Excel
           </Button>
-          <Button
-            variant={selectMode ? "default" : "ghost"}
-            size="sm"
-            onClick={() => {
-              setSelectMode(!selectMode);
-              if (selectMode) setSelectedIds(new Set());
-            }}
-          >
-            Seleccionar
-          </Button>
-          <Button variant="ghost" onClick={eliminarRango}>
-            <Trash2 className="mr-2 h-4 w-4" /> Eliminar rango
-          </Button>
-          <button
-            onClick={() => setCatOpen(true)}
-            className="rounded-full p-2 hover:bg-accent"
-            title="Categorías"
-          >
-            <Settings className="h-4 w-4" />
-          </button>
+
+          {/* El modo selección ya no tiene botón propio en la barra, así que
+              necesita un aviso visible mientras está encendido. */}
+          {selectMode && (
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-xs font-medium">
+              <ListChecks className="h-3.5 w-3.5" /> Selección activa
+            </span>
+          )}
+
+          {/* Las acciones ocasionales viven aquí dentro: dejarlas todas a la
+              vista llenaba la barra de once controles y ponía "Eliminar
+              rango" —que borra cientos de filas de un clic— pegado a los de
+              uso diario. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="px-2" title="Más acciones">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onClick={() => document.getElementById("importExcel")?.click()}>
+                <Upload className="mr-2 h-4 w-4" /> Importar Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  setSelectMode(!selectMode);
+                  if (selectMode) setSelectedIds(new Set());
+                }}
+              >
+                <ListChecks className="mr-2 h-4 w-4" />
+                {selectMode ? "Salir de selección" : "Seleccionar filas"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setCatOpen(true)}>
+                <Settings className="mr-2 h-4 w-4" /> Categorías y bancos
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={eliminarRango}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="mr-2 h-4 w-4" /> Eliminar lo filtrado
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       <p className="mb-3 text-xs text-muted-foreground">
