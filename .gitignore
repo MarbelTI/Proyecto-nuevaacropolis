@@ -9,3 +9,17 @@ dist
 .vercel/
 .wrangler/
 CODIGO_COMPLETO.txt
+
+# ---------------------------------------------------------------
+# Datos reales de la escuela: NUNCA a GitHub.
+# Los Excel llevan nombres, cédulas, teléfonos y montos. El
+# repositorio es privado, pero eso no lo hace un sitio para
+# guardarlos: quien tenga acceso al código no tiene por qué tener
+# acceso a los datos (Javier, por ejemplo, programa pero no debe
+# ver finanzas).
+# ---------------------------------------------------------------
+*.xlsx
+*.xls
+*.csv
+datos-privados/*
+!datos-privados/LEEME.md
