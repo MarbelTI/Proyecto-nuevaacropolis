@@ -7,7 +7,7 @@ import {
   type Student,
   type Transaction,
 } from "@/lib/lists-store";
-import type { AulaMeta } from "@/lib/attendance-store";
+import type { AulaMeta, AttendanceRecord } from "@/lib/attendance-store";
 import { calcularCuotasDebidas, cuotaMensualUSD, currentYm, precioClase } from "@/lib/fees-logic";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +37,7 @@ import {
   X,
   Upload,
   UserPlus,
+  Users,
 } from "lucide-react";
 import { parseExcelToStudents } from "@/lib/excel-import";
 import { toast } from "sonner";
@@ -510,12 +511,16 @@ export default function SolvenciasTab({
   aulas,
   setAulas,
   tx,
+  attAulas = [],
+  attRecords = [],
 }: {
   students: Student[];
   setStudents: (n: Student[]) => void;
   aulas: string[];
   setAulas: (n: string[]) => void;
   tx: Transaction[];
+  attAulas?: AulaMeta[];
+  attRecords?: AttendanceRecord[];
 }) {
   const [filterActividad, setFilterActividad] = useState<"Activo" | "Retirado" | "Todos">("Activo");
   const [q, setQ] = useState("");
@@ -526,6 +531,7 @@ export default function SolvenciasTab({
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [viewTxStudent, setViewTxStudent] = useState<Student | null>(null);
   const [detectarOpen, setDetectarOpen] = useState(false);
+  const [asistOpen, setAsistOpen] = useState(false);
   const [detectados, setDetectados] = useState<{ nombre: string; pagos: number; aula: string }[]>(
     [],
   );
@@ -565,6 +571,124 @@ export default function SolvenciasTab({
     }
     return [...conteo.values()].sort((a, b) => b.pagos - a.pagos);
   }, [tx, students]);
+
+  /**
+   * Alumnos que ya están en asistencias, con las aulas donde aparecen.
+   *
+   * Es la fuente más fiable que hay: los celadores los pasan lista semana a
+   * semana, mientras que deducirlos de la descripción de un pago depende de
+   * cómo se haya escrito el concepto.
+   *
+   * Solo se miran las aulas activas: un aula archivada ya no tiene grupo, y
+   * traer a su gente volvería a meter en solvencias a quienes se graduaron.
+   */
+  const desdeAsistencias = useMemo(() => {
+    const activas = new Map(attAulas.filter((a) => a.activa !== false).map((a) => [a.nombre, a]));
+    const porNombre = new Map<
+      string,
+      { nombre: string; aulas: Set<string>; primera: string; celador: boolean }
+    >();
+    for (const r of attRecords) {
+      const aula = activas.get(r.aula);
+      if (!aula) continue;
+      const nombre = r.alumno.trim();
+      const clave = normalizeName(nombre);
+      if (!clave) continue;
+      let e = porNombre.get(clave);
+      if (!e) {
+        porNombre.set(
+          clave,
+          (e = {
+            nombre,
+            aulas: new Set(),
+            primera: "",
+            celador: normalizeName(aula.celador || "") === clave,
+          }),
+        );
+      }
+      e.aulas.add(r.aula);
+      // La fecha de ingreso se estima con la primera clase en la que consta
+      // como asistente o inasistente: el importador crea una fila por cada
+      // fecha del año, así que tomar la primera de todas daría enero siempre.
+      if ((r.asistencia === "A" || r.asistencia === "I") && (!e.primera || r.fecha < e.primera)) {
+        e.primera = r.fecha;
+      }
+    }
+    return porNombre;
+  }, [attAulas, attRecords]);
+
+  /**
+   * Qué pasaría al traerlos: cuáles son nuevos y a cuáles solo hay que
+   * añadirles un aula. Se compara primero por nombre exacto y, si no, por
+   * nombre y apellido, para que "Carlos Jimenez" no entre otra vez cuando ya
+   * existe "Carlos Angel Jimenez".
+   */
+  const previaAsistencias = useMemo(() => {
+    const exactos = new Map(students.map((s, i) => [normalizeName(s.nombre), i]));
+    const buscarParecido = (clave: string): number | undefined => {
+      const idx = exactos.get(clave);
+      if (idx !== undefined) return idx;
+      const p = clave.split(" ").filter(Boolean);
+      if (p.length < 2) return undefined;
+      const nom = p[0];
+      const ape = p[p.length - 1];
+      for (let i = 0; i < students.length; i++) {
+        const nn = normalizeName(students[i].nombre);
+        if (nn.includes(nom) && nn.includes(ape)) return i;
+      }
+      return undefined;
+    };
+
+    const nuevos: { clave: string; nombre: string; aulas: string[] }[] = [];
+    const unir: { nombre: string; con: string; agrega: string[] }[] = [];
+    for (const [clave, info] of desdeAsistencias) {
+      const idx = buscarParecido(clave);
+      if (idx === undefined) {
+        nuevos.push({ clave, nombre: info.nombre, aulas: [...info.aulas] });
+        continue;
+      }
+      const faltan = [...info.aulas].filter((a) => !students[idx].aulas.includes(a));
+      if (faltan.length || normalizeName(students[idx].nombre) !== clave) {
+        unir.push({ nombre: info.nombre, con: students[idx].nombre, agrega: faltan });
+      }
+    }
+    return { nuevos, unir, buscarParecido };
+  }, [desdeAsistencias, students]);
+
+  const traerDeAsistencias = () => {
+    const next = [...students];
+    let creados = 0;
+    let actualizados = 0;
+    for (const [clave, info] of desdeAsistencias) {
+      const idx = previaAsistencias.buscarParecido(clave);
+      const aulasInfo = [...info.aulas];
+      if (idx === undefined) {
+        const meta = attAulas.find((a) => a.nombre === aulasInfo[0]);
+        next.push({
+          nombre: info.nombre,
+          aulas: aulasInfo,
+          actividad: "Activo",
+          condicion: meta?.condicion === "Probacionista" ? "Probacionista" : "Miembro",
+          celador: info.celador || undefined,
+          fechaIngreso: info.primera || `${meta?.year ?? new Date().getFullYear()}-01-01`,
+        });
+        creados++;
+      } else {
+        const s = next[idx];
+        const union = Array.from(new Set([...s.aulas, ...aulasInfo]));
+        if (union.length !== s.aulas.length) {
+          next[idx] = { ...s, aulas: union };
+          actualizados++;
+        }
+      }
+    }
+    setStudents(next);
+    setAsistOpen(false);
+    toast.success(
+      `${creados} integrante(s) creados desde asistencias` +
+        (actualizados ? ` · ${actualizados} con aula actualizada` : ""),
+    );
+  };
 
   // último pago por alumno
   const lastPayByStudent = useMemo(() => {
@@ -742,6 +866,12 @@ export default function SolvenciasTab({
             >
               <Upload className="mr-2 h-4 w-4" /> Importar Excel
             </Button>
+            {(previaAsistencias.nuevos.length > 0 || previaAsistencias.unir.length > 0) && (
+              <Button variant="outline" onClick={() => setAsistOpen(true)}>
+                <Users className="mr-2 h-4 w-4" />
+                Traer de Asistencias ({previaAsistencias.nuevos.length})
+              </Button>
+            )}
             {candidatosDesdeTx.length > 0 && (
               <Button
                 variant="outline"
@@ -986,6 +1116,74 @@ export default function SolvenciasTab({
       />
 
       {/* Alumnos detectados en los pagos que aún no existen en la lista */}
+      <Dialog open={asistOpen} onOpenChange={setAsistOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Traer integrantes desde Asistencias</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Se toman de las listas que pasan los celadores. Antes de crear a nadie se compara con
+            los que ya existen, por nombre completo y también por nombre y apellido, para no
+            duplicar a la misma persona escrita de dos formas. Las aulas archivadas quedan fuera.
+          </p>
+          <div className="max-h-[55vh] space-y-4 overflow-y-auto">
+            {previaAsistencias.nuevos.length > 0 && (
+              <div>
+                <p className="mb-1 text-sm font-medium">
+                  Se van a crear {previaAsistencias.nuevos.length}
+                </p>
+                <div className="rounded-md border">
+                  {previaAsistencias.nuevos.map((n) => (
+                    <div
+                      key={n.clave}
+                      className="flex items-baseline justify-between gap-2 border-b px-2 py-1 text-xs last:border-0"
+                    >
+                      <span>{n.nombre}</span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                        {n.aulas.join(", ")}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {previaAsistencias.unir.length > 0 && (
+              <div>
+                <p className="mb-1 text-sm font-medium">
+                  Ya existen — no se duplican ({previaAsistencias.unir.length})
+                </p>
+                <div className="rounded-md border">
+                  {previaAsistencias.unir.map((u, i) => (
+                    <div
+                      key={i}
+                      className="flex items-baseline justify-between gap-2 border-b px-2 py-1 text-xs last:border-0"
+                    >
+                      <span>
+                        {u.nombre}
+                        {normalizeName(u.nombre) !== normalizeName(u.con) && (
+                          <span className="text-muted-foreground"> → se une a «{u.con}»</span>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                        {u.agrega.length ? `+ ${u.agrega.join(", ")}` : "sin cambios"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAsistOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={traerDeAsistencias}>
+              <Users className="mr-2 h-4 w-4" /> Traer {previaAsistencias.nuevos.length}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={detectarOpen} onOpenChange={setDetectarOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>

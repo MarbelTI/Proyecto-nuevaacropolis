@@ -539,6 +539,8 @@ function Index() {
                   aulas={aulas}
                   setAulas={setAulas}
                   tx={transactions.list}
+                  attAulas={aulasMeta}
+                  attRecords={attRecords}
                 />
               </TabsContent>
 
