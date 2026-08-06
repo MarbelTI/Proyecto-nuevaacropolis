@@ -55,6 +55,25 @@ const isoToShort = (iso: string) => {
   const [y, m, d] = iso.split("-");
   return `${d}/${m.slice(2)}`;
 };
+const MES_CORTO = [
+  "ene",
+  "feb",
+  "mar",
+  "abr",
+  "may",
+  "jun",
+  "jul",
+  "ago",
+  "sep",
+  "oct",
+  "nov",
+  "dic",
+];
+/** "2026-01-13" → "13-ene". El mes en letra evita confundir día con mes. */
+const isoToDiaMes = (iso: string) => {
+  const [, m, d] = iso.split("-");
+  return `${d}-${MES_CORTO[Number(m) - 1] ?? m}`;
+};
 const monthName = (iso: string) => {
   const d = new Date(iso + "T12:00:00");
   return d.toLocaleString("es", { month: "long" });
@@ -920,37 +939,18 @@ export default function AsistenciasTab({
                           return (
                             <div
                               key={ref.id}
-                              className="rounded-md border bg-card px-2 py-1 hover:border-indigo-300"
+                              className="flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-[11px] hover:border-indigo-300"
                             >
-                              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                                <span className="font-semibold text-foreground">#{numero}</span>
-                                <span>{ref.fecha ? isoToShort(ref.fecha) : "—"}</span>
-                                <span
-                                  className={`ml-auto tabular-nums ${
-                                    entregadas === 0
-                                      ? "text-muted-foreground/40"
-                                      : completo
-                                        ? "font-medium text-green-600"
-                                        : ""
-                                  }`}
-                                >
-                                  {entregadas}/{alumnos.length}
-                                </span>
-                                <button
-                                  className="shrink-0 hover:text-indigo-600"
-                                  title="Cambiar el tema"
-                                  onClick={() => {
-                                    setInlineRefId(ref.id);
-                                    setInlineRefVal(tema);
-                                  }}
-                                >
-                                  <Pencil className="h-3 w-3" />
-                                </button>
-                              </div>
+                              <span className="shrink-0 font-semibold text-muted-foreground">
+                                #{numero}
+                              </span>
+                              <span className="shrink-0 text-[10px] text-muted-foreground">
+                                {ref.fecha ? isoToDiaMes(ref.fecha) : "—"}
+                              </span>
                               {inlineRefId === ref.id ? (
                                 <input
                                   autoFocus
-                                  className="mt-0.5 w-full rounded border border-indigo-300 bg-indigo-50 px-1 py-0 text-[11px]"
+                                  className="min-w-0 flex-1 rounded border border-indigo-300 bg-indigo-50 px-1 py-0 text-[11px]"
                                   value={inlineRefVal}
                                   onChange={(e) => setInlineRefVal(e.target.value)}
                                   onBlur={() => guardarTema(ref, numero)}
@@ -960,14 +960,35 @@ export default function AsistenciasTab({
                                   }}
                                 />
                               ) : (
-                                <div className="truncate text-[11px]" title={tema || undefined}>
+                                <span className="min-w-0 flex-1 truncate" title={tema || undefined}>
                                   {tema || (
                                     <span className="italic text-muted-foreground/50">
-                                      sin título todavía
+                                      sin título
                                     </span>
                                   )}
-                                </div>
+                                </span>
                               )}
+                              <span
+                                className={`shrink-0 tabular-nums text-[10px] ${
+                                  entregadas === 0
+                                    ? "text-muted-foreground/40"
+                                    : completo
+                                      ? "font-medium text-green-600"
+                                      : "text-muted-foreground"
+                                }`}
+                              >
+                                {entregadas}/{alumnos.length}
+                              </span>
+                              <button
+                                className="shrink-0 text-muted-foreground hover:text-indigo-600"
+                                title="Cambiar el tema"
+                                onClick={() => {
+                                  setInlineRefId(ref.id);
+                                  setInlineRefVal(tema);
+                                }}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </button>
                             </div>
                           );
                         })}
