@@ -195,6 +195,16 @@ REGLAS DE CATEGORÍA:
 - Otras categorías de INGRESO posibles: ${ingresos.join(", ")}
 - Categorías de GASTO típicas: ${gastos.join(", ")}
 
+PRÉSTAMOS — REGLA DEL NOMBRE:
+Si la categoría es "PRESTAMO", "PRÉSTAMOS, PROFESOR" o "INTERESES PTAMO", la
+descripción DEBE empezar por el nombre de la persona seguido de dos puntos:
+    "Ricardo García: abono"
+    "Ricardo García: se le presta"
+El nombre va corregido contra la lista de alumnos de arriba si aparece ahí.
+Si en la hoja no se distingue de quién es el préstamo, deja la descripción tal
+cual SIN los dos puntos: es preferible que quede sin asignar a atribuírselo a
+la persona equivocada.
+
 ESTRUCTURA DE LA HOJA (de izquierda a derecha):
 1. Fecha (dd/mm o dd/mm/aaaa)
 2. Descripción / concepto. Si después del nombre aparece "C/S abr-2026" o similar, ese "abr-2026" es la MENSUALIDAD (el mes que está pagando), NO va en descripción.
@@ -210,7 +220,7 @@ CAMPOS A DEVOLVER POR ENTRADA:
 - mes: nombre del mes en español ("Abril", "Mayo", etc.)
 - tipo: "Ingreso" o "Gasto"
 - categoria: una de las categorías listadas
-- descripcion: nombre del alumno (corregido contra la lista) o concepto del movimiento. SIN la parte de "C/S xxx-yyyy".
+- descripcion: nombre del alumno (corregido contra la lista) o concepto del movimiento. SIN la parte de "C/S xxx-yyyy". En préstamos, "Nombre Apellido: concepto" (ver regla del nombre).
 - mensualidad: el periodo que se paga, ej "abr-2026", "mar-2026". Vacío si no aplica.
 - moneda: "USD", "Bolívares" o "Pesos"
 - monto: el monto en su moneda original, como número (usa punto decimal). Ej "12800.00", "20.00"

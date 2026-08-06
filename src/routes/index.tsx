@@ -21,6 +21,7 @@ import { DashboardTab } from "@/components/finanzas/DashboardTab";
 import { TasasBcvTab } from "@/components/finanzas/TasasBcvTab";
 import SolvenciasTab from "@/components/finanzas/SolvenciasTab";
 import { SupabaseSync } from "@/components/finanzas/SupabaseSync";
+import { PrestamosTab } from "@/components/finanzas/PrestamosTab";
 import { AuthDialog, useAuth } from "@/components/finanzas/AuthDialog";
 import { CuentasPendientes } from "@/components/finanzas/CuentasPendientes";
 import { MINUTOS_INACTIVIDAD } from "@/lib/api/auth.functions";
@@ -408,6 +409,9 @@ function Index() {
                       <TabsTrigger value="analisis" className={NAV_SUB}>
                         Análisis anual
                       </TabsTrigger>
+                      <TabsTrigger value="prestamos" className={NAV_SUB}>
+                        Préstamos
+                      </TabsTrigger>
                       <TabsTrigger value="bcv" className={NAV_SUB}>
                         Tasas BCV
                       </TabsTrigger>
@@ -489,6 +493,10 @@ function Index() {
                   gastos={gastos}
                   bcvRates={bcv.rates}
                 />
+              </TabsContent>
+
+              <TabsContent value="prestamos">
+                <PrestamosTab tx={transactions.list} students={students} />
               </TabsContent>
 
               <TabsContent value="bcv">
