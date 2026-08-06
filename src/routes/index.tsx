@@ -38,6 +38,8 @@ import {
   Users,
   CalendarCheck,
   ShieldAlert,
+  ChevronDown,
+  Cloud,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -57,6 +59,10 @@ const ETIQUETA_ROL: Record<string, string> = {
 const NAV_ITEM =
   "w-full justify-start gap-2 px-2.5 py-1.5 text-[13px] lg:w-full data-[state=active]:bg-background data-[state=active]:shadow-sm";
 const NAV_ICON = "h-3.5 w-3.5 shrink-0";
+// Las vistas de Finanzas cuelgan del grupo: van sangradas y algo más chicas
+// para que se lea de un vistazo que dependen de él.
+const NAV_SUB =
+  "w-full justify-start gap-2 py-1 pl-3 pr-2 text-[12px] text-muted-foreground lg:w-full data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -125,6 +131,7 @@ function Index() {
     setRecoveryOpen,
   } = useAuth();
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  const [finanzasAbierto, setFinanzasAbierto] = useState(true);
   const [aulasMeta, setAulasMeta] = useAulasMeta();
   const [attRecords, setAttRecords] = useAttendance();
 
@@ -378,10 +385,41 @@ function Index() {
                   </span>
                 </TabsTrigger>
               )}
+              {/* Finanzas agrupa sus cuatro vistas aquí mismo. Antes vivían en
+                  una segunda fila de pestañas dentro del contenido, que era
+                  justo el menú viejo que el lateral vino a reemplazar. */}
               {userInfo.canAccessExisting && (
-                <TabsTrigger value="finanzas" className={NAV_ITEM}>
-                  <BarChart3 className={NAV_ICON} /> Finanzas
-                </TabsTrigger>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setFinanzasAbierto((v) => !v)}
+                    aria-expanded={finanzasAbierto}
+                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] font-medium hover:bg-background/60"
+                  >
+                    <BarChart3 className={NAV_ICON} /> Finanzas
+                    <ChevronDown
+                      className={`ml-auto h-3.5 w-3.5 shrink-0 transition-transform ${
+                        finanzasAbierto ? "" : "-rotate-90"
+                      }`}
+                    />
+                  </button>
+                  {finanzasAbierto && (
+                    <div className="flex flex-row flex-wrap gap-1 lg:flex-col lg:flex-nowrap">
+                      <TabsTrigger value="resumen" className={NAV_SUB}>
+                        Resumen mensual
+                      </TabsTrigger>
+                      <TabsTrigger value="dashboard" className={NAV_SUB}>
+                        Dashboard
+                      </TabsTrigger>
+                      <TabsTrigger value="analisis" className={NAV_SUB}>
+                        Análisis anual
+                      </TabsTrigger>
+                      <TabsTrigger value="bcv" className={NAV_SUB}>
+                        Tasas BCV
+                      </TabsTrigger>
+                    </div>
+                  )}
+                </>
               )}
               {userInfo.canAccessExisting && (
                 <TabsTrigger value="solvencias" className={NAV_ITEM}>
@@ -391,6 +429,13 @@ function Index() {
               {userInfo.canAccessAsistencias && (
                 <TabsTrigger value="asistencias" className={NAV_ITEM}>
                   <CalendarCheck className={NAV_ICON} /> Asistencias
+                </TabsTrigger>
+              )}
+              {/* Copiar la base entera va aparte y solo para la administradora:
+                  "Cargar desde nube" reemplaza lo que haya en este equipo. */}
+              {auth.role === "super_admin" && (
+                <TabsTrigger value="nube" className={NAV_ITEM}>
+                  <Cloud className={NAV_ICON} /> Copia en la nube
                 </TabsTrigger>
               )}
             </TabsList>
@@ -423,51 +468,74 @@ function Index() {
                 />
               </TabsContent>
 
-              <TabsContent value="finanzas">
-                <div className="mb-4">
+              <TabsContent value="resumen">
+                <ResumenTab
+                  tx={transactions}
+                  ingresos={ingresos}
+                  gastos={gastos}
+                  bancos={bancos}
+                  bcvRates={bcv.rates}
+                />
+              </TabsContent>
+
+              <TabsContent value="dashboard">
+                <DashboardTab
+                  tx={transactions.list}
+                  ingresos={ingresos}
+                  gastos={gastos}
+                  bcvRates={bcv.rates}
+                  students={students}
+                />
+              </TabsContent>
+
+              <TabsContent value="analisis">
+                <AnalisisTab
+                  tx={transactions.list}
+                  ingresos={ingresos}
+                  gastos={gastos}
+                  bcvRates={bcv.rates}
+                />
+              </TabsContent>
+
+              <TabsContent value="bcv">
+                <TasasBcvTab bcv={bcv} />
+              </TabsContent>
+
+              <TabsContent value="nube" className="space-y-4">
+                <Card className="p-6">
+                  <h2 className="mb-1 flex items-center gap-2 text-lg font-semibold">
+                    <Cloud className="h-5 w-5" /> Copia en la nube
+                  </h2>
+                  <p className="mb-4 text-sm text-muted-foreground">
+                    Hoy los datos viven en <b>este navegador y esta computadora</b>. Si se borra el
+                    historial o se daña el equipo, se pierden. Aquí se copian a Supabase, que es la
+                    base de datos en internet.
+                  </p>
+                  <div className="mb-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg border p-3">
+                      <p className="mb-1 text-sm font-medium">⬆️ Subir a nube</p>
+                      <p className="text-xs text-muted-foreground">
+                        Guarda en internet lo que tienes en esta computadora: transacciones, tasas y
+                        alumnos. Es la copia de seguridad. No borra nada.
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-destructive/40 p-3">
+                      <p className="mb-1 text-sm font-medium text-destructive">
+                        ⬇️ Cargar desde nube
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Al revés: trae lo que hay en internet y <b>reemplaza</b> lo de esta
+                        computadora. Úsalo solo al empezar en un equipo nuevo. Si tienes cambios sin
+                        subir, se pierden. Te pide confirmación antes.
+                      </p>
+                    </div>
+                  </div>
                   <SupabaseSync
                     transactions={transactions}
                     bcvRates={bcv}
                     students={{ list: students, setAll: setStudents }}
                   />
-                </div>
-                <Tabs defaultValue="resumen" className="w-full">
-                  <TabsList className="mb-4">
-                    <TabsTrigger value="resumen">Resumen mensual</TabsTrigger>
-                    <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-                    <TabsTrigger value="analisis">Análisis anual</TabsTrigger>
-                    <TabsTrigger value="bcv">Tasas BCV</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="resumen">
-                    <ResumenTab
-                      tx={transactions}
-                      ingresos={ingresos}
-                      gastos={gastos}
-                      bancos={bancos}
-                      bcvRates={bcv.rates}
-                    />
-                  </TabsContent>
-                  <TabsContent value="dashboard">
-                    <DashboardTab
-                      tx={transactions.list}
-                      ingresos={ingresos}
-                      gastos={gastos}
-                      bcvRates={bcv.rates}
-                      students={students}
-                    />
-                  </TabsContent>
-                  <TabsContent value="analisis">
-                    <AnalisisTab
-                      tx={transactions.list}
-                      ingresos={ingresos}
-                      gastos={gastos}
-                      bcvRates={bcv.rates}
-                    />
-                  </TabsContent>
-                  <TabsContent value="bcv">
-                    <TasasBcvTab bcv={bcv} />
-                  </TabsContent>
-                </Tabs>
+                </Card>
               </TabsContent>
 
               <TabsContent value="solvencias">
