@@ -98,13 +98,32 @@ export const syncAttendanceToSupabase = createServerFn({ method: "POST" })
     const supabase = await clienteConSesion(data.accessToken);
     if (!supabase) return { ok: false, error: "Supabase no está configurado" };
 
-    const nombresAulas = data.aulas.map((a) => a.nombre);
+    // Un celador tiene el Excel completo en su equipo, así que su envío trae
+    // todas las aulas. Se recorta a la suya antes de tocar la base: si se
+    // mandara entero, RLS rechazaría las filas ajenas y abortaría la subida
+    // completa, incluida la parte que sí le corresponde.
+    const aulasPermitidas =
+      session.role === "celador"
+        ? data.aulas.filter((a) => a.nombre === session.aulaNombre)
+        : data.aulas;
+
+    if (session.role === "celador" && !session.aulaNombre) {
+      return { ok: false, error: "No tienes un aula asignada. Avisa a Tecnologías." };
+    }
+
+    const nombresAulas = aulasPermitidas.map((a) => a.nombre);
     if (!nombresAulas.length) {
-      return { ok: false, error: "No hay aulas que subir. Importa el Excel primero." };
+      return {
+        ok: false,
+        error:
+          session.role === "celador"
+            ? `No se encontró tu aula (${session.aulaNombre}) en lo que hay en este equipo.`
+            : "No hay aulas que subir. Importa el Excel primero.",
+      };
     }
 
     // 1. Las aulas primero: el resto de tablas apuntan a ellas.
-    const aulasRows = data.aulas.map((a) => ({
+    const aulasRows = aulasPermitidas.map((a) => ({
       nombre: a.nombre,
       celador: a.celador,
       dia_semana: a.diaSemana,

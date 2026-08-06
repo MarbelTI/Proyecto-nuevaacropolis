@@ -14,6 +14,12 @@ export type AuthSession = {
   role: string;
   /** false = cuenta registrada pero aún no habilitada por un super_admin. */
   aprobado: boolean;
+  /**
+   * Aula del celador, por nombre. Solo la tienen los celadores; el resto de
+   * roles no está limitado a un aula. undefined en un celador significa que
+   * no tiene aula asignada, y entonces no debe ver ninguna.
+   */
+  aulaNombre?: string;
 };
 
 /**
@@ -49,7 +55,7 @@ export async function getSessionUser(accessToken?: string): Promise<AuthSession 
   // permite leer el propio perfil, así que esta consulta es segura con anon key.
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role, aprobado")
+    .select("role, aprobado, aula_nombre")
     .eq("id", userId)
     .maybeSingle();
 
@@ -61,6 +67,7 @@ export async function getSessionUser(accessToken?: string): Promise<AuthSession 
     // así ninguna comprobación de permisos puede darle acceso por descuido.
     role: aprobado ? (profile?.role ?? "unknown") : "pendiente",
     aprobado,
+    aulaNombre: aprobado ? (profile?.aula_nombre ?? undefined) : undefined,
   };
 }
 
@@ -80,11 +87,15 @@ export function canManageStudents(role: string): boolean {
 }
 
 /**
- * Roles que pueden escribir asistencias. Es el mismo criterio que se aplica
- * para archivar aulas: tecnología y control de estudio.
+ * Roles que pueden escribir asistencias.
+ *
+ * El celador entra porque marcar la asistencia de su aula es justamente su
+ * trabajo. Lo que NO puede es tocar otras aulas: eso lo recorta el servidor
+ * (ver syncAttendanceToSupabase) y, sobre todo, lo impiden las políticas RLS,
+ * que son la autoridad final aunque alguien evite la aplicación.
  */
 export function canManageAsistencias(role: string): boolean {
-  return role === "super_admin" || role === "celador_estudios";
+  return role === "super_admin" || role === "celador_estudios" || role === "celador";
 }
 
 /**

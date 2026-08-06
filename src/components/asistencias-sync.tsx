@@ -25,9 +25,13 @@ async function getAccessToken(): Promise<string | undefined> {
   }
 }
 
-/** Quien puede subir es quien puede editar: tecnología y control de estudio. */
+/**
+ * Quien puede subir es quien marca asistencia: tecnología, control de estudio
+ * y los celadores. Al celador el servidor le recorta el envío a su aula, y las
+ * políticas de la base lo impiden de todos modos.
+ */
 function puedeSubir(role?: string): boolean {
-  return role === "super_admin" || role === "celador_estudios";
+  return role === "super_admin" || role === "celador_estudios" || role === "celador";
 }
 
 export type AsistenciasSyncProps = {
