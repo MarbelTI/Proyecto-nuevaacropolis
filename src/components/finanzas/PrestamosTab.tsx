@@ -112,7 +112,8 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
   const [busqueda, setBusqueda] = useState("");
   const [abierta, setAbierta] = useState<string | null>(null);
   const [grupos, setGrupos] = usePrestamoAliases();
-  const [uniendo, setUniendo] = useState<string | null>(null);
+  const [seleccion, setSeleccion] = useState<string[]>([]);
+  const [uniendoAbierto, setUniendoAbierto] = useState(false);
   const [destino, setDestino] = useState("");
   const [verGrupos, setVerGrupos] = useState(false);
 
@@ -174,10 +175,32 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
     return { prestado, abonado, intereses, pendiente, conSaldo };
   }, [prestamos]);
 
+  const alternarSeleccion = (persona: string) =>
+    setSeleccion((prev) =>
+      prev.includes(persona) ? prev.filter((p) => p !== persona) : [...prev, persona],
+    );
+
+  /**
+   * Al abrir el diálogo se propone el nombre más largo de los marcados. Entre
+   * "Ricardo" y "Ricardo García" el completo es casi siempre el bueno, así que
+   * en la mayoría de los casos basta con confirmar.
+   */
+  const abrirUnion = () => {
+    const masLargo = [...seleccion].sort((a, b) => b.length - a.length)[0] ?? "";
+    setDestino(masLargo);
+    setUniendoAbierto(true);
+  };
+
   const confirmarUnion = () => {
-    if (!uniendo || !destino.trim()) return;
-    setGrupos(unir(grupos, destino, uniendo));
-    setUniendo(null);
+    const nombre = destino.trim();
+    if (!nombre || !seleccion.length) return;
+    // Se aplican una tras otra sobre el resultado anterior; hacerlo sobre
+    // `grupos` cada vez perdería todas menos la última.
+    let next = grupos;
+    for (const etiqueta of seleccion) next = unir(next, nombre, etiqueta);
+    setGrupos(next);
+    setUniendoAbierto(false);
+    setSeleccion([]);
     setDestino("");
   };
 
@@ -277,17 +300,40 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
           </div>
         )}
 
+        {seleccion.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 p-2.5">
+            <span className="text-xs font-medium">
+              {seleccion.length} seleccionado{seleccion.length > 1 ? "s" : ""}
+            </span>
+            <span className="text-xs text-muted-foreground">{seleccion.join(" · ")}</span>
+            <div className="ml-auto flex gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs"
+                onClick={() => setSeleccion([])}
+              >
+                Quitar selección
+              </Button>
+              <Button size="sm" className="text-xs" onClick={abrirUnion}>
+                <Link2 className="mr-1 h-3.5 w-3.5" />
+                Unir en una sola persona
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-xs text-muted-foreground">
+                <th className="w-8 p-2"></th>
                 <th className="p-2 text-left font-medium">Persona</th>
                 <th className="p-2 text-right font-medium">Prestado</th>
                 <th className="p-2 text-right font-medium">Devuelto</th>
                 <th className="p-2 text-right font-medium">Intereses</th>
                 <th className="p-2 text-right font-medium">Saldo</th>
                 <th className="p-2 text-left font-medium">Estado</th>
-                <th className="p-2"></th>
               </tr>
             </thead>
             <tbody>
@@ -301,6 +347,15 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
                       className="cursor-pointer border-b transition hover:bg-muted/40 hover:font-semibold"
                       onClick={() => setAbierta(expandida ? null : clave)}
                     >
+                      <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          className="cursor-pointer"
+                          checked={seleccion.includes(p.persona)}
+                          onChange={() => alternarSeleccion(p.persona)}
+                          title={`Marcar «${p.persona}» para unir`}
+                        />
+                      </td>
                       <td className="p-2">
                         <span className="flex items-center gap-1">
                           <ChevronRight
@@ -329,20 +384,6 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
                             Pendiente
                           </span>
                         )}
-                      </td>
-                      <td className="p-2 text-right">
-                        <button
-                          type="button"
-                          className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                          title="Unir esta fila con otra persona"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setUniendo(p.persona);
-                            setDestino("");
-                          }}
-                        >
-                          Unir
-                        </button>
                       </td>
                     </tr>
                     {expandida && (
@@ -399,15 +440,24 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
         </p>
       </Card>
 
-      <Dialog open={uniendo != null} onOpenChange={(v) => !v && setUniendo(null)}>
+      <Dialog open={uniendoAbierto} onOpenChange={(v) => !v && setUniendoAbierto(false)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Unir «{uniendo}» con otra persona</DialogTitle>
+            <DialogTitle>
+              Unir {seleccion.length} nombre{seleccion.length > 1 ? "s" : ""} en una sola persona
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            <div className="flex flex-wrap gap-1">
+              {seleccion.map((s) => (
+                <span key={s} className="rounded-md border bg-muted/40 px-1.5 py-0.5 text-xs">
+                  {s}
+                </span>
+              ))}
+            </div>
             <p className="text-xs text-muted-foreground">
-              Todo movimiento cuya descripción contenga «{uniendo}» pasará a contarse como la
-              persona que escribas aquí. Se aplica también a lo que se cargue después.
+              Todos estos pasarán a contarse como una sola persona. Se aplica también a lo que se
+              cargue después.
             </p>
             <div>
               <label className="text-xs text-muted-foreground">Nombre definitivo</label>
@@ -430,7 +480,7 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setUniendo(null)}>
+            <Button variant="ghost" onClick={() => setUniendoAbierto(false)}>
               Cancelar
             </Button>
             <Button onClick={confirmarUnion} disabled={!destino.trim()}>
