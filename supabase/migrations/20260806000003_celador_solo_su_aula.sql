@@ -135,8 +135,10 @@ returns boolean as $$
   select public.is_super_admin() or public.is_celador_estudios();
 $$ language sql security definer stable;
 
--- Ya no hace falta: la reemplazan ve_todas_las_aulas() + aula_del_celador().
-drop function if exists public.puede_leer_asistencias();
+-- OJO con el orden: puede_leer_asistencias() NO se puede borrar todavía.
+-- Las políticas de la migración anterior dependen de ella, y Postgres se
+-- niega a soltar una función que está en uso. Se elimina al final, cuando
+-- ya no queda ninguna política apuntándole.
 
 -- ------------------------------------------------------------
 -- 5. Políticas nuevas
@@ -187,6 +189,9 @@ begin
          with check (%I = public.aula_del_celador())', t, col, col);
   end loop;
 end $$;
+
+-- Ahora sí: ya ninguna política la usa.
+drop function if exists public.puede_leer_asistencias();
 
 comment on table public.att_aulas is
   'Aulas del control de asistencia — RLS: tecnologia y control de estudio RW todo; direccion R todo; celador RW solo su aula; finanzas sin acceso.';
