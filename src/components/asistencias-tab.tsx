@@ -839,16 +839,16 @@ export default function AsistenciasTab({
                 </span>
               </div>
 
+              {/* Ancho FIJO, no w-full: con table-fixed y ancho al 100%, el
+                  segundo semestre —que tiene menos columnas— estiraba las
+                  celdas hasta verse desproporcionado y parecía otra pantalla.
+                  Fijando el ancho, la celda mide 30px en los dos semestres y lo
+                  único que cambia es cuántas hay. */}
               {semestreFechas.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-8 text-center">
                   No hay clases en este semestre.
                 </p>
               ) : (
-                {/* Ancho FIJO, no w-full: con table-fixed y ancho al 100%, el
-                    segundo semestre —que tiene menos columnas— estiraba las
-                    celdas hasta verse desproporcionado y parecía otra pantalla.
-                    Fijando el ancho, la celda mide 30px en los dos semestres y
-                    lo único que cambia es cuántas hay. */}
                 <table
                   className="text-xs border-collapse border-dashed border-[#bbb] table-fixed"
                   style={{
