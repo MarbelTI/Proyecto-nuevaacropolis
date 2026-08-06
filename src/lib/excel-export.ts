@@ -3,14 +3,16 @@ import type { Transaction } from "./lists-store";
 
 function todayIso(): string {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function fechaToIso(fecha: string): string | null {
   const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
   if (!m) return null;
-  const dd = m[1].padStart(2,"0"); const mm = m[2].padStart(2,"0");
-  let yy = m[3] ?? String(new Date().getFullYear()); if (yy.length===2) yy = "20"+yy;
+  const dd = m[1].padStart(2, "0");
+  const mm = m[2].padStart(2, "0");
+  let yy = m[3] ?? String(new Date().getFullYear());
+  if (yy.length === 2) yy = "20" + yy;
   return `${yy}-${mm}-${dd}`;
 }
 
@@ -22,12 +24,34 @@ function serialDate(iso: string): number {
 
 export function exportTransactionsExcel(transactions: Transaction[]): void {
   if (!transactions.length) return;
-  const ws = XLSX.utils.json_to_sheet(transactions.map((r) => ({
-    Fecha: r.fecha, Mes: r.mes, Tipo: r.tipo, Categoría: r.categoria,
-    Descripción: r.descripcion, Mensualidad: r.mensualidad, Moneda: r.moneda,
-    Banco: r.banco, Monto: r.monto, "Tasa cambio": r.tasa, "Monto USD": r.montoUsd,
-  })));
-  ws["!cols"] = [{wch:11},{wch:10},{wch:9},{wch:18},{wch:35},{wch:11},{wch:11},{wch:12},{wch:12},{wch:12},{wch:14}];
+  const ws = XLSX.utils.json_to_sheet(
+    transactions.map((r) => ({
+      Fecha: r.fecha,
+      Mes: r.mes,
+      Tipo: r.tipo,
+      Categoría: r.categoria,
+      Descripción: r.descripcion,
+      Mensualidad: r.mensualidad,
+      Moneda: r.moneda,
+      Banco: r.banco,
+      Monto: r.monto,
+      "Tasa cambio": r.tasa,
+      "Monto USD": r.montoUsd,
+    })),
+  );
+  ws["!cols"] = [
+    { wch: 11 },
+    { wch: 10 },
+    { wch: 9 },
+    { wch: 18 },
+    { wch: 35 },
+    { wch: 11 },
+    { wch: 11 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 14 },
+  ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Transacciones");
   XLSX.writeFile(wb, `TRANSACCIONES_${todayIso()}.xlsx`);
@@ -43,13 +67,26 @@ export function exportResumenExcel(
   const wb = XLSX.utils.book_new();
   const y = year;
   const m = month;
-  const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-  const ym = `${y}-${String(m).padStart(2,"0")}`;
-  const mesLabel = meses[m-1];
+  const meses = [
+    "Enero",
+    "Febrero",
+    "Marzo",
+    "Abril",
+    "Mayo",
+    "Junio",
+    "Julio",
+    "Agosto",
+    "Septiembre",
+    "Octubre",
+    "Noviembre",
+    "Diciembre",
+  ];
+  const ym = `${y}-${String(m).padStart(2, "0")}`;
+  const mesLabel = meses[m - 1];
 
-  const monthTx = transactions.filter(t => {
+  const monthTx = transactions.filter((t) => {
     const iso = fechaToIso(t.fecha);
-    return iso && iso.slice(0,7) === ym;
+    return iso && iso.slice(0, 7) === ym;
   });
 
   const allCats = [...ingresos, ...gastos];
@@ -72,7 +109,7 @@ export function exportResumenExcel(
     });
   }
 
-  const maxRecords = Math.max(0, ...allCats.map(c => catData[c].length));
+  const maxRecords = Math.max(0, ...allCats.map((c) => catData[c].length));
 
   const rm: any[][] = [];
 
@@ -81,7 +118,7 @@ export function exportResumenExcel(
 
   // Filas de datos
   for (let r = 0; r < maxRecords; r++) {
-    rm.push(allCats.map(cat => (r < catData[cat].length ? catData[cat][r].monto : null)));
+    rm.push(allCats.map((cat) => (r < catData[cat].length ? catData[cat][r].monto : null)));
   }
 
   // Fila de totales (valores null, se reemplazan por fórmula después)
@@ -135,7 +172,15 @@ export function exportResumenExcel(
         const lines = [entries[r].fecha];
         if (entries[r].mes) lines.push(entries[r].mes);
         if (entries[r].desc) lines.push(entries[r].desc);
-        cell.c = [{ a: "Nueva Acrópolis", t: lines.join("\n"), hidden: true }];
+        // El indicador de oculto va en el ARRAY de comentarios, no dentro de
+        // cada comentario. Puesto en el objeto —como estaba— SheetJS lo ignora
+        // al escribir el archivo y Excel abre la hoja con todas las notas
+        // desplegadas encima de los datos, tapando las cifras.
+        const notas: { a: string; t: string }[] & { hidden?: boolean } = [
+          { a: "Nueva Acrópolis", t: lines.join("\n") },
+        ];
+        notas.hidden = true;
+        cell.c = notas;
       }
     }
   }
@@ -144,7 +189,8 @@ export function exportResumenExcel(
   XLSX.utils.book_append_sheet(wb, wsRm, "RESUMEN MENSUAL");
 
   const wbOut = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
-  const dataUri = "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64," + wbOut;
+  const dataUri =
+    "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64," + wbOut;
   const a = document.createElement("a");
   a.href = dataUri;
   a.download = `RESUMEN ${mesLabel} ${y}.xlsx`;
@@ -173,11 +219,24 @@ export function exportInformeOina(
   ingresos: string[],
   gastos: string[],
 ): void {
-  const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const meses = [
+    "Enero",
+    "Febrero",
+    "Marzo",
+    "Abril",
+    "Mayo",
+    "Junio",
+    "Julio",
+    "Agosto",
+    "Septiembre",
+    "Octubre",
+    "Noviembre",
+    "Diciembre",
+  ];
   const ym = `${year}-${String(month).padStart(2, "0")}`;
   const mesLabel = meses[month - 1];
 
-  const monthTx = transactions.filter(t => {
+  const monthTx = transactions.filter((t) => {
     const iso = fechaToIso(t.fecha);
     return iso && iso.slice(0, 7) === ym;
   });
@@ -224,7 +283,14 @@ export function exportInformeOina(
   const totalAcum = saldoAnterior + totalDebe - totalHaber;
   rm.push(["TOTALES", totalDebe, totalHaber, totalAcum, 1, 1]);
   rm.push([]);
-  rm.push(["Debe (Ingresos) - Haber (Gastos) = Diferencia", "", "", totalDebe - totalHaber, "", ""]);
+  rm.push([
+    "Debe (Ingresos) - Haber (Gastos) = Diferencia",
+    "",
+    "",
+    totalDebe - totalHaber,
+    "",
+    "",
+  ]);
 
   const ws = XLSX.utils.aoa_to_sheet(rm);
   ws["!cols"] = [{ wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 12 }];
@@ -234,7 +300,7 @@ export function exportInformeOina(
     for (let c = 1; c <= 5; c++) {
       const cell = ws[XLSX.utils.encode_cell({ r, c })];
       if (cell && typeof cell.v === "number") {
-        cell.z = (c >= 4) ? fmtPct : fmtNum;
+        cell.z = c >= 4 ? fmtPct : fmtNum;
       }
     }
   }
@@ -243,7 +309,8 @@ export function exportInformeOina(
   XLSX.utils.book_append_sheet(wb, ws, "OINA");
 
   const wbOut = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
-  const dataUri = "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64," + wbOut;
+  const dataUri =
+    "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64," + wbOut;
   const a = document.createElement("a");
   a.href = dataUri;
   a.download = `OINA_${mesLabel}_${year}.xlsx`;
