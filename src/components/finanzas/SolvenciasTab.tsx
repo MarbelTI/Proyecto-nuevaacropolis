@@ -838,14 +838,21 @@ export default function SolvenciasTab({
       });
   }, [students, q, filterActividad]);
 
-  const visibleStudents = useMemo(() => {
-    // Con filtro "Todos" se ven todos; en otro caso solo los que ya tienen pagos
-    if (filterActividad === "Todos" || filterActividad === "Retirado") return filteredStudents;
-    return filteredStudents.filter(({ st }) => {
-      if (st.condicion === "ClasePorClase") return true;
-      return lastPayByStudent.has(st.nombre);
-    });
-  }, [filteredStudents, lastPayByStudent, filterActividad]);
+  /**
+   * "Activos" significa activos, sin más condiciones.
+   *
+   * Antes, además de estar activo, se exigía tener algún pago registrado. Eso
+   * escondía a dos grupos justamente al revés de lo que hace falta aquí:
+   *
+   *   - Los celadores, que no pagan cuota y por tanto no tienen pagos.
+   *   - Cualquiera que todavía no haya pagado NADA — que es precisamente la
+   *     persona que una pantalla de solvencias tiene que enseñar.
+   *
+   * Y no se anunciaba en ningún sitio: el desplegable dice "Activos", nadie
+   * puede adivinar que también filtra por pagos. Quien no ha pagado sale con
+   * su deuda a la vista, que es la respuesta correcta.
+   */
+  const visibleStudents = filteredStudents;
 
   // Agrupar por aula (usa la primera aula del alumno).
   const grouped = useMemo(() => {
