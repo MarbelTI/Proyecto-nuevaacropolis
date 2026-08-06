@@ -308,6 +308,56 @@ export default function AsistenciasTab({
 
   const toggleAsistencia = useCallback(
     (alumno: string, fecha: string) => {
+      // Se lee de records y no de getAsistencia porque ese helper se define
+      // más abajo: usarlo aquí lo metería en el array de dependencias, que sí
+      // se evalúa durante el render, y reventaría por acceso anticipado.
+      const marcaDe = (a: string, f: string) =>
+        records.find(
+          (r) => r.aula === selectedAula && r.alumno === a && r.fecha === f && r.reflexion === "",
+        )?.asistencia || "";
+
+      const actual = marcaDe(alumno, fecha);
+      const siguiente = nextMark(actual);
+
+      // "No clase" es una propiedad del DÍA, no de cada alumno: si no hubo
+      // clase, no la hubo para nadie. Marcarla en una celda la aplica a toda
+      // la columna y quitarla la quita de toda la columna. Antes el celador
+      // tenía que dar tres clics por alumno para registrar un feriado.
+      if (siguiente === "NC" || actual === "NC") {
+        const poner = siguiente === "NC";
+        if (poner) {
+          const conMarca = alumnos.filter((a) => {
+            const m = marcaDe(a, fecha);
+            return m === "A" || m === "I";
+          }).length;
+          if (
+            conMarca > 0 &&
+            !confirm(
+              `Se va a marcar "no hubo clase" el ${isoToDiaMes(fecha)} para toda el aula.\n\n` +
+                `Eso borra ${conMarca} marca(s) de asistencia ya registradas de ese día.\n\n¿Continuar?`,
+            )
+          )
+            return;
+        }
+        setRecords((prev: AttendanceRecord[]) => {
+          const otros = prev.filter(
+            (r) => !(r.aula === selectedAula && r.fecha === fecha && r.reflexion === ""),
+          );
+          if (!poner) return otros;
+          return [
+            ...otros,
+            ...alumnos.map((a) => ({
+              aula: selectedAula,
+              alumno: a,
+              fecha,
+              asistencia: "NC" as const,
+              reflexion: "" as const,
+            })),
+          ];
+        });
+        return;
+      }
+
       setRecords((prev: AttendanceRecord[]) => {
         const idx = prev.findIndex(
           (r) =>
@@ -322,17 +372,15 @@ export default function AsistenciasTab({
             { aula: selectedAula, alumno, fecha, asistencia: "A" as const, reflexion: "" as const },
           ];
         }
-        const cur = prev[idx].asistencia;
-        const newVal = nextMark(cur);
-        if (newVal === "") {
+        if (siguiente === "") {
           const next = [...prev];
           next.splice(idx, 1);
           return next;
         }
-        return prev.map((r, i) => (i === idx ? { ...r, asistencia: newVal } : r));
+        return prev.map((r, i) => (i === idx ? { ...r, asistencia: siguiente } : r));
       });
     },
-    [selectedAula],
+    [selectedAula, alumnos, records, setRecords],
   );
 
   const toggleReflexion = useCallback(
@@ -684,16 +732,19 @@ export default function AsistenciasTab({
                   No clase
                 </span>
                 <span>
-                  <span className="inline-block w-4 h-4 rounded bg-green-200 text-green-800 text-center text-[10px] leading-4 font-bold mr-1">
+                  <span className="inline-block w-4 h-4 rounded bg-orange-200 text-orange-900 text-center text-[10px] leading-4 font-bold mr-1">
                     E
                   </span>{" "}
                   Entregada
                 </span>
                 <span>
-                  <span className="inline-block w-4 h-4 rounded bg-amber-200 text-amber-800 text-center text-[10px] leading-4 font-bold mr-1">
+                  <span className="inline-block w-4 h-4 rounded bg-gray-200 text-gray-600 text-center text-[9px] leading-4 font-bold mr-1">
                     NE
                   </span>{" "}
                   No entregada
+                </span>
+                <span className="ml-auto text-[11px] italic">
+                  Marcar <b>NC</b> en una celda aplica «no hubo clase» a toda la columna.
                 </span>
               </div>
 
@@ -705,7 +756,7 @@ export default function AsistenciasTab({
                 <table
                   className="w-full text-xs border-collapse border-dashed border-[#bbb] table-fixed"
                   style={{
-                    minWidth: semestreFechas.length * 28 + 280 + aulaReflexiones.length * 32,
+                    minWidth: semestreFechas.length * 30 + 280 + aulaReflexiones.length * 32,
                   }}
                 >
                   <thead>
@@ -738,19 +789,27 @@ export default function AsistenciasTab({
                     </tr>
                     <tr>
                       <th className="sticky left-0 bg-background z-10 border-b border-r border-dashed border-[#bbb]"></th>
-                      {semestreFechas.map((f) => (
-                        <th
-                          key={f}
-                          className="p-0 text-center align-top border-l border-b border-dashed border-[#bbb] w-[28px]"
-                        >
-                          <div className="text-[10px] font-bold text-foreground leading-tight">
-                            {isoToDisplay(f)}
-                          </div>
-                          <div className="text-[8px] text-muted-foreground leading-tight">
-                            #{topicNumByFecha[f]}
-                          </div>
-                        </th>
-                      ))}
+                      {semestreFechas.map((f, col) => {
+                        const iniciaMes =
+                          col > 0 && f.slice(0, 7) !== semestreFechas[col - 1].slice(0, 7);
+                        return (
+                          <th
+                            key={f}
+                            className={`p-0 text-center align-top border-b border-dashed border-[#bbb] w-[30px] ${
+                              iniciaMes
+                                ? "border-l-2 border-l-muted-foreground/40"
+                                : "border-l border-dashed"
+                            }`}
+                          >
+                            <div className="text-[10px] font-bold text-foreground leading-tight">
+                              {isoToDisplay(f)}
+                            </div>
+                            <div className="text-[8px] text-muted-foreground leading-tight">
+                              #{topicNumByFecha[f]}
+                            </div>
+                          </th>
+                        );
+                      })}
                       {reflectionGroups.map((g) => {
                         if (g.isGroup) {
                           return (
@@ -826,15 +885,23 @@ export default function AsistenciasTab({
                     )}
                   </thead>
                   <tbody>
-                    {alumnos.map((al) => (
-                      <tr key={al} className="hover:bg-muted/20">
+                    {alumnos.map((al, fila) => (
+                      // Rayado alternado: con medio centenar de columnas de 30px
+                      // el ojo se perdía de fila al recorrerlas de izquierda a
+                      // derecha.
+                      <tr
+                        key={al}
+                        className={`hover:bg-primary/5 ${fila % 2 === 1 ? "bg-muted/20" : ""}`}
+                      >
                         <td
-                          className="sticky left-0 bg-background z-10 p-1 text-xs font-medium truncate max-w-[280px] border-b border-r border-dashed border-[#bbb]"
+                          className={`sticky left-0 z-10 p-1 text-xs font-medium truncate max-w-[280px] border-b border-r border-dashed border-[#bbb] ${
+                            fila % 2 === 1 ? "bg-muted/20" : "bg-background"
+                          }`}
                           title={al}
                         >
                           {al}
                         </td>
-                        {semestreFechas.map((f) => {
+                        {semestreFechas.map((f, col) => {
                           const asis = getAsistencia(al, f);
                           const asisClass =
                             asis === "A"
@@ -844,13 +911,21 @@ export default function AsistenciasTab({
                                 : asis === "NC"
                                   ? "bg-gray-200 text-gray-600"
                                   : "text-muted-foreground/20";
+                          // Línea más marcada donde empieza cada mes, para
+                          // ubicarse sin tener que subir a leer el encabezado.
+                          const iniciaMes =
+                            col > 0 && f.slice(0, 7) !== semestreFechas[col - 1].slice(0, 7);
                           return (
                             <td
                               key={f}
-                              className="p-0 border-l border-b border-dashed border-[#bbb] w-[28px]"
+                              className={`p-0 border-b border-dashed border-[#bbb] w-[30px] ${
+                                iniciaMes
+                                  ? "border-l-2 border-l-muted-foreground/40"
+                                  : "border-l border-dashed"
+                              }`}
                             >
                               <button
-                                className={`w-full h-6 text-[9px] font-bold cursor-pointer transition ${asisClass} hover:ring-1 hover:ring-primary/40`}
+                                className={`w-full h-7 text-[10px] font-bold cursor-pointer transition ${asisClass} hover:ring-1 hover:ring-inset hover:ring-primary/50`}
                                 onClick={() => toggleAsistencia(al, f)}
                               >
                                 {asis}
@@ -860,11 +935,14 @@ export default function AsistenciasTab({
                         })}
                         {aulaReflexiones.map((ref) => {
                           const est = getRefEstado(al, ref.id);
+                          // Naranja para la entregada y el mismo gris de "no
+                          // clase" para la no entregada: así la vista de un
+                          // aula se lee por lo que resalta, no por lo que hay.
                           const estClass =
                             est === "E"
-                              ? "bg-green-100 text-green-800"
+                              ? "bg-orange-100 text-orange-900"
                               : est === "NE"
-                                ? "bg-amber-100 text-amber-800"
+                                ? "bg-gray-200 text-gray-600"
                                 : "text-muted-foreground/20";
                           return (
                             <td
@@ -872,7 +950,7 @@ export default function AsistenciasTab({
                               className="p-0 border-l border-b border-dashed border-[#bbb] w-[32px]"
                             >
                               <button
-                                className={`w-full h-6 text-[9px] font-bold cursor-pointer transition ${estClass} hover:ring-1 hover:ring-primary/40`}
+                                className={`w-full h-7 text-[10px] font-bold cursor-pointer transition ${estClass} hover:ring-1 hover:ring-inset hover:ring-primary/50`}
                                 onClick={() => toggleRefEstado(al, ref.id)}
                               >
                                 {est}
