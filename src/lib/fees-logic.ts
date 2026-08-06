@@ -1,13 +1,21 @@
 import type { Student } from "./lists-store";
 
 // ---------- Reglas de cuota mensual (USD) ----------
-// Miembros:
-//   - Hasta 2025-12: 18 USD (salvo excepciones bajas por hardship).
-//   - 2026-01 → 2026-04: 20 USD para todos.
-//   - Desde 2026-05: 20 USD, salvo lista de 25 USD.
+//
+// REGLA GENERAL, la que se aplica si de esa persona no se dice nada:
+//   - Hasta 2025-12: 18 USD
+//   - Desde 2026-01: 20 USD
 // Probacionistas: 0 (no cuota fija; pagan aparte según curso).
 // ClasePorClase: no cuota mensual, pagan por asistencia.
-// cuotaOverride del alumno gana siempre (0 = becado sin cuota).
+//
+// LAS EXCEPCIONES NO SE ESCRIBEN AQUÍ.
+// Quién paga 15, quién paga 25 y desde cuándo es información de personas
+// concretas, y este archivo está en el repositorio: quien tiene acceso al
+// código no tiene por qué saber quién paga menos. Cada excepción vive en la
+// ficha de esa persona y se carga desde la pantalla de Solvencias:
+//   - cuotaOverride ............ importe fijo, todos los meses
+//   - cuotaOverridesTemporales . importe a partir de un mes (o entre dos)
+// Se comprueban en ese orden, y el override permanente gana si están los dos.
 
 /** Precio por clase para "ClasePorClase" según el mes (referencial, no genera deuda). */
 export function precioClase(yearMonth: string): number {
@@ -40,7 +48,6 @@ export function cuotaMensualUSD(student: Student, yearMonth: string): number {
   if (overrideTemporal) return overrideTemporal.cuotaUsd;
 
   if (ym <= 202512) return 18;
-  if (ym <= 202604) return 20;
   return 20;
 }
 

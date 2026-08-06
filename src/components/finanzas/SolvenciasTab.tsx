@@ -157,6 +157,47 @@ function normalizeName(s: string) {
  * M\u00e1rquez" (celadora de Krishna II). Comparten nombre y apellido pero son dos
  * personas distintas; el segundo nombre es justo lo que las diferencia.
  */
+/**
+ * La cuota distinta de una persona puede ser permanente (siempre pagó 15) o
+ * empezar en un mes concreto (desde junio paga 25). Son dos campos distintos
+ * en la ficha; esto los lee como una sola cosa para poder mostrarlos juntos.
+ *
+ * De los tramos con fecha solo interesa el abierto —el que no tiene "hasta"—,
+ * que es el que sigue vigente. Los cerrados son historia y no se tocan.
+ */
+function leerCuotaEspecial(s: Student): { monto?: number; desde?: string } {
+  const vigente = (s.cuotaOverridesTemporales ?? []).find((o) => !o.hasta);
+  if (vigente) return { monto: vigente.cuotaUsd, desde: vigente.desde };
+  return { monto: s.cuotaOverride, desde: undefined };
+}
+
+/**
+ * Guarda la cuota en el campo que corresponde: `cuotaOverride` si aplica
+ * siempre, `cuotaOverridesTemporales` si arranca en un mes.
+ *
+ * Nunca se escriben los dos. El cálculo mira primero el permanente, así que
+ * si quedaran ambos, la fecha no serviría de nada y los meses anteriores
+ * saldrían con el importe nuevo — justo lo contrario de lo que se pide al
+ * escribir "desde junio".
+ */
+function escribirCuotaEspecial(s: Student, monto?: number, desde?: string): Student {
+  // Los tramos ya cerrados se conservan tal cual: son el histórico.
+  const cerrados = (s.cuotaOverridesTemporales ?? []).filter((o) => o.hasta);
+  const historico = cerrados.length ? cerrados : undefined;
+
+  if (monto === undefined) {
+    return { ...s, cuotaOverride: undefined, cuotaOverridesTemporales: historico };
+  }
+  if (desde) {
+    return {
+      ...s,
+      cuotaOverride: undefined,
+      cuotaOverridesTemporales: [...cerrados, { cuotaUsd: monto, desde }],
+    };
+  }
+  return { ...s, cuotaOverride: monto, cuotaOverridesTemporales: historico };
+}
+
 function mismoNombre(a: string, b: string): boolean {
   const ta = normalizeName(a).split(/\s+/).filter(Boolean);
   const tb = normalizeName(b).split(/\s+/).filter(Boolean);
@@ -360,6 +401,7 @@ function StudentEditDialog({
 
   const placeholderExamples = ["$20.00", "$15.00", "$13.50", "$0.00", "$25.00"];
   const placeholder = placeholderExamples[draft.nombre.length % placeholderExamples.length];
+  const cuotaEspecial = leerCuotaEspecial(draft);
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -446,16 +488,39 @@ function StudentEditDialog({
               <Input
                 type="number"
                 step="0.01"
-                value={draft.cuotaOverride ?? ""}
+                value={cuotaEspecial.monto ?? ""}
                 placeholder={`ejemplo: ${placeholder}`}
                 onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    cuotaOverride: e.target.value === "" ? undefined : Number(e.target.value),
-                  })
+                  setDraft(
+                    escribirCuotaEspecial(
+                      draft,
+                      e.target.value === "" ? undefined : Number(e.target.value),
+                      cuotaEspecial.desde,
+                    ),
+                  )
                 }
               />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Vacío = la cuota general del mes.
+              </p>
             </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Desde el mes (opcional)</label>
+              <Input
+                type="month"
+                value={cuotaEspecial.desde ?? ""}
+                disabled={cuotaEspecial.monto === undefined}
+                onChange={(e) =>
+                  setDraft(escribirCuotaEspecial(draft, cuotaEspecial.monto, e.target.value))
+                }
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Vacío = siempre. Con mes, lo anterior no se toca.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-muted-foreground">Teléfono (WhatsApp)</label>
               <Input
@@ -464,15 +529,14 @@ function StudentEditDialog({
                 onChange={(e) => setDraft({ ...draft, telefono: e.target.value || undefined })}
               />
             </div>
-          </div>
-
-          <div>
-            <label className="text-xs text-muted-foreground">Fecha de ingreso</label>
-            <Input
-              type="date"
-              value={draft.fechaIngreso ?? "2026-01-01"}
-              onChange={(e) => setDraft({ ...draft, fechaIngreso: e.target.value || undefined })}
-            />
+            <div>
+              <label className="text-xs text-muted-foreground">Fecha de ingreso</label>
+              <Input
+                type="date"
+                value={draft.fechaIngreso ?? "2026-01-01"}
+                onChange={(e) => setDraft({ ...draft, fechaIngreso: e.target.value || undefined })}
+              />
+            </div>
           </div>
 
           <div className="rounded-lg border bg-muted/30 p-3 text-xs space-y-1">
