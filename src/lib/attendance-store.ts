@@ -217,7 +217,38 @@ export function importFromExcel(file: File): Promise<{
           // que las aulas con temas numerados ("1", "2", …) se quedaban sin
           // ninguno.
           const temaRow = data[headerIdx - 1] || [];
-          const temaPorReflexion = refPairs.map(([c1]) => String(temaRow[c1] ?? "").trim());
+
+          // Los nombres de los temas pueden estar en DOS sitios según el aula:
+          // arriba, sobre la columna "1era" de cada tema, o en un bloque
+          // "Temas" más abajo en la hoja (número en la primera columna, nombre
+          // en la segunda). Krishna I los tiene abajo y arriba solo números;
+          // Arjuna I justo al revés. Se leen los dos.
+          const temaPorNumero: Record<number, string> = {};
+          for (let r = 0; r < data.length; r++) {
+            if (
+              String(data[r]?.[0] ?? "")
+                .trim()
+                .toLowerCase() !== "temas"
+            )
+              continue;
+            for (let k = r + 1; k < Math.min(data.length, r + 80); k++) {
+              const num = String(data[k]?.[0] ?? "").trim();
+              if (!num) continue; // fila en blanco dentro del bloque
+              if (!/^\d+$/.test(num)) break; // terminó el listado
+              const nombreTema = String(data[k]?.[1] ?? "").trim();
+              if (nombreTema) temaPorNumero[Number(num)] = nombreTema;
+            }
+            break;
+          }
+
+          // Las celdas que solo traen el número correlativo ("12", "13", …) son
+          // el marcador del Excel para temas todavía sin nombre. Tomarlas como
+          // título producía cosas como "Reflexión 12: 12".
+          const temaPorReflexion = refPairs.map(([c1], i) => {
+            const arriba = String(temaRow[c1] ?? "").trim();
+            if (arriba && !/^\d+$/.test(arriba)) return arriba;
+            return temaPorNumero[i + 1] ?? "";
+          });
 
           const temas: Record<string, string> = {};
           for (let i = 0; i < refPairs.length; i++) {
@@ -236,9 +267,9 @@ export function importFromExcel(file: File): Promise<{
             const fecha = fechas[i] ?? fechas[fechas.length - 1] ?? "";
             const id = `ref_${sheetName.replace(/\s/g, "_")}_${i + 1}`;
             const tema = temaPorReflexion[i];
-            const titulo = tema
-              ? `Reflexión ${i + 1}: ${tema}`
-              : `Reflexión ${i + 1}${fecha ? ` (${isoToShort(fecha)})` : ""}`;
+            // Sin nombre de tema se queda solo el número: la fecha ya se
+            // muestra al lado en la lista, repetirla aquí sobraba.
+            const titulo = tema ? `Reflexión ${i + 1}: ${tema}` : `Reflexión ${i + 1}`;
             reflexionIdPorIndice[i] = id;
             reflexionesMeta.push({ id, aula: nombre, year: 2026, titulo, fecha, temaFecha: fecha });
           }
