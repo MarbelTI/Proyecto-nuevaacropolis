@@ -284,16 +284,37 @@ export default function AsistenciasTab({
     return map;
   }, [reflexionesHoy]);
 
+  /**
+   * Reflexiones del semestre que se está viendo.
+   *
+   * La cuadrícula mostraba SIEMPRE las 17 reflexiones del año, también al
+   * pasar al segundo semestre: quedaban columnas de temas de enero junto a
+   * clases de agosto, todas llenas, y no se entendía a qué correspondían.
+   * Se dividen igual que las clases: enero-junio y julio-diciembre.
+   */
+  const semestreReflexiones = useMemo(
+    () =>
+      aulaReflexiones.filter((r) => {
+        if (!r.fecha) return true;
+        const m = parseInt(r.fecha.slice(5, 7));
+        return semestre === 1 ? m <= 6 : m >= 7;
+      }),
+    [aulaReflexiones, semestre],
+  );
+
   const reflectionGroups = useMemo(() => {
-    const groups: { isGroup: boolean; refs: typeof aulaReflexiones; title: string }[] = [];
+    const groups: { isGroup: boolean; refs: typeof semestreReflexiones; title: string }[] = [];
     let i = 0;
-    while (i < aulaReflexiones.length) {
-      const ref = aulaReflexiones[i];
+    while (i < semestreReflexiones.length) {
+      const ref = semestreReflexiones[i];
       if (ref.temaFecha) {
         const group = [ref];
         i++;
-        while (i < aulaReflexiones.length && aulaReflexiones[i].temaFecha === ref.temaFecha) {
-          group.push(aulaReflexiones[i]);
+        while (
+          i < semestreReflexiones.length &&
+          semestreReflexiones[i].temaFecha === ref.temaFecha
+        ) {
+          group.push(semestreReflexiones[i]);
           i++;
         }
         const temaTitle = currentAula?.temas[ref.temaFecha] || ref.titulo;
@@ -304,7 +325,7 @@ export default function AsistenciasTab({
       }
     }
     return groups;
-  }, [aulaReflexiones, currentAula?.temas]);
+  }, [semestreReflexiones, currentAula?.temas]);
 
   const toggleAsistencia = useCallback(
     (alumno: string, fecha: string) => {
@@ -693,12 +714,13 @@ export default function AsistenciasTab({
 
           <TabsContent value="control">
             <Card className="p-4 overflow-x-auto">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-sm">{currentAula.nombre}</h3>
-                <div className="flex gap-2">
+              <div className="mb-3 flex flex-wrap items-center gap-3">
+                <h3 className="text-sm font-bold">{currentAula.nombre}</h3>
+                <div className="flex gap-1">
                   <Button
                     variant={semestre === 1 ? "default" : "outline"}
                     size="sm"
+                    className="h-7 px-2.5 text-xs"
                     onClick={() => setSemestre(1)}
                   >
                     Semestre 1
@@ -706,11 +728,16 @@ export default function AsistenciasTab({
                   <Button
                     variant={semestre === 2 ? "default" : "outline"}
                     size="sm"
+                    className="h-7 px-2.5 text-xs"
                     onClick={() => setSemestre(2)}
                   >
                     Semestre 2
                   </Button>
                 </div>
+                <span className="text-xs text-muted-foreground">
+                  {semestre === 1 ? "enero a junio" : "julio a diciembre"} · {semestreFechas.length}{" "}
+                  clases · {semestreReflexiones.length} reflexiones
+                </span>
               </div>
               <div className="flex gap-3 text-xs text-muted-foreground flex-wrap mb-3">
                 <span>
@@ -743,9 +770,6 @@ export default function AsistenciasTab({
                   </span>{" "}
                   No entregada
                 </span>
-                <span className="ml-auto text-[11px] italic">
-                  Marcar <b>NC</b> en una celda aplica «no hubo clase» a toda la columna.
-                </span>
               </div>
 
               {semestreFechas.length === 0 ? (
@@ -756,7 +780,7 @@ export default function AsistenciasTab({
                 <table
                   className="w-full text-xs border-collapse border-dashed border-[#bbb] table-fixed"
                   style={{
-                    minWidth: semestreFechas.length * 30 + 280 + aulaReflexiones.length * 32,
+                    minWidth: semestreFechas.length * 30 + 280 + semestreReflexiones.length * 32,
                   }}
                 >
                   <thead>
@@ -778,9 +802,9 @@ export default function AsistenciasTab({
                           </th>
                         );
                       })}
-                      {aulaReflexiones.length > 0 && (
+                      {semestreReflexiones.length > 0 && (
                         <th
-                          colSpan={aulaReflexiones.length}
+                          colSpan={semestreReflexiones.length}
                           className="p-1 text-center text-[11px] font-bold bg-muted/30 border-l border-t border-b border-dashed border-[#bbb]"
                         >
                           Reflexiones
@@ -893,10 +917,22 @@ export default function AsistenciasTab({
                         key={al}
                         className={`hover:bg-primary/5 ${fila % 2 === 1 ? "bg-muted/20" : ""}`}
                       >
+                        {/* La columna fija tiene que ser OPACA: con un gris
+                            translúcido las fechas se veían por debajo al
+                            desplazar a la derecha. El color se mezcla contra el
+                            fondo para que coincida con el rayado de la fila, y
+                            si el navegador no soporta color-mix se queda el
+                            fondo sólido, que tampoco deja ver nada detrás. */}
                         <td
-                          className={`sticky left-0 z-10 p-1 text-xs font-medium truncate max-w-[280px] border-b border-r border-dashed border-[#bbb] ${
-                            fila % 2 === 1 ? "bg-muted/20" : "bg-background"
-                          }`}
+                          className="sticky left-0 z-10 max-w-[280px] truncate border-b border-r border-dashed border-[#bbb] bg-background p-1 text-xs font-medium"
+                          style={
+                            fila % 2 === 1
+                              ? {
+                                  backgroundColor:
+                                    "color-mix(in srgb, hsl(var(--muted)) 20%, hsl(var(--background)))",
+                                }
+                              : undefined
+                          }
                           title={al}
                         >
                           {al}
@@ -933,7 +969,7 @@ export default function AsistenciasTab({
                             </td>
                           );
                         })}
-                        {aulaReflexiones.map((ref) => {
+                        {semestreReflexiones.map((ref) => {
                           const est = getRefEstado(al, ref.id);
                           // Naranja para la entregada y el mismo gris de "no
                           // clase" para la no entregada: así la vista de un
@@ -961,6 +997,61 @@ export default function AsistenciasTab({
                       </tr>
                     ))}
                   </tbody>
+                  {/* Cuántos asistieron cada día. Es lo primero que pregunta
+                      dirección y antes había que contarlo a ojo columna por
+                      columna. */}
+                  <tfoot>
+                    <tr className="bg-muted/40 text-[9px]">
+                      <td className="sticky left-0 z-10 border-r border-dashed border-[#bbb] bg-muted p-1 text-right text-[10px] font-bold">
+                        Asistieron
+                      </td>
+                      {semestreFechas.map((f) => {
+                        const presentes = alumnos.filter((a) => getAsistencia(a, f) === "A").length;
+                        const noHuboClase =
+                          alumnos.length > 0 && getAsistencia(alumnos[0], f) === "NC";
+                        const pct = alumnos.length ? presentes / alumnos.length : 0;
+                        return (
+                          <td
+                            key={f}
+                            className={`border-l border-dashed border-[#bbb] text-center tabular-nums ${
+                              noHuboClase
+                                ? "text-muted-foreground/40"
+                                : presentes === 0
+                                  ? "text-muted-foreground/30"
+                                  : pct < 0.5
+                                    ? "font-bold text-red-600"
+                                    : "text-muted-foreground"
+                            }`}
+                            title={
+                              noHuboClase
+                                ? "No hubo clase"
+                                : `${presentes} de ${alumnos.length} asistieron`
+                            }
+                          >
+                            {noHuboClase ? "—" : presentes}
+                          </td>
+                        );
+                      })}
+                      {semestreReflexiones.map((ref) => {
+                        const entregadas = alumnos.filter(
+                          (a) => getRefEstado(a, ref.id) === "E",
+                        ).length;
+                        return (
+                          <td
+                            key={ref.id}
+                            className={`border-l border-dashed border-[#bbb] text-center tabular-nums ${
+                              entregadas === 0
+                                ? "text-muted-foreground/30"
+                                : "text-muted-foreground"
+                            }`}
+                            title={`${entregadas} de ${alumnos.length} entregaron`}
+                          >
+                            {entregadas}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  </tfoot>
                 </table>
               )}
 
@@ -969,12 +1060,13 @@ export default function AsistenciasTab({
                   de temas separados por barras y, debajo, las reflexiones una
                   por línea. Cada tema tiene exactamente una reflexión, así que
                   van juntos, cuatro por fila, y el tema se edita en su tarjeta. */}
-              {aulaReflexiones.length > 0 &&
+              {semestreReflexiones.length > 0 &&
                 (() => {
-                  const totalPosible = aulaReflexiones.length * alumnos.length;
+                  const totalPosible = semestreReflexiones.length * alumnos.length;
                   const totalEntregadas = alumnos.reduce(
                     (sum, al) =>
-                      sum + aulaReflexiones.filter((r) => getRefEstado(al, r.id) === "E").length,
+                      sum +
+                      semestreReflexiones.filter((r) => getRefEstado(al, r.id) === "E").length,
                     0,
                   );
                   const pctTotal = totalPosible
@@ -999,7 +1091,7 @@ export default function AsistenciasTab({
                       <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-2 text-[11px]">
                         <span className="font-bold">Temas y reflexiones</span>
                         <span className="text-muted-foreground">
-                          {aulaReflexiones.length} temas · {alumnos.length} alumnos ·{" "}
+                          {semestreReflexiones.length} temas · {alumnos.length} alumnos ·{" "}
                           <span className="tabular-nums">
                             {totalEntregadas}/{totalPosible}
                           </span>{" "}
@@ -1007,8 +1099,11 @@ export default function AsistenciasTab({
                         </span>
                       </div>
                       <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                        {aulaReflexiones.map((ref, i) => {
-                          const numero = i + 1;
+                        {semestreReflexiones.map((ref) => {
+                          // El número sale de la lista del AÑO, no de la del
+                          // semestre: si no, la primera de julio se llamaría
+                          // "#1" cuando en realidad es la #12 del curso.
+                          const numero = aulaReflexiones.findIndex((r) => r.id === ref.id) + 1;
                           const tema = temaDeTitulo(ref.titulo);
                           const entregadas = alumnos.filter(
                             (al) => getRefEstado(al, ref.id) === "E",
