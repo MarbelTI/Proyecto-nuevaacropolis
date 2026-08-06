@@ -1,4 +1,4 @@
-# SISFIA — Nueva Acrópolis San Cristóbal
+# Mnemósine — Nueva Acrópolis San Cristóbal
 
 App web para la gestión de la escuela Nueva Acrópolis SC: control de asistencias (52 clases/año), finanzas (ingresos/egresos), solvencias de alumnos, diagnóstico global y OCR de cuadernos contables.
 

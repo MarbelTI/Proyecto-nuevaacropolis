@@ -67,11 +67,11 @@ const NAV_SUB =
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "SISFIA — Sistema Financiero Acropolitano" },
+      { title: "Mnemósine — Sistema Financiero Acropolitano" },
       {
         name: "description",
         content:
-          "SISFIA: OCR del libro diario, transacciones, análisis, solvencias y tasas BCV para Nueva Acrópolis Venezuela.",
+          "Mnemósine: OCR del libro diario, transacciones, análisis, solvencias y tasas BCV para Nueva Acrópolis Venezuela.",
       },
     ],
   }),
@@ -215,7 +215,7 @@ function Index() {
               className="h-14 w-14 rounded-full ring-2 ring-accent"
             />
             <div className="flex-1 min-w-[220px]">
-              <h1 className="text-xl font-bold leading-tight">SISFIA</h1>
+              <h1 className="text-xl font-bold leading-tight">Mnemósine</h1>
               <p className="text-xs opacity-90">
                 <ScanText className="mr-1 inline h-3 w-3" />
                 Sistema Financiero Acropolitano · Nueva Acrópolis Venezuela
@@ -334,7 +334,7 @@ function Index() {
           </Card>
         ) : !auth.profile ? (
           <Card className="p-12 text-center">
-            <h2 className="text-lg font-bold mb-2">Bienvenido a SISFIA</h2>
+            <h2 className="text-lg font-bold mb-2">Bienvenido a Mnemósine</h2>
             <p className="text-muted-foreground mb-4">
               Inicia sesión con tu correo y contraseña para continuar.
             </p>

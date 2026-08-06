@@ -78,15 +78,22 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "SISFIA — Sistema Financiero Acropolitano" },
-      { name: "description", content: "SISFIA: sistema financiero para Nueva Acrópolis Venezuela. Lector OCR del libro diario, transacciones, análisis, solvencias y tasas BCV." },
+      { title: "Mnemósine — Sistema Financiero Acropolitano" },
+      {
+        name: "description",
+        content:
+          "Mnemósine: sistema financiero para Nueva Acrópolis Venezuela. Lector OCR del libro diario, transacciones, análisis, solvencias y tasas BCV.",
+      },
       { name: "author", content: "Nueva Acrópolis Venezuela" },
-      { property: "og:title", content: "SISFIA — Sistema Financiero Acropolitano" },
+      { property: "og:title", content: "Mnemósine — Sistema Financiero Acropolitano" },
       { property: "og:description", content: "Sistema financiero para Nueva Acrópolis Venezuela." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:title", content: "SISFIA — Sistema Financiero Acropolitano" },
-      { name: "twitter:description", content: "Sistema financiero para Nueva Acrópolis Venezuela." },
+      { name: "twitter:title", content: "Mnemósine — Sistema Financiero Acropolitano" },
+      {
+        name: "twitter:description",
+        content: "Sistema financiero para Nueva Acrópolis Venezuela.",
+      },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
