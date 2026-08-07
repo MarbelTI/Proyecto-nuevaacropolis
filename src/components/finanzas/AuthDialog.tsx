@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, User, Mail, Lock, KeyRound } from "lucide-react";
+import { Loader2, User, Mail, Lock, KeyRound, AlertTriangle } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
@@ -10,7 +10,7 @@ import {
   getPermsForRole,
   authCallback,
 } from "@/lib/api/auth.functions";
-import { supabase } from "@/lib/supabase";
+import { supabase, configError } from "@/lib/supabase";
 
 export type Permissions = ReturnType<typeof getPermsForRole> & {
   role: UserRole;
@@ -290,6 +290,29 @@ export function AuthDialog({
               )}
             </Button>
           </form>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // Con la configuración mal puesta, el formulario no puede funcionar: lo único
+  // que se conseguiría es un «Invalid Key» o un «Failed to fetch» que no dicen
+  // qué arreglar. Mejor decirlo claro y no ofrecer un formulario inútil.
+  if (configError) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" /> Falta configurar el acceso
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm">{configError}</p>
+          <p className="text-xs text-muted-foreground">
+            Se arregla en las variables de entorno del despliegue (en Vercel: Settings → Environment
+            Variables). Después hay que volver a desplegar: esas variables se incrustan al compilar,
+            así que cambiarlas no surte efecto hasta el siguiente despliegue.
+          </p>
         </DialogContent>
       </Dialog>
     );
