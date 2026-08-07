@@ -426,7 +426,7 @@ function Index() {
               )}
               {userInfo.canAccessAsistencias && (
                 <TabsTrigger value="asistencias" className={NAV_ITEM}>
-                  <CalendarCheck className={NAV_ICON} /> Asistencias
+                  <CalendarCheck className={NAV_ICON} /> Escolásticas
                 </TabsTrigger>
               )}
               {/* Copiar la base entera va aparte y solo para la administradora:
@@ -560,6 +560,8 @@ function Index() {
                     records={attRecords}
                     setRecords={setAttRecords}
                     user={userInfo}
+                    students={students}
+                    tx={transactions.list}
                   />
                 </TabsContent>
               )}

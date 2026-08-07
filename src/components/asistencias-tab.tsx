@@ -39,6 +39,8 @@ import {
   useReflexionAsistencia,
 } from "@/lib/attendance-store";
 import { AsistenciasSync } from "@/components/asistencias-sync";
+import { FichaParticipante } from "@/components/ficha-participante";
+import type { Student, Transaction } from "@/lib/lists-store";
 
 type UserPerms = {
   name: string;
@@ -123,12 +125,17 @@ export default function AsistenciasTab({
   records,
   setRecords,
   user,
+  students = [],
+  tx = [],
 }: {
   aulasMeta: AulaMeta[];
   setAulasMeta: Dispatch<SetStateAction<AulaMeta[]>>;
   records: AttendanceRecord[];
   setRecords: Dispatch<SetStateAction<AttendanceRecord[]>>;
   user: UserPerms;
+  /** Para la ficha del participante, que cruza asistencia con pagos y datos. */
+  students?: Student[];
+  tx?: Transaction[];
 }) {
   const [importing, setImporting] = useState(false);
   const [semestre, setSemestre] = useState<1 | 2>(1);
@@ -912,6 +919,7 @@ export default function AsistenciasTab({
           <TabsList>
             <TabsTrigger value="control">Control de Asistencia</TabsTrigger>
             <TabsTrigger value="analisis">Análisis por aula</TabsTrigger>
+            <TabsTrigger value="ficha">Ficha del participante</TabsTrigger>
             {user.canAccessDiagnostico && (
               <TabsTrigger value="global">Diagnóstico Global</TabsTrigger>
             )}
@@ -1534,6 +1542,18 @@ export default function AsistenciasTab({
                 </>
               )}
             </Card>
+          </TabsContent>
+
+          <TabsContent value="ficha">
+            <FichaParticipante
+              students={students}
+              tx={tx}
+              aulasMeta={aulasMeta}
+              records={records}
+              reflexionesMeta={reflexionesMeta}
+              reflexionAsistencia={reflexionAsistencia}
+              role={user.role}
+            />
           </TabsContent>
 
           {user.canAccessDiagnostico && (
