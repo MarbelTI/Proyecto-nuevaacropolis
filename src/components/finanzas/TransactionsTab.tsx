@@ -919,23 +919,52 @@ export function TransactionsTab({
             variant="outline"
             size="sm"
             onClick={() => {
-              function hoy(): string {
-                const d = new Date();
-                return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
-              }
+              const d = new Date();
+              const dd = String(d.getDate()).padStart(2, "0");
+              const mm = String(d.getMonth() + 1).padStart(2, "0");
+              const MES_CORTO = [
+                "ene",
+                "feb",
+                "mar",
+                "abr",
+                "may",
+                "jun",
+                "jul",
+                "ago",
+                "sep",
+                "oct",
+                "nov",
+                "dic",
+              ];
+              const MES_LARGO = [
+                "Enero",
+                "Febrero",
+                "Marzo",
+                "Abril",
+                "Mayo",
+                "Junio",
+                "Julio",
+                "Agosto",
+                "Septiembre",
+                "Octubre",
+                "Noviembre",
+                "Diciembre",
+              ];
               const empty: Transaction = {
-                fecha: hoy(),
-                mes: "",
+                fecha: `${dd}/${mm}/${d.getFullYear()}`,
+                mes: MES_LARGO[d.getMonth()],
                 id: "__new__",
                 tipo: "Ingreso",
                 categoria: "",
                 descripcion: "",
-                mensualidad: "",
-                moneda: "USD",
+                mensualidad: `${MES_CORTO[d.getMonth()]}-${d.getFullYear()}`,
+                // Lo habitual es cobrar en bolívares y en efectivo. Arrancar en
+                // USD obligaba a cambiar dos campos en casi todos los registros.
+                moneda: "Bolívares",
                 monto: 0,
                 tasa: null,
                 montoUsd: 0,
-                banco: "",
+                banco: bancos.includes("Efectivo Bs") ? "Efectivo Bs" : "",
               };
               setEditing(empty);
             }}
@@ -1605,6 +1634,7 @@ export function TransactionsTab({
         bancos={bancos}
         bcvRates={bcvRates}
         bcvSources={bcvSources}
+        students={students}
         onSave={(next) => {
           if (next.id === "__new__") {
             const { id, ...rest } = next;

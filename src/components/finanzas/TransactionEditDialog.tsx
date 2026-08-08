@@ -50,6 +50,77 @@ function normalizeTransactionMoney(tx: Transaction, bcvRates: Record<string, num
   return next;
 }
 
+const MESES_CORTOS = [
+  "ene",
+  "feb",
+  "mar",
+  "abr",
+  "may",
+  "jun",
+  "jul",
+  "ago",
+  "sep",
+  "oct",
+  "nov",
+  "dic",
+];
+const MESES_LARGOS = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+];
+
+/** "2026-08-13" → "13/08/2026". El formulario guarda las fechas así. */
+function isoToFecha(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return y && m && d ? `${d}/${m}/${y}` : "";
+}
+
+/** "13/08/2026" → "ago-2026". Es la mensualidad que le corresponde por defecto. */
+function mensualidadDeFecha(fecha: string): string {
+  const iso = fechaToIso(fecha);
+  if (!iso) return "";
+  const [y, m] = iso.split("-");
+  return `${MESES_CORTOS[Number(m) - 1] ?? m}-${y}`;
+}
+
+function nombreMesDeFecha(fecha: string): string {
+  const iso = fechaToIso(fecha);
+  if (!iso) return "";
+  return MESES_LARGOS[Number(iso.split("-")[1]) - 1] ?? "";
+}
+
+/**
+ * Banco que se propone según la moneda.
+ *
+ * Es solo un punto de partida: se elige el que más se parece a lo que se está
+ * cobrando, para que el caso habitual no haya que tocarlo. Cualquier otro
+ * —Binance, pago móvil, un banco concreto— se escoge a mano como siempre.
+ */
+function bancoParaMoneda(moneda: string, bancos: string[]): string {
+  const preferencias: Record<string, string[]> = {
+    Bolívares: ["Efectivo Bs", "Pago Móvil", "Bco Venezuela"],
+    USD: ["Efectivo USD", "Binance"],
+    Pesos: ["Bancolombia", "Binance"],
+  };
+  for (const candidato of preferencias[moneda] ?? []) {
+    if (bancos.includes(candidato)) return candidato;
+  }
+  return "";
+}
+
+/** Categorías donde la descripción es el nombre de una persona. */
+const CATEGORIAS_CON_NOMBRE = ["MIEMBROS", "PROBAS", "CLASE"];
+
 // ------------------------- Componentes -------------------------
 
 function Field({
@@ -78,6 +149,7 @@ function TransactionEditDialog({
   bancos,
   bcvRates,
   bcvSources,
+  students = [],
 }: {
   editing: Transaction | null;
   onClose: () => void;
@@ -87,6 +159,8 @@ function TransactionEditDialog({
   bancos: string[];
   bcvRates: Record<string, number>;
   bcvSources: Record<string, string>;
+  /** Para sugerir el nombre en las categorías de cuota y evitar erratas. */
+  students?: { nombre: string }[];
 }) {
   const [draft, setDraft] = useState<Transaction | null>(null);
   useEffect(() => {
@@ -98,12 +172,53 @@ function TransactionEditDialog({
     setDraft((d) => {
       if (!d) return d;
       const next = { ...d, [k]: v };
+
+      // Al cambiar la fecha, la mensualidad y el nombre del mes la siguen. Es
+      // lo que casi siempre se quiere: se registra un pago de la semana pasada
+      // y la mensualidad es la de esa fecha, no la de hoy.
+      //
+      // Pero solo si no se habían escrito a mano. Se considera "a mano"
+      // cualquier valor que no coincidiera con el que le tocaba a la fecha
+      // anterior: alguien puede pagar en agosto la cuota de junio, y eso no se
+      // puede pisar.
+      if (k === "fecha") {
+        const antes = mensualidadDeFecha(d.fecha);
+        if (!d.mensualidad || d.mensualidad === antes) {
+          next.mensualidad = mensualidadDeFecha(String(v));
+        }
+        const mesAntes = nombreMesDeFecha(d.fecha);
+        if (!d.mes || d.mes === mesAntes) {
+          next.mes = nombreMesDeFecha(String(v));
+        }
+      }
+
+      // La moneda arrastra el banco al sitio más probable. Si ya había uno
+      // elegido para esa misma moneda se respeta.
+      if (k === "moneda") {
+        const sugerido = bancoParaMoneda(String(v), bancos);
+        if (sugerido && (!d.banco || d.banco === bancoParaMoneda(d.moneda, bancos))) {
+          next.banco = sugerido;
+        }
+      }
+
       if (k === "moneda" || k === "monto" || k === "tasa" || k === "fecha") {
         return normalizeTransactionMoney(next, bcvRates);
       }
       return next;
     });
   };
+
+  // Las mensualidades que se ofrecen: los doce meses del año de la fecha del
+  // movimiento. Si el que ya trae cae fuera —una cuota atrasada de otro año—
+  // se añade, porque si no el desplegable saldría en blanco y parecería que se
+  // perdió el dato.
+  const anioFecha = fechaToIso(draft.fecha)?.slice(0, 4) ?? String(new Date().getFullYear());
+  const mensualidades = MESES_CORTOS.map((m) => `${m}-${anioFecha}`);
+  if (draft.mensualidad && !mensualidades.includes(draft.mensualidad)) {
+    mensualidades.unshift(draft.mensualidad);
+  }
+
+  const pideNombre = CATEGORIAS_CON_NOMBRE.includes(draft.categoria);
   return (
     <Dialog open={!!editing} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg">
@@ -113,11 +228,21 @@ function TransactionEditDialog({
           <DialogTitle>Transacciones</DialogTitle>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Fecha (dd/mm/aaaa)">
-            <Input value={draft.fecha} onChange={(e) => update("fecha", e.target.value)} />
+          {/* Calendario de verdad en vez de escribir dd/mm/aaaa: registrar algo
+              de la semana pasada era teclear la fecha entera sin equivocarse. */}
+          <Field label="Fecha">
+            <Input
+              type="date"
+              value={fechaToIso(draft.fecha) ?? ""}
+              onChange={(e) => update("fecha", isoToFecha(e.target.value))}
+            />
           </Field>
           <Field label="Mes">
-            <Input value={draft.mes} onChange={(e) => update("mes", e.target.value)} />
+            <Input
+              value={draft.mes}
+              onChange={(e) => update("mes", e.target.value)}
+              placeholder="se pone solo con la fecha"
+            />
           </Field>
           <Field label="Tipo">
             <Select
@@ -150,18 +275,46 @@ function TransactionEditDialog({
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Descripción" full>
+          <Field label={pideNombre ? "Descripción (nombre del integrante)" : "Descripción"} full>
+            {/* Con las categorías de cuota, la descripción es el nombre de una
+                persona: se ofrece la lista de integrantes para que no se
+                escriba cada vez de una forma distinta. Un nombre mal
+                transcrito no se cruza con nada — ni con su solvencia ni con su
+                ficha— y encontrarlo después cuesta muchísimo más que elegirlo
+                ahora de una lista. */}
             <Input
               value={draft.descripcion}
               onChange={(e) => update("descripcion", e.target.value)}
+              list={pideNombre ? "integrantes-transaccion" : undefined}
+              placeholder={pideNombre ? "Empieza a escribir el nombre…" : undefined}
             />
+            {pideNombre && (
+              <datalist id="integrantes-transaccion">
+                {students.map((s) => (
+                  <option key={s.nombre} value={s.nombre} />
+                ))}
+              </datalist>
+            )}
           </Field>
           <Field label="Mensualidad">
-            <Input
-              value={draft.mensualidad}
-              onChange={(e) => update("mensualidad", e.target.value)}
-              placeholder="abr-2026"
-            />
+            <Select
+              value={draft.mensualidad || undefined}
+              onValueChange={(v) => update("mensualidad", v === "__ninguna__" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="—" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__ninguna__">
+                  <span className="text-muted-foreground italic text-xs">Sin mensualidad</span>
+                </SelectItem>
+                {mensualidades.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {m}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
           <Field label="Moneda">
             <Select
