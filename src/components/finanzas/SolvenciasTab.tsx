@@ -1,12 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-  useEditableStudents,
-  useBcvRates,
-  useTransactions,
-  useEditableAulas,
-  type Student,
-  type Transaction,
-} from "@/lib/lists-store";
+import type { Student, Transaction } from "@/lib/lists-store";
 import type { AulaMeta, AttendanceRecord } from "@/lib/attendance-store";
 import { calcularCuotasDebidas, cuotaMensualUSD, currentYm, precioClase } from "@/lib/fees-logic";
 import { armarMensaje, usePlantillas } from "@/lib/mensajes-store";
@@ -32,7 +25,6 @@ import {
   Trash2,
   MessageCircle,
   ClipboardCopy,
-  Settings,
   Pencil,
   Save,
   X,
@@ -65,20 +57,6 @@ const $ = (n: number) =>
 
 // ------------------------- Helpers -------------------------
 
-const MESES_ABR = [
-  "ene",
-  "feb",
-  "mar",
-  "abr",
-  "may",
-  "jun",
-  "jul",
-  "ago",
-  "sep",
-  "oct",
-  "nov",
-  "dic",
-];
 const MES_MAP: Record<string, string> = {
   enero: "ene",
   febrero: "feb",
@@ -188,12 +166,12 @@ function escribirCuotaEspecial(s: Student, monto?: number, desde?: string): Stud
 }
 
 /**
- * Todas las palabras del nombre m\u00e1s corto est\u00e1n dentro del m\u00e1s largo:
- * "Carlos Jimenez" \u2286 "Carlos Angel Jimenez".
+ * Todas las palabras del nombre más corto están dentro del más largo:
+ * "Carlos Jimenez" ⊆ "Carlos Angel Jimenez".
  *
- * Por s\u00ed sola no distingue personas \u2014"Milagro" encaja con cualquier Milagro de
- * la escuela\u2014, as\u00ed que quien la use tiene que acotar el universo o comprobar
- * que el candidato sea \u00fanico.
+ * Por sí sola no distingue personas —"Milagro" encaja con cualquier Milagro de
+ * la escuela—, así que quien la use tiene que acotar el universo o comprobar
+ * que el candidato sea único.
  */
 function nombreContenidoEn(a: string, b: string): boolean {
   const ta = normalizeName(a).split(/\s+/).filter(Boolean);
@@ -205,15 +183,15 @@ function nombreContenidoEn(a: string, b: string): boolean {
 }
 
 /**
- * \u00bfSon la misma persona escrita de dos formas?
+ * ¿Son la misma persona escrita de dos formas?
  *
- * Comparar \u00fanicamente nombre y apellido no sirve, y el caso real que lo
+ * Comparar únicamente nombre y apellido no sirve, y el caso real que lo
  * demuestra son las dos Milagro Contreras de la escuela: "Milagro Elena
  * Contreras" (control de estudio, Krishna III) y "Milagro Elizabeth Contreras
- * M\u00e1rquez" (celadora de Krishna II). Comparten nombre y apellido pero son dos
+ * Márquez" (celadora de Krishna II). Comparten nombre y apellido pero son dos
  * personas distintas; el segundo nombre es justo lo que las diferencia.
  *
- * De ah\u00ed el m\u00ednimo de dos palabras: con una sola en com\u00fan esto dar\u00eda iguales a
+ * De ahí el mínimo de dos palabras: con una sola en común esto daría iguales a
  * dos hermanos, y fusionar a dos personas pierde a una de las dos.
  */
 function mismoNombre(a: string, b: string): boolean {
@@ -226,17 +204,17 @@ function mismoNombre(a: string, b: string): boolean {
 }
 
 /**
- * \u00bfCu\u00e1l de los que pasan lista en un aula es su celador?
+ * ¿Cuál de los que pasan lista en un aula es su celador?
  *
- * La hoja de asistencia guarda el nombre del celador en la cabecera, y ah\u00ed casi
- * siempre est\u00e1 escrito con el nombre de pila a secas ("Milagro"). `mismoNombre`
- * exige dos palabras en com\u00fan, as\u00ed que con ese dato NUNCA coincid\u00eda con nadie y
- * ning\u00fan celador llegaba marcado a solvencias.
+ * La hoja de asistencia guarda el nombre del celador en la cabecera, y ahí casi
+ * siempre está escrito con el nombre de pila a secas ("Milagro"). `mismoNombre`
+ * exige dos palabras en común, así que con ese dato NUNCA coincidía con nadie y
+ * ningún celador llegaba marcado a solvencias.
  *
- * Aqu\u00ed s\u00ed se puede aflojar la comparaci\u00f3n, porque el universo no es la escuela
+ * Aquí sí se puede aflojar la comparación, porque el universo no es la escuela
  * entera sino un aula: la coincidencia por una sola palabra se acepta solo
- * cuando se\u00f1ala a UNA persona del grupo. Si hay dos candidatas no se marca a
- * ninguna \u2014 es preferible un celador sin insignia que la insignia puesta a
+ * cuando señala a UNA persona del grupo. Si hay dos candidatas no se marca a
+ * ninguna — es preferible un celador sin insignia que la insignia puesta a
  * quien no lo es.
  */
 function celadorDelAula(nombreCelador: string, roster: Set<string>): string | null {
@@ -971,36 +949,6 @@ export default function SolvenciasTab({
   };
 
   const ymNow = currentYm();
-  const [calcOpen, setCalcOpen] = useState(false);
-  const [calcDisp, setCalcDisp] = useState("0");
-  const [calcOp, setCalcOp] = useState<string | null>(null);
-  const [calcPrev, setCalcPrev] = useState<number | null>(null);
-  const calcInput = (v: string) => setCalcDisp((d) => (d === "0" ? v : d + v));
-  const calcOpPress = (op: string) => {
-    setCalcPrev(Number(calcDisp));
-    setCalcOp(op);
-    setCalcDisp("0");
-  };
-  const calcEq = () => {
-    if (calcOp && calcPrev !== null) {
-      const r =
-        calcOp === "+"
-          ? calcPrev + Number(calcDisp)
-          : calcOp === "-"
-            ? calcPrev - Number(calcDisp)
-            : calcOp === "*"
-              ? calcPrev * Number(calcDisp)
-              : calcPrev / Number(calcDisp);
-      setCalcDisp(String(r));
-      setCalcOp(null);
-      setCalcPrev(null);
-    }
-  };
-  const calcClear = () => {
-    setCalcDisp("0");
-    setCalcOp(null);
-    setCalcPrev(null);
-  };
 
   const [plantillas] = usePlantillas();
 
