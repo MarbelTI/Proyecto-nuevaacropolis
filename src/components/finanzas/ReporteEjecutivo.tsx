@@ -1,10 +1,10 @@
 import { useMemo } from "react";
 import type { Transaction } from "@/lib/lists-store";
 import { Card } from "@/components/ui/card";
+import { usd } from "@/lib/formato";
 import { AlertTriangle } from "lucide-react";
 
-const $ = (n: number) =>
-  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const $ = usd;
 
 function fechaToIso(fecha: string): string | null {
   const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);

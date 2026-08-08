@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Transaction } from "@/lib/lists-store";
 import { Card } from "@/components/ui/card";
+import { usd, CELDA_NUMERO } from "@/lib/formato";
 
 function fechaToIso(fecha: string): string | null {
   const m = fecha.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -33,8 +34,27 @@ const MESES_ES = [
   "Diciembre",
 ];
 
-const $ = (n: number) =>
-  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const $ = usd;
+
+/**
+ * Una celda de importe de la rejilla anual.
+ *
+ * Los ceros se escriben, no se dejan en blanco: un hueco vacío rompe la
+ * cuadrícula y obliga a mirar dos veces para saber si es que no hubo
+ * movimiento o si falta el dato. Se pintan en gris muy claro, como los días sin
+ * clase en asistencias, para que la fila se lea de corrido sin que el cero
+ * compita con las cifras que sí importan.
+ */
+function CeldaImporte({ valor, className = "" }: { valor: number; className?: string }) {
+  const esCero = Math.abs(valor) < 0.005;
+  return (
+    <td
+      className={`p-1 text-xs ${CELDA_NUMERO} ${esCero ? "text-muted-foreground/40" : className}`}
+    >
+      {usd(valor)}
+    </td>
+  );
+}
 
 export function AnalisisTab({
   tx,
@@ -125,13 +145,11 @@ export function AnalisisTab({
             <tr key={c} className="border-b">
               <td className="p-2 text-xs">{c}</td>
               {row.map((v, i) => (
-                <td key={i} className="p-1 text-right text-xs tabular-nums">
-                  {v > 0 ? v.toFixed(0) : ""}
-                </td>
+                <CeldaImporte key={i} valor={v} />
               ))}
-              <td className="p-1 text-right text-xs font-medium">{total.toFixed(0)}</td>
-              <td className="p-1 text-right text-xs">{promedio.toFixed(0)}</td>
-              <td className="p-1 text-right text-xs">
+              <CeldaImporte valor={total} className="font-medium" />
+              <CeldaImporte valor={promedio} />
+              <td className={`p-1 text-xs ${CELDA_NUMERO}`}>
                 {varPct == null ? "—" : `${varPct > 0 ? "+" : ""}${varPct.toFixed(0)}%`}
               </td>
             </tr>
@@ -140,13 +158,9 @@ export function AnalisisTab({
         <tr className="border-b bg-muted/50 font-semibold">
           <td className="p-2 text-xs">Total {title}</td>
           {totales.map((v, i) => (
-            <td key={i} className="p-1 text-right text-xs tabular-nums">
-              {v > 0 ? v.toFixed(0) : ""}
-            </td>
+            <CeldaImporte key={i} valor={v} />
           ))}
-          <td className="p-1 text-right text-xs">
-            {totales.reduce((s, v) => s + v, 0).toFixed(0)}
-          </td>
+          <CeldaImporte valor={totales.reduce((s, v) => s + v, 0)} />
           <td />
           <td />
         </tr>
@@ -214,32 +228,16 @@ export function AnalisisTab({
             <tr className="border-t bg-accent/20 font-bold">
               <td className="p-2 text-xs">Neto mensual</td>
               {neto.map((v, i) => (
-                <td
-                  key={i}
-                  className={
-                    "p-1 text-right text-xs tabular-nums " + (v < 0 ? "text-destructive" : "")
-                  }
-                >
-                  {v !== 0 ? v.toFixed(0) : ""}
-                </td>
+                <CeldaImporte key={i} valor={v} className={v < 0 ? "text-destructive" : ""} />
               ))}
-              <td className="p-1 text-right text-xs">
-                {neto.reduce((s, v) => s + v, 0).toFixed(0)}
-              </td>
+              <CeldaImporte valor={neto.reduce((s, v) => s + v, 0)} />
               <td />
               <td />
             </tr>
             <tr className="border-b bg-accent/40 font-bold">
               <td className="p-2 text-xs">Efectivo acumulado</td>
               {acumulado.map((v, i) => (
-                <td
-                  key={i}
-                  className={
-                    "p-1 text-right text-xs tabular-nums " + (v < 0 ? "text-destructive" : "")
-                  }
-                >
-                  {v.toFixed(0)}
-                </td>
+                <CeldaImporte key={i} valor={v} className={v < 0 ? "text-destructive" : ""} />
               ))}
               <td />
               <td />

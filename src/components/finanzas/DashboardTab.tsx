@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Transaction, Student } from "@/lib/lists-store";
 import { Card } from "@/components/ui/card";
+import { usd } from "@/lib/formato";
 import { ReporteEjecutivo } from "@/components/finanzas/ReporteEjecutivo";
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 import {
@@ -50,8 +51,7 @@ const MESES_ABR = [
 const C_ING = "#3F8A5F"; // ingresos
 const C_GAS = "#C25E45"; // gastos
 
-const $ = (n: number) =>
-  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const $ = usd;
 const $0 = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 
 function fechaToIso(fecha: string): string | null {

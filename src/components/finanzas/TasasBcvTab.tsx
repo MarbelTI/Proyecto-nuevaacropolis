@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Loader2, Upload, Plus, RefreshCw } from "lucide-react";
+import { formatTasa } from "@/lib/fees-logic";
+import { CELDA_NUMERO } from "@/lib/formato";
 import { toast } from "sonner";
 
 function todayIso(): string {
@@ -180,7 +182,11 @@ export function TasasBcvTab({ bcv }: { bcv: ReturnType<typeof useBcvRates> }) {
             {rows.map(([iso, r]) => (
               <tr key={iso} className="border-b last:border-0">
                 <td className="p-2">{isoToFecha(iso)}</td>
-                <td className="p-2 text-right tabular-nums">{r.toFixed(4)}</td>
+                {/* Dos decimales, los mismos con los que se guarda la tasa.
+                    Mostrar cuatro daba la impresión de una precisión que el
+                    cálculo no usa: el monto en dólares sale de la tasa
+                    redondeada. */}
+                <td className={`p-2 ${CELDA_NUMERO}`}>{formatTasa(r)}</td>
               </tr>
             ))}
             {!rows.length && (

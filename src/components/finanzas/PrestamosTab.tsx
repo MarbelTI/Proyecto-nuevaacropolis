@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { AlertCircle, ChevronRight, Eye, EyeOff, HandCoins, Link2, Pencil } from "lucide-react";
 import type { Student, Transaction } from "@/lib/lists-store";
+import { usd } from "@/lib/formato";
 import {
   usePrestamoAliases,
   usePrestamoDescartes,
@@ -31,10 +32,6 @@ import {
  * Nada de esto entra en Solvencias, que solo mira MIEMBROS, PROBAS y CLASE.
  */
 const CAT_PRESTAMO = ["PRESTAMO", "PRÉSTAMOS, PROFESOR"];
-
-function usd(n: number): string {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 function fechaToIso(fecha: string): string {
   const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);

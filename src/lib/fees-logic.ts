@@ -119,12 +119,25 @@ export function currentYm(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-/** Recalcula USD desde monto + tasa + moneda. */
+/**
+ * Recalcula USD desde monto + tasa + moneda.
+ *
+ * Se redondea a 2 decimales al CALCULAR, no solo al mostrar. Una división
+ * entre la tasa da cosas como 12.345678, y ese número se guardaba tal cual:
+ * la tabla lo mostraba bonito, pero el formulario, el Excel exportado y los
+ * totales sacaban cuatro y cinco decimales.
+ *
+ * Un importe en dólares tiene dos decimales y punto. Guardar más precisión de
+ * la que existe no es más exacto: es arrastrar basura que reaparece en la
+ * primera pantalla que no formatee.
+ */
 export function calcularMontoUsd(moneda: string, monto: number, tasa: number | null): number {
   if (!monto || !isFinite(monto)) return 0;
-  if (moneda === "USD" || moneda === "" || moneda === "Dólares") return monto;
+  if (moneda === "USD" || moneda === "" || moneda === "Dólares") {
+    return Math.round(monto * 100) / 100;
+  }
   if (!tasa || !isFinite(tasa) || tasa <= 0) return 0;
-  return monto / tasa;
+  return Math.round((monto / tasa) * 100) / 100;
 }
 
 /** Tasa por defecto para pesos colombianos. */

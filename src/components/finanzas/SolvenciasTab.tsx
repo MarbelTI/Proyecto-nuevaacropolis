@@ -6,6 +6,7 @@ import { armarMensaje, usePlantillas } from "@/lib/mensajes-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { usd } from "@/lib/formato";
 import {
   Select,
   SelectContent,
@@ -52,8 +53,7 @@ const MESES_ES = [
   "Diciembre",
 ];
 
-const $ = (n: number) =>
-  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const $ = usd;
 
 // ------------------------- Helpers -------------------------
 

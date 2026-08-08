@@ -11,6 +11,7 @@ import type {
 } from "@/lib/attendance-store";
 import { calcularCuotasDebidas, currentYm } from "@/lib/fees-logic";
 import { grupoDeCategoria } from "@/lib/categorias";
+import { usd } from "@/lib/formato";
 
 /** Los mismos colores validados que usa el Diagnóstico Global. */
 const C_ASIST = "#3F8A5F";
@@ -55,10 +56,6 @@ function fechaToIso(fecha: string): string {
   let yy = m[3] ?? String(new Date().getFullYear());
   if (yy.length === 2) yy = "20" + yy;
   return `${yy}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
-}
-
-function usd(n: number): string {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /**

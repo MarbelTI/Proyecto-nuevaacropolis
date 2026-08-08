@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
+import { usd } from "@/lib/formato";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Select,
@@ -149,8 +150,7 @@ function fechaToIso(fecha: string): string | null {
   return `${yy}-${mm}-${dd}`;
 }
 
-const $ = (n: number) =>
-  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const $ = usd;
 
 function normalizeName(s: string) {
   return s
