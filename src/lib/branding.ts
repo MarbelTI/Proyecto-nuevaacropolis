@@ -11,16 +11,20 @@
  * Para cambiar el nombre ahora solo se toca NOMBRE_APP, aquí abajo.
  *
  * ── Nombre interno ──
- * El proyecto se llama SISFIA por dentro y así se queda: es como nació. Ese
- * nombre vive en sitios que NO deben seguir a la etiqueta de la pantalla —
- * las claves de localStorage (sisfia_asistencias_v1, …), la variable
- * SISFIA_DEV_BYPASS_AUTH y el repositorio. Renombrar esas claves dejaría sin
- * datos a quien ya tenga transacciones y asistencias cargadas en su
- * navegador, así que no se tocan aunque la pantalla diga otra cosa.
+ * El proyecto se llama SISFIA por dentro. Ese nombre vive en sitios que NO
+ * deben seguir a la etiqueta de la pantalla — las claves de localStorage
+ * (sisfia_asistencias_v1, …), la variable SISFIA_DEV_BYPASS_AUTH y el
+ * repositorio. Renombrar esas claves dejaría sin datos a quien ya tenga
+ * transacciones y asistencias cargadas en su navegador, así que no se tocan
+ * aunque la pantalla diga otra cosa.
+ *
+ * ── Sobre el nombre visible ──
+ * Estuvo un tiempo como "Mnemósine" y vuelve a SISFIA para la entrega: es el
+ * nombre con el que nació el proyecto y con el que la escuela lo conoce.
  */
 
 /** Nombre visible. Cambiar aquí y queda cambiado en toda la app. */
-export const NOMBRE_APP = "Mnemósine";
+export const NOMBRE_APP = "SISFIA";
 
 /** Qué es el sistema. Va debajo del nombre, en el encabezado. */
 export const LEMA = "Sistema de gestión académica y financiera";
