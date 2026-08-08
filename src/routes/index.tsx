@@ -409,7 +409,17 @@ function Index() {
                     />
                   </button>
                   {finanzasAbierto && (
-                    <div className="flex flex-row flex-wrap gap-1 lg:flex-col lg:flex-nowrap">
+                    /*
+                      En la barra horizontal, el submenú se va al final y ocupa
+                      una fila entera para él solo (order-last + w-full). Si no,
+                      se metía entre "Finanzas" y el resto y empujaba Solvencias
+                      y Escolásticas a la fila de abajo: abrir Finanzas movía de
+                      sitio opciones que no tenían nada que ver.
+
+                      En la columna lateral de escritorio no hace falta: ahí el
+                      submenú cuelga debajo de Finanzas, que es donde toca.
+                    */
+                    <div className="order-last flex w-full flex-row flex-wrap gap-1 lg:order-none lg:w-auto lg:flex-col lg:flex-nowrap">
                       <TabsTrigger value="resumen" className={NAV_SUB}>
                         Resumen mensual
                       </TabsTrigger>

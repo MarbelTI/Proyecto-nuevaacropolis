@@ -9,13 +9,12 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { AlertCircle, ChevronRight, Eye, EyeOff, HandCoins, Link2, Pencil, X } from "lucide-react";
+import { AlertCircle, ChevronRight, Eye, EyeOff, HandCoins, Link2, Pencil } from "lucide-react";
 import type { Student, Transaction } from "@/lib/lists-store";
 import {
   usePrestamoAliases,
   usePrestamoDescartes,
   unir,
-  separar,
   type GrupoPrestamo,
 } from "@/lib/prestamos-alias";
 
@@ -254,7 +253,6 @@ export function PrestamosTab({
   const [seleccion, setSeleccion] = useState<string[]>([]);
   const [uniendoAbierto, setUniendoAbierto] = useState(false);
   const [destino, setDestino] = useState("");
-  const [verGrupos, setVerGrupos] = useState(false);
 
   // Los movimientos que no se pudieron atribuir a nadie. No son personas: son
   // préstamos esperando dueño, y van en su propio bloque al final.
@@ -428,65 +426,21 @@ export function PrestamosTab({
               <HandCoins className="h-4 w-4 text-muted-foreground" />
               <h2 className="text-sm font-semibold">Préstamos por persona</h2>
             </div>
-            <div className="ml-auto flex items-center gap-2">
-              {grupos.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs"
-                  onClick={() => setVerGrupos((v) => !v)}
-                >
-                  <Link2 className="mr-1 h-3.5 w-3.5" />
-                  Nombres unidos ({grupos.length})
-                </Button>
-              )}
-              <Input
-                className="h-8 w-56"
-                placeholder="Buscar persona..."
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-              />
-            </div>
+            <Input
+              className="ml-auto h-8 w-56"
+              placeholder="Buscar persona..."
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+            />
           </div>
-
-          {verGrupos && (
-            <div className="mb-3 rounded-lg border bg-muted/30 p-3">
-              <p className="mb-2 text-xs text-muted-foreground">
-                Cada movimiento cuya descripción contenga una de estas palabras se suma a esa
-                persona.
-              </p>
-              <div className="space-y-1.5">
-                {grupos.map((g) => (
-                  <div key={g.persona} className="flex flex-wrap items-center gap-1.5 text-xs">
-                    <span className="font-medium">{g.persona}</span>
-                    <span className="text-muted-foreground">←</span>
-                    {g.claves.map((c) => (
-                      <span
-                        key={c}
-                        className="inline-flex items-center gap-1 rounded-md border bg-background px-1.5 py-0.5"
-                      >
-                        {c}
-                        <button
-                          type="button"
-                          className="text-muted-foreground hover:text-foreground"
-                          title={`Dejar de asociar «${c}» con ${g.persona}`}
-                          onClick={() => setGrupos(separar(grupos, g.persona, c))}
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
+                {/* Sin casillas: unir solo tiene sentido para los movimientos
+                    sin dueño. Poder marcar aquí permitía fusionar por error a
+                    dos personas que sí estaban bien separadas. */}
                 <tr className="border-b text-xs text-muted-foreground">
-                  <th className="w-8 p-2"></th>
                   <th className="p-2 text-left font-medium">Persona</th>
                   <th className="p-2 text-right font-medium">Prestado</th>
                   <th className="p-2 text-right font-medium">Devuelto</th>
@@ -505,15 +459,6 @@ export function PrestamosTab({
                         className="cursor-pointer border-b transition hover:bg-muted/40 hover:font-semibold"
                         onClick={() => setAbierta(expandida ? null : clave)}
                       >
-                        <td className="p-2" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            className="cursor-pointer"
-                            checked={seleccion.includes(p.persona)}
-                            onChange={() => alternarSeleccion(p.persona)}
-                            title={`Marcar «${p.persona}» para unir`}
-                          />
-                        </td>
                         <td className="p-2">
                           <span className="flex items-center gap-1">
                             <ChevronRight
@@ -526,13 +471,29 @@ export function PrestamosTab({
                         </td>
                         <td className="p-2 text-right tabular-nums">${usd(p.prestado)}</td>
                         <td className="p-2 text-right tabular-nums">${usd(p.abonado)}</td>
-                        <td className="p-2 text-right font-semibold tabular-nums">
-                          ${usd(Math.max(0, p.saldo))}
+                        {/* Si devolvió de más, el saldo se enseña con su signo:
+                            decir "devolvió de más" y a la vez un saldo en cero
+                            dejaba sin saber cuánto hay que reembolsarle. */}
+                        <td
+                          className={`p-2 text-right font-semibold tabular-nums ${
+                            p.saldo < -0.005 ? "text-emerald-700 dark:text-emerald-400" : ""
+                          }`}
+                        >
+                          {p.saldo < -0.005
+                            ? `−$${usd(Math.abs(p.saldo))}`
+                            : `$${usd(Math.max(0, p.saldo))}`}
                         </td>
                         <td className="p-2">
-                          {pagado ? (
+                          {p.saldo < -0.005 ? (
+                            <span
+                              className="rounded-md border border-sky-500/40 bg-sky-50 px-1.5 py-0.5 text-[11px] text-sky-900 dark:bg-sky-950/40 dark:text-sky-200"
+                              title={`Hay que reembolsarle $${usd(Math.abs(p.saldo))}`}
+                            >
+                              Se le debe ${usd(Math.abs(p.saldo))}
+                            </span>
+                          ) : pagado ? (
                             <span className="rounded-md border border-emerald-500/40 bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
-                              {p.saldo < -0.005 ? "Devolvió de más" : "Pagado"}
+                              Pagado
                             </span>
                           ) : (
                             <span className="rounded-md border border-amber-500/40 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
@@ -543,7 +504,7 @@ export function PrestamosTab({
                       </tr>
                       {expandida && (
                         <tr className="border-b bg-muted/20">
-                          <td colSpan={6} className="p-2">
+                          <td colSpan={5} className="p-2">
                             <table className="w-full text-xs">
                               <thead>
                                 <tr className="text-muted-foreground">
@@ -558,8 +519,19 @@ export function PrestamosTab({
                                 {p.movimientos.map((m, i) => (
                                   <tr key={i} className="border-t border-border/50">
                                     <td className="p-1 tabular-nums">{m.fecha}</td>
+                                    {/* Rojo lo que sale, verde lo que entra: el
+                                        detalle se lee como un balance sin tener
+                                        que leer la palabra. */}
                                     <td className="p-1">
-                                      {m.tipo === "Gasto" ? "Se prestó" : "Devolvió"}
+                                      {m.tipo === "Gasto" ? (
+                                        <span className="rounded border border-red-500/40 bg-red-50 px-1.5 py-0.5 text-[11px] text-red-800 dark:bg-red-950/40 dark:text-red-200">
+                                          Se prestó
+                                        </span>
+                                      ) : (
+                                        <span className="rounded border border-emerald-500/40 bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
+                                          Devolvió
+                                        </span>
+                                      )}
                                     </td>
                                     <td className="p-1 text-muted-foreground">{m.descripcion}</td>
                                     <td className="p-1 text-right tabular-nums">${usd(m.usd)}</td>
@@ -590,24 +562,30 @@ export function PrestamosTab({
             </p>
           )}
 
-          <div className="mt-3 space-y-1.5 border-t pt-3 text-[11px] text-muted-foreground">
-            <p>
-              Los préstamos no entran en Solvencias: la deuda de cuota social se calcula solo con
-              MIEMBROS, PROBAS y CLASE. Si la misma persona aparece escrita de varias formas,
-              márcalas y usa «Unir»; queda agrupada también para lo que se cargue en adelante.
-            </p>
-            <p>
-              Solo se cuenta la categoría <span className="font-medium">PRESTAMO</span>. «INTERESES
-              PTAMO» queda fuera: en el libro recoge las comisiones que cobra el banco por mantener
-              la cuenta, no intereses de un préstamo a una persona.
-            </p>
-            <p>
-              Si algo está mal clasificado, corrígelo con el lápiz de su fila sin salir de aquí. Y
-              si un movimiento no es un préstamo, el ojo tachado lo quita de esta pantalla —{" "}
-              <span className="font-medium">la transacción no se borra</span>, sigue en el libro y
-              en los informes.
-            </p>
-          </div>
+          {/* Plegado: estorba a quien ya sabe usar la pantalla, pero hace falta
+              el día que la lleve otra persona. */}
+          <details className="mt-3 border-t pt-3">
+            <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
+              Cómo funciona esta pantalla
+            </summary>
+            <div className="mt-2 space-y-1.5 text-[11px] text-muted-foreground">
+              <p>
+                Solo cuenta la categoría <span className="font-medium">PRESTAMO</span>. «INTERESES
+                PTAMO» queda fuera: en el libro recoge las comisiones del banco por mantener la
+                cuenta, no intereses de un préstamo a una persona.
+              </p>
+              <p>
+                Nada de esto entra en Solvencias, que mide solo la cuota social (MIEMBROS, PROBAS y
+                CLASE).
+              </p>
+              <p>
+                El lápiz de cada fila abre la transacción para corregirla sin salir de aquí. El ojo
+                tachado la quita de esta pantalla cuando no es un préstamo —{" "}
+                <span className="font-medium">no borra nada</span>: sigue en el libro y en los
+                informes.
+              </p>
+            </div>
+          </details>
         </Card>
       )}
 
