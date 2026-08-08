@@ -9,6 +9,7 @@ import {
 } from "@/lib/lists-store";
 import type { AulaMeta, AttendanceRecord } from "@/lib/attendance-store";
 import { calcularCuotasDebidas, cuotaMensualUSD, currentYm, precioClase } from "@/lib/fees-logic";
+import { armarMensaje, usePlantillas } from "@/lib/mensajes-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -146,18 +147,6 @@ function normalizeName(s: string) {
 }
 
 /**
- * \u00bfSon la misma persona escrita de dos formas?
- *
- * Solo cuando todas las palabras de un nombre est\u00e1n dentro del otro:
- * "Carlos Jimenez" \u2286 "Carlos Angel Jimenez" \u2192 s\u00ed.
- *
- * Comparar \u00fanicamente nombre y apellido no sirve, y el caso real que lo
- * demuestra son las dos Milagro Contreras de la escuela: "Milagro Elena
- * Contreras" (control de estudio, Krishna III) y "Milagro Elizabeth Contreras
- * M\u00e1rquez" (celadora de Krishna II). Comparten nombre y apellido pero son dos
- * personas distintas; el segundo nombre es justo lo que las diferencia.
- */
-/**
  * La cuota distinta de una persona puede ser permanente (siempre pagó 15) o
  * empezar en un mes concreto (desde junio paga 25). Son dos campos distintos
  * en la ficha; esto los lee como una sola cosa para poder mostrarlos juntos.
@@ -198,15 +187,64 @@ function escribirCuotaEspecial(s: Student, monto?: number, desde?: string): Stud
   return { ...s, cuotaOverride: monto, cuotaOverridesTemporales: historico };
 }
 
-function mismoNombre(a: string, b: string): boolean {
+/**
+ * Todas las palabras del nombre m\u00e1s corto est\u00e1n dentro del m\u00e1s largo:
+ * "Carlos Jimenez" \u2286 "Carlos Angel Jimenez".
+ *
+ * Por s\u00ed sola no distingue personas \u2014"Milagro" encaja con cualquier Milagro de
+ * la escuela\u2014, as\u00ed que quien la use tiene que acotar el universo o comprobar
+ * que el candidato sea \u00fanico.
+ */
+function nombreContenidoEn(a: string, b: string): boolean {
   const ta = normalizeName(a).split(/\s+/).filter(Boolean);
   const tb = normalizeName(b).split(/\s+/).filter(Boolean);
   if (!ta.length || !tb.length) return false;
   const corto = ta.length <= tb.length ? ta : tb;
   const largo = ta.length <= tb.length ? tb : ta;
-  // Con una sola palabra en com\u00fan no alcanza: har\u00eda iguales a dos hermanos.
-  if (corto.length < 2) return false;
   return corto.every((t) => largo.includes(t));
+}
+
+/**
+ * \u00bfSon la misma persona escrita de dos formas?
+ *
+ * Comparar \u00fanicamente nombre y apellido no sirve, y el caso real que lo
+ * demuestra son las dos Milagro Contreras de la escuela: "Milagro Elena
+ * Contreras" (control de estudio, Krishna III) y "Milagro Elizabeth Contreras
+ * M\u00e1rquez" (celadora de Krishna II). Comparten nombre y apellido pero son dos
+ * personas distintas; el segundo nombre es justo lo que las diferencia.
+ *
+ * De ah\u00ed el m\u00ednimo de dos palabras: con una sola en com\u00fan esto dar\u00eda iguales a
+ * dos hermanos, y fusionar a dos personas pierde a una de las dos.
+ */
+function mismoNombre(a: string, b: string): boolean {
+  const corto = Math.min(
+    normalizeName(a).split(/\s+/).filter(Boolean).length,
+    normalizeName(b).split(/\s+/).filter(Boolean).length,
+  );
+  if (corto < 2) return false;
+  return nombreContenidoEn(a, b);
+}
+
+/**
+ * \u00bfCu\u00e1l de los que pasan lista en un aula es su celador?
+ *
+ * La hoja de asistencia guarda el nombre del celador en la cabecera, y ah\u00ed casi
+ * siempre est\u00e1 escrito con el nombre de pila a secas ("Milagro"). `mismoNombre`
+ * exige dos palabras en com\u00fan, as\u00ed que con ese dato NUNCA coincid\u00eda con nadie y
+ * ning\u00fan celador llegaba marcado a solvencias.
+ *
+ * Aqu\u00ed s\u00ed se puede aflojar la comparaci\u00f3n, porque el universo no es la escuela
+ * entera sino un aula: la coincidencia por una sola palabra se acepta solo
+ * cuando se\u00f1ala a UNA persona del grupo. Si hay dos candidatas no se marca a
+ * ninguna \u2014 es preferible un celador sin insignia que la insignia puesta a
+ * quien no lo es.
+ */
+function celadorDelAula(nombreCelador: string, roster: Set<string>): string | null {
+  const clave = normalizeName(nombreCelador).split(/\s+/).filter(Boolean).join(" ");
+  if (!clave) return null;
+  if (roster.has(clave)) return clave;
+  const candidatos = [...roster].filter((alumno) => nombreContenidoEn(clave, alumno));
+  return candidatos.length === 1 ? candidatos[0] : null;
 }
 
 function normalizePhone(raw: string | undefined): string | null {
@@ -685,34 +723,40 @@ export default function SolvenciasTab({
       string,
       { nombre: string; aulas: Set<string>; primera: string; celador: boolean }
     >();
+    // Quiénes pasan lista en cada aula. Hace falta el grupo entero para poder
+    // decidir después a quién señala el nombre de celador de la cabecera.
+    const rosterPorAula = new Map<string, Set<string>>();
+
     for (const r of attRecords) {
-      const aula = activas.get(r.aula);
-      if (!aula) continue;
+      if (!activas.has(r.aula)) continue;
       const nombre = r.alumno.trim();
       const clave = normalizeName(nombre);
       if (!clave) continue;
       let e = porNombre.get(clave);
-      if (!e) {
-        porNombre.set(
-          clave,
-          (e = {
-            nombre,
-            aulas: new Set(),
-            primera: "",
-            // El celador aparece en la lista de su propia aula, pero el nombre
-            // de la hoja de configuración suele venir más corto que el de la
-            // lista ("Milagro Elizabeth Contreras" vs "…Contreras Márquez").
-            celador: !!aula.celador && mismoNombre(aula.celador, nombre),
-          }),
-        );
-      }
+      if (!e) porNombre.set(clave, (e = { nombre, aulas: new Set(), primera: "", celador: false }));
       e.aulas.add(r.aula);
+
+      let roster = rosterPorAula.get(r.aula);
+      if (!roster) rosterPorAula.set(r.aula, (roster = new Set()));
+      roster.add(clave);
+
       // La fecha de ingreso se estima con la primera clase en la que consta
       // como asistente o inasistente: el importador crea una fila por cada
       // fecha del año, así que tomar la primera de todas daría enero siempre.
       if ((r.asistencia === "A" || r.asistencia === "I") && (!e.primera || r.fecha < e.primera)) {
         e.primera = r.fecha;
       }
+    }
+
+    // El celador se resuelve aula por aula y no alumno por alumno: solo
+    // teniendo delante a todo el grupo se puede saber si "Milagro" es una sola
+    // persona ahí dentro o hay dos y no se puede elegir.
+    for (const [nombreAula, aula] of activas) {
+      const roster = rosterPorAula.get(nombreAula);
+      if (!roster || !aula.celador?.trim()) continue;
+      const clave = celadorDelAula(aula.celador, roster);
+      const e = clave ? porNombre.get(clave) : undefined;
+      if (e) e.celador = true;
     }
     return porNombre;
   }, [attAulas, attRecords]);
@@ -746,7 +790,7 @@ export default function SolvenciasTab({
     };
 
     const nuevos: { clave: string; nombre: string; aulas: string[]; ambiguo: string[] }[] = [];
-    const unir: { nombre: string; con: string; agrega: string[] }[] = [];
+    const unir: { nombre: string; con: string; agrega: string[]; marcaCelador: boolean }[] = [];
     for (const [clave, info] of desdeAsistencias) {
       const { idx, ambiguo } = buscar(clave);
       if (idx === undefined) {
@@ -754,8 +798,9 @@ export default function SolvenciasTab({
         continue;
       }
       const faltan = [...info.aulas].filter((a) => !students[idx].aulas.includes(a));
-      if (faltan.length || normalizeName(students[idx].nombre) !== clave) {
-        unir.push({ nombre: info.nombre, con: students[idx].nombre, agrega: faltan });
+      const marcaCelador = info.celador && !students[idx].celador;
+      if (faltan.length || marcaCelador || normalizeName(students[idx].nombre) !== clave) {
+        unir.push({ nombre: info.nombre, con: students[idx].nombre, agrega: faltan, marcaCelador });
       }
     }
     return { nuevos, unir, buscar };
@@ -782,8 +827,14 @@ export default function SolvenciasTab({
       } else {
         const s = next[idx];
         const union = Array.from(new Set([...s.aulas, ...aulasInfo]));
-        if (union.length !== s.aulas.length) {
-          next[idx] = { ...s, aulas: union };
+        // La marca de celador también se aplica a quien YA existe. Es la vía
+        // para devolvérsela a quien la perdió: al traer los alumnos desde la
+        // nube con un rol que no ve esa columna, la marca se borra del
+        // navegador y solo las listas de asistencia saben quién la tenía.
+        // Solo se pone, nunca se quita: puede haberse marcado a mano.
+        const celador = !!s.celador || info.celador;
+        if (union.length !== s.aulas.length || celador !== !!s.celador) {
+          next[idx] = { ...s, aulas: union, celador: celador || undefined };
           actualizados++;
         }
       }
@@ -792,7 +843,7 @@ export default function SolvenciasTab({
     setAsistOpen(false);
     toast.success(
       `${creados} integrante(s) creados desde asistencias` +
-        (actualizados ? ` · ${actualizados} con aula actualizada` : ""),
+        (actualizados ? ` · ${actualizados} actualizados` : ""),
     );
   };
 
@@ -854,23 +905,53 @@ export default function SolvenciasTab({
    */
   const visibleStudents = filteredStudents;
 
+  /**
+   * Lo que las listas de asistencia saben de cada integrante YA registrado.
+   *
+   * Sirve de respaldo para dos datos de la ficha que se pierden con facilidad:
+   *
+   *   - La marca de celador. Al cargar los alumnos desde la nube con un rol que
+   *     no ve esa columna (las vistas `students_finanzas` y `students_celador`
+   *     no la traen), la marca se borra de este navegador. Quien pasa lista de
+   *     un aula es su celador, así que el dato se puede volver a deducir.
+   *   - El aula. Borrar un aula desde el diálogo se la quita a todos sus
+   *     alumnos, y sin aula caen todos juntos en "Sin aula".
+   *
+   * Esto es solo para pintar: no guarda nada. Para dejarlo escrito en la ficha
+   * está el botón "Traer de Asistencias".
+   */
+  const respaldoAsistencias = useMemo(() => {
+    const m = new Map<number, { celador: boolean; aula?: string }>();
+    for (const [clave, info] of desdeAsistencias) {
+      const { idx } = previaAsistencias.buscar(clave);
+      if (idx === undefined) continue;
+      m.set(idx, { celador: info.celador, aula: [...info.aulas][0] });
+    }
+    return m;
+  }, [desdeAsistencias, previaAsistencias]);
+
+  const esCelador = (st: Student, idx: number) =>
+    !!st.celador || !!respaldoAsistencias.get(idx)?.celador;
+
   // Agrupar por aula (usa la primera aula del alumno).
   const grouped = useMemo(() => {
+    const celador = (i: { st: Student; idx: number }) =>
+      !!i.st.celador || !!respaldoAsistencias.get(i.idx)?.celador;
     const g = new Map<string, { st: Student; idx: number }[]>();
     for (const item of visibleStudents) {
-      const aula = item.st.aulas[0] || "Sin aula";
+      const aula = item.st.aulas[0] || respaldoAsistencias.get(item.idx)?.aula || "Sin aula";
       if (!g.has(aula)) g.set(aula, []);
       g.get(aula)!.push(item);
     }
     // Ordenar cada aula: celador primero, luego alfabético.
     for (const arr of g.values()) {
       arr.sort((a, b) => {
-        if (!!a.st.celador !== !!b.st.celador) return a.st.celador ? -1 : 1;
+        if (celador(a) !== celador(b)) return celador(a) ? -1 : 1;
         return a.st.nombre.localeCompare(b.st.nombre);
       });
     }
     return Array.from(g.entries()).sort(([, a], [, b]) => a.length - b.length);
-  }, [visibleStudents]);
+  }, [visibleStudents, respaldoAsistencias]);
 
   const addAula = () => {
     const n = nuevaAula.trim();
@@ -921,24 +1002,7 @@ export default function SolvenciasTab({
     setCalcPrev(null);
   };
 
-  // Ancho uniforme de columnas entre todas las aulas (referencia: nombre más largo)
-  const colWidths = useMemo(() => {
-    let maxNombre = 0,
-      maxFecha = 0,
-      maxAbono = 0,
-      maxMes = 0;
-    for (const s of students) {
-      const extras = s.celador ? 100 : 0; // espacio extra para badge "celador"
-      maxNombre = Math.max(maxNombre, s.nombre.length * 8 + extras);
-    }
-    for (const t of tx) {
-      if (t.tipo !== "Ingreso") continue;
-      maxFecha = Math.max(maxFecha, t.fecha.length * 7.5);
-      maxAbono = Math.max(maxAbono, String(t.montoUsd || "").length * 8);
-      maxMes = Math.max(maxMes, t.mensualidad.length * 7.5);
-    }
-    return { nombre: 290, fecha: Math.max(maxFecha, 100), abono: Math.max(maxAbono, 70), mes: 70 };
-  }, [students, tx]);
+  const [plantillas] = usePlantillas();
 
   return (
     <div className="space-y-4">
@@ -982,7 +1046,8 @@ export default function SolvenciasTab({
             {(previaAsistencias.nuevos.length > 0 || previaAsistencias.unir.length > 0) && (
               <Button variant="outline" onClick={() => setAsistOpen(true)}>
                 <Users className="mr-2 h-4 w-4" />
-                Traer de Asistencias ({previaAsistencias.nuevos.length})
+                Traer de Asistencias
+                {previaAsistencias.nuevos.length > 0 && ` (${previaAsistencias.nuevos.length})`}
               </Button>
             )}
             {candidatosDesdeTx.length > 0 && (
@@ -1048,7 +1113,12 @@ export default function SolvenciasTab({
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Un aula por fila hasta 1536px. Dos tablas de seis columnas lado a lado
+          no caben en una pantalla de 1280 — de ahí salía el desplazamiento
+          horizontal, y forzarlas dejaba la columna del nombre tan estrecha que
+          casi todos salían recortados. A pantalla completa el nombre se lee
+          entero; en monitores anchos vuelven las dos por fila. */}
+      <div className="grid grid-cols-1 2xl:grid-cols-2 gap-4">
         {grouped.map(([aula, list]) => {
           const isCollapsed = collapsed[aula] ?? false;
           return (
@@ -1065,122 +1135,159 @@ export default function SolvenciasTab({
                 <span className="text-xs text-muted-foreground">{list.length} participantes</span>
               </button>
               {!isCollapsed && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm" style={{ tableLayout: "fixed" }}>
-                    <colgroup>
-                      <col style={{ width: colWidths.nombre }} />
-                      <col style={{ width: colWidths.fecha }} />
-                      <col style={{ width: colWidths.mes }} />
-                      <col style={{ width: colWidths.abono }} />
-                      <col style={{ width: 50 }} />
-                      <col style={{ width: 50 }} />
-                    </colgroup>
-                    <thead>
-                      <tr className="border-b text-center text-muted-foreground text-xs">
-                        <th className="p-2 font-medium text-left">Integrante</th>
-                        <th className="p-2 font-medium">Último pago</th>
-                        <th className="p-2 font-medium">Pagó</th>
-                        <th className="p-2 font-medium">Abono</th>
-                        <th className="p-2 font-medium">Estado</th>
-                        <th className="p-2"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {list.map(({ st, idx }) => {
-                        const pay = lastPayByStudent.get(st.nombre);
-                        const lastYm = pay ? (fechaToIso(pay.fecha) || "").slice(0, 7) : null;
-                        const deuda = calcularCuotasDebidas(st, lastYm, ymNow, pay?.monto);
-                        const esPorClase = st.condicion === "ClasePorClase";
-                        const sinHistorial = !pay && !esPorClase;
-                        return (
-                          <tr key={idx} className="border-b last:border-0">
-                            <td className={"p-2 " + (st.celador ? "font-bold" : "font-medium")}>
+                <table className="w-full table-fixed text-sm">
+                  {/* Anchos relativos, no fijos: así la tabla se adapta al
+                      ancho de la tarjeta en vez de desbordarla. El nombre no
+                      lleva ancho a propósito — se queda con todo lo que sobre
+                      y recorta con puntos suspensivos lo que no entre. Solo la
+                      columna de botones va en píxeles, porque los iconos no
+                      pueden encogerse. */}
+                  <colgroup>
+                    <col />
+                    <col style={{ width: "17%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "13%" }} />
+                    <col style={{ width: 88 }} />
+                  </colgroup>
+                  <thead>
+                    <tr className="border-b text-center text-muted-foreground text-xs">
+                      <th className="px-1.5 py-1.5 font-medium text-left">Integrante</th>
+                      <th className="px-1.5 py-1.5 font-medium">Último pago</th>
+                      <th className="px-1.5 py-1.5 font-medium">Pagó</th>
+                      <th className="px-1.5 py-1.5 font-medium">Abono</th>
+                      <th className="px-1.5 py-1.5 font-medium">Estado</th>
+                      <th className="px-1.5 py-1.5"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {list.map(({ st, idx }) => {
+                      const pay = lastPayByStudent.get(st.nombre);
+                      const lastYm = pay ? (fechaToIso(pay.fecha) || "").slice(0, 7) : null;
+                      const deuda = calcularCuotasDebidas(st, lastYm, ymNow, pay?.monto);
+                      const esPorClase = st.condicion === "ClasePorClase";
+                      const sinHistorial = !pay && !esPorClase;
+                      const celador = esCelador(st, idx);
+                      const monto = esPorClase ? precioClase(ymNow) : deuda.totalUSD;
+                      // El concepto es la parte factual —meses, montos, precio
+                      // de la clase— y por eso se arma aquí, fuera de las
+                      // plantillas editables: nadie puede mandar una cifra
+                      // equivocada al retocar el tono del mensaje.
+                      const concepto = esPorClase
+                        ? `La clase de hoy tiene un valor de $${$(precioClase(ymNow))}.`
+                        : deuda.meses === 0
+                          ? "Tu cuenta está al día."
+                          : `Tienes ${deuda.meses} ${deuda.meses === 1 ? "mensualidad" : "mensualidades"} pendientes, equivalentes a $${$(monto)}.`;
+                      const msg = armarMensaje(
+                        esPorClase
+                          ? plantillas.clase
+                          : deuda.meses === 0
+                            ? plantillas.alDia
+                            : plantillas.deuda,
+                        st.nombre,
+                        concepto,
+                      );
+                      const url = whatsappUrl(st.telefono, msg);
+                      return (
+                        <tr key={idx} className="border-b last:border-0">
+                          <td className="px-1.5 py-1.5">
+                            <div className="flex items-center gap-1.5">
                               <button
                                 onClick={() => setViewTxStudent(st)}
-                                className="text-left underline-offset-2 hover:underline"
-                                title="Ver pagos del integrante"
+                                className={
+                                  "min-w-0 truncate text-left underline-offset-2 hover:underline " +
+                                  (celador ? "font-bold" : "font-medium")
+                                }
+                                title={`${st.nombre} — ver sus pagos`}
                               >
                                 {st.nombre}
                               </button>
-                              {st.celador && (
-                                <span className="ml-2 rounded bg-accent px-1.5 py-px text-[10px] uppercase text-accent-foreground">
+                              {celador && (
+                                <span
+                                  className="shrink-0 rounded bg-accent px-1 py-px text-[11px] uppercase text-accent-foreground"
+                                  title="Celador(a) del aula"
+                                >
                                   celador
                                 </span>
                               )}
-                            </td>
-                            <td className="p-2 text-xs text-center">{pay?.fecha ?? "—"}</td>
-                            <td className="p-2 text-xs text-center">
-                              {pay?.mes ? formatMes(pay.mes) : "—"}
-                            </td>
-                            <td className="p-2 text-center text-xs tabular-nums">
-                              {pay ? `$${$(pay.monto)}` : "—"}
-                            </td>
-                            <td className="p-2 text-xs">
-                              {esPorClase ? (
-                                <span className="rounded bg-muted px-2 py-px">Por clase</span>
-                              ) : sinHistorial ? (
-                                <span className="text-muted-foreground">—</span>
-                              ) : deuda.meses === 0 ? (
-                                <span className="rounded bg-primary/20 px-2 py-px text-primary">
-                                  Al día
-                                </span>
+                            </div>
+                          </td>
+                          <td
+                            className="truncate px-1.5 py-1.5 text-center tabular-nums"
+                            title={pay?.fecha ?? ""}
+                          >
+                            {pay?.fecha ?? "—"}
+                          </td>
+                          <td className="truncate px-1.5 py-1.5 text-center">
+                            {pay?.mes ? formatMes(pay.mes) : "—"}
+                          </td>
+                          <td className="truncate px-1.5 py-1.5 text-center tabular-nums">
+                            {pay ? `$${$(pay.monto)}` : "—"}
+                          </td>
+                          <td className="truncate px-1.5 py-1.5 text-center">
+                            {esPorClase ? (
+                              <span className="rounded bg-muted px-1.5 py-px text-xs">
+                                Por clase
+                              </span>
+                            ) : sinHistorial ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : deuda.meses === 0 ? (
+                              <span className="rounded bg-primary/20 px-1.5 py-px text-xs text-primary">
+                                Al día
+                              </span>
+                            ) : (
+                              <span
+                                className="rounded bg-destructive/20 px-1.5 py-px text-xs font-bold text-destructive"
+                                title={`${deuda.meses} ${deuda.meses === 1 ? "mes" : "meses"} — $${$(deuda.totalUSD)}`}
+                              >
+                                {deuda.meses}M
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-1.5 py-1.5">
+                            <div className="flex items-center gap-0.5">
+                              {url ? (
+                                <>
+                                  <a
+                                    href={url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={() => logWhatsApp(st.nombre, msg)}
+                                    className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
+                                    title={`Enviar WhatsApp a ${st.telefono}`}
+                                  >
+                                    <MessageCircle className="h-3.5 w-3.5 text-primary" />
+                                  </a>
+                                  <button
+                                    onClick={() => copyAndLog(msg, st.nombre)}
+                                    className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+                                    title="Copiar mensaje"
+                                  >
+                                    <ClipboardCopy className="h-3.5 w-3.5" />
+                                  </button>
+                                </>
                               ) : (
-                                <span className="rounded bg-destructive/20 px-2 py-px text-destructive text-xs font-bold">
-                                  {deuda.meses}M
+                                <span
+                                  className="inline-flex h-6 w-6 cursor-not-allowed items-center justify-center rounded-md text-muted-foreground opacity-30"
+                                  title="Agrega teléfono desde editar"
+                                >
+                                  <MessageCircle className="h-3.5 w-3.5" />
                                 </span>
                               )}
-                            </td>
-                            <td className="p-2">
-                              <div className="flex gap-1">
-                                {(() => {
-                                  const cuota = cuotaMensualUSD(st, ymNow);
-                                  const monto = esPorClase ? precioClase(ymNow) : deuda.totalUSD;
-                                  const msg = esPorClase
-                                    ? `Hola ${st.nombre.split(" ")[0]}, te recordamos que la clase de hoy en Nueva Acrópolis tiene un valor de $${$(precioClase(ymNow))}. ¡Te esperamos!`
-                                    : deuda.meses === 0
-                                      ? `¡Hola, ${st.nombre.split(" ")[0]}! Te confirmamos que tu cuenta se encuentra al día. Gracias por tu puntualidad y compromiso con Nueva Acrópolis. ¡Un abrazo!`
-                                      : `Hola ${st.nombre.split(" ")[0]}, junto con saludarte, te informamos que registramos un saldo pendiente en tu cuenta de ${deuda.meses} ${deuda.meses === 1 ? "mensualidad" : "mensualidades"} equivalentes a $${$(monto)}. Para mantener activo tu acceso a la escuela y no interrumpir tu aprendizaje, te agradecemos coordinar el pago a la brevedad. Quedamos atentos a cualquier duda o al envío de tu comprobante.`;
-                                  const url = whatsappUrl(st.telefono, msg);
-                                  return url ? (
-                                    <>
-                                      <a
-                                        href={url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={() => logWhatsApp(st.nombre, msg)}
-                                        className="inline-flex h-9 w-9 items-center justify-center rounded-md hover:bg-accent"
-                                        title={`Enviar WhatsApp a ${st.telefono}`}
-                                      >
-                                        <MessageCircle className="h-4 w-4 text-primary" />
-                                      </a>
-                                      <button
-                                        onClick={() => copyAndLog(msg, st.nombre)}
-                                        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
-                                        title="Copiar mensaje"
-                                      >
-                                        <ClipboardCopy className="h-3.5 w-3.5" />
-                                      </button>
-                                    </>
-                                  ) : (
-                                    <span
-                                      className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground opacity-30 cursor-not-allowed"
-                                      title="Agrega teléfono desde editar"
-                                    >
-                                      <MessageCircle className="h-4 w-4" />
-                                    </span>
-                                  );
-                                })()}
-                                <Button variant="ghost" size="icon" onClick={() => setEditIdx(idx)}>
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                              <button
+                                onClick={() => setEditIdx(idx)}
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+                                title="Modificar integrante"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               )}
             </Card>
           );
@@ -1193,7 +1300,14 @@ export default function SolvenciasTab({
 
       <StudentEditDialog
         open={editIdx !== null}
-        student={editIdx != null ? students[editIdx] : null}
+        // La casilla "Es celador(a)" muestra también lo deducido de las listas
+        // de asistencia; si no, la insignia de la tabla y la casilla dirían
+        // cosas distintas. Guardar desde aquí deja el dato escrito en la ficha.
+        student={
+          editIdx != null
+            ? { ...students[editIdx], celador: esCelador(students[editIdx], editIdx) }
+            : null
+        }
         aulas={aulas}
         lastPay={editIdx != null ? (lastPayByStudent.get(students[editIdx].nombre) ?? null) : null}
         onClose={() => setEditIdx(null)}
@@ -1237,7 +1351,9 @@ export default function SolvenciasTab({
           <p className="text-xs text-muted-foreground">
             Se toman de las listas que pasan los celadores. Antes de crear a nadie se compara con
             los que ya existen, por nombre completo y también por nombre y apellido, para no
-            duplicar a la misma persona escrita de dos formas. Las aulas archivadas quedan fuera.
+            duplicar a la misma persona escrita de dos formas. Las aulas archivadas quedan fuera. A
+            quien ya está en la lista solo se le agregan las aulas que le falten y, si es el celador
+            de su aula, se le devuelve esa marca.
           </p>
           <div className="max-h-[55vh] space-y-4 overflow-y-auto">
             {previaAsistencias.nuevos.length > 0 && (
@@ -1268,7 +1384,7 @@ export default function SolvenciasTab({
             {previaAsistencias.unir.length > 0 && (
               <div>
                 <p className="mb-1 text-sm font-medium">
-                  Ya existen — no se duplican ({previaAsistencias.unir.length})
+                  Ya existen — se actualizan, no se duplican ({previaAsistencias.unir.length})
                 </p>
                 <div className="rounded-md border">
                   {previaAsistencias.unir.map((u, i) => (
@@ -1283,7 +1399,12 @@ export default function SolvenciasTab({
                         )}
                       </span>
                       <span className="shrink-0 text-[11px] text-muted-foreground">
-                        {u.agrega.length ? `+ ${u.agrega.join(", ")}` : "sin cambios"}
+                        {[
+                          u.agrega.length ? `+ ${u.agrega.join(", ")}` : "",
+                          u.marcaCelador ? "se marca como celador" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" · ") || "sin cambios"}
                       </span>
                     </div>
                   ))}
@@ -1296,7 +1417,10 @@ export default function SolvenciasTab({
               Cancelar
             </Button>
             <Button onClick={traerDeAsistencias}>
-              <Users className="mr-2 h-4 w-4" /> Traer {previaAsistencias.nuevos.length}
+              <Users className="mr-2 h-4 w-4" />
+              {previaAsistencias.nuevos.length
+                ? `Traer ${previaAsistencias.nuevos.length}`
+                : "Aplicar cambios"}
             </Button>
           </DialogFooter>
         </DialogContent>
