@@ -68,6 +68,44 @@ export function unir(grupos: GrupoPrestamo[], persona: string, clave: string): G
   });
 }
 
+const K_DESCARTES = "lector_ocr_prestamo_descartes_v1";
+
+/**
+ * Movimientos que NO son préstamos, aunque estén en esa categoría.
+ *
+ * Se guardan los ids de las transacciones que hay que dejar fuera de la
+ * pantalla de Préstamos. El caso real: comisiones del banco anotadas como
+ * "INTERESES PTAMO", o cualquier cosa mal clasificada que ensucia los totales.
+ *
+ * NO se borra la transacción. Sigue en el libro, en los informes y en el
+ * balance, porque es dinero que se movió de verdad. Lo único que se dice aquí
+ * es "esto no es un préstamo de nadie", que es una afirmación sobre cómo
+ * mostrarlo, no sobre si ocurrió.
+ */
+export function usePrestamoDescartes(): [string[], (next: string[]) => void] {
+  const [ids, setIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(K_DESCARTES);
+      setIds(raw ? (JSON.parse(raw) as string[]) : []);
+    } catch {
+      setIds([]);
+    }
+  }, []);
+
+  const guardar = (next: string[]) => {
+    setIds(next);
+    try {
+      localStorage.setItem(K_DESCARTES, JSON.stringify(next));
+    } catch {
+      /* si el navegador no deja escribir, al menos queda aplicado en pantalla */
+    }
+  };
+
+  return [ids, guardar];
+}
+
 /** Quita una clave. Si la persona se queda sin ninguna, desaparece. */
 export function separar(grupos: GrupoPrestamo[], persona: string, clave: string): GrupoPrestamo[] {
   return grupos

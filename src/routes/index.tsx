@@ -22,6 +22,7 @@ import { TasasBcvTab } from "@/components/finanzas/TasasBcvTab";
 import SolvenciasTab from "@/components/finanzas/SolvenciasTab";
 import { SupabaseSync } from "@/components/finanzas/SupabaseSync";
 import { PrestamosTab } from "@/components/finanzas/PrestamosTab";
+import { TransactionEditDialog } from "@/components/finanzas/TransactionEditDialog";
 import { AuthDialog, useAuth } from "@/components/finanzas/AuthDialog";
 import { CuentasPendientes } from "@/components/finanzas/CuentasPendientes";
 import { MINUTOS_INACTIVIDAD } from "@/lib/api/auth.functions";
@@ -119,6 +120,8 @@ function Index() {
   const [headerLoading, setHeaderLoading] = useState(false);
   const [headerFetchFailed, setHeaderFetchFailed] = useState(false);
   const [bcvSources, setBcvSources] = useState<Record<string, string>>({});
+  /** Transacción que se está corrigiendo desde la pestaña de Préstamos. */
+  const [prestamoEnEdicion, setPrestamoEnEdicion] = useState<string | null>(null);
   const fetchForDate = useServerFn(fetchBcvForDate);
 
   const {
@@ -503,7 +506,28 @@ function Index() {
               </TabsContent>
 
               <TabsContent value="prestamos">
-                <PrestamosTab tx={transactions.list} students={students} />
+                <PrestamosTab
+                  tx={transactions.list}
+                  students={students}
+                  onEditar={setPrestamoEnEdicion}
+                />
+                {/* El mismo formulario de Transacciones, para corregir sin
+                    tener que salir de Préstamos y buscar la fila a mano. */}
+                <TransactionEditDialog
+                  editing={transactions.list.find((t) => t.id === prestamoEnEdicion) ?? null}
+                  onClose={() => setPrestamoEnEdicion(null)}
+                  ingresos={ingresos}
+                  gastos={gastos}
+                  bancos={bancos}
+                  bcvRates={bcv.rates}
+                  bcvSources={bcvSources}
+                  students={students}
+                  onSave={(next) => {
+                    transactions.replace(next.id, next);
+                    setPrestamoEnEdicion(null);
+                    toast.success("Transacción actualizada");
+                  }}
+                />
               </TabsContent>
 
               <TabsContent value="bcv">

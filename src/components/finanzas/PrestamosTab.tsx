@@ -9,21 +9,29 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { AlertCircle, ChevronRight, HandCoins, Link2, X } from "lucide-react";
+import { AlertCircle, ChevronRight, Eye, EyeOff, HandCoins, Link2, Pencil, X } from "lucide-react";
 import type { Student, Transaction } from "@/lib/lists-store";
-import { usePrestamoAliases, unir, separar, type GrupoPrestamo } from "@/lib/prestamos-alias";
+import {
+  usePrestamoAliases,
+  usePrestamoDescartes,
+  unir,
+  separar,
+  type GrupoPrestamo,
+} from "@/lib/prestamos-alias";
 
 /**
- * Categorías que son movimiento de préstamo y NO cuota social.
+ * Categorías que son movimiento de préstamo. El dinero que sale es lo
+ * prestado; el que entra, lo que la persona va devolviendo.
  *
- * El dinero que sale es lo prestado; el que entra, lo que la persona va
- * devolviendo. Los intereses van aparte porque no bajan la deuda: son
- * ingreso de la escuela.
+ * "INTERESES PTAMO" NO está aquí, aunque el nombre lo sugiera. En el libro esa
+ * categoría recoge las comisiones que cobra el banco por mantener la cuenta —
+ * cosas como "interés mercantil 9,15"—, no intereses de un préstamo a una
+ * persona. Incluirla llenaba la pantalla de importes minúsculos que no son de
+ * nadie y ensuciaba los totales.
  *
  * Nada de esto entra en Solvencias, que solo mira MIEMBROS, PROBAS y CLASE.
  */
 const CAT_PRESTAMO = ["PRESTAMO", "PRÉSTAMOS, PROFESOR"];
-const CAT_INTERES = ["INTERESES PTAMO"];
 
 function usd(n: number): string {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -146,24 +154,9 @@ function pareceNombre(texto: string): boolean {
   return palabras.every((p) => /^[a-zñ]+$/.test(p));
 }
 
-/**
- * Saca la tasa de la descripción: "Ricardo García: se presta 10%" → 0.10.
- *
- * Se escribe a mano en cada préstamo porque no todos llevan la misma, y
- * algunos no llevan ninguna. No hay tasa por defecto a propósito: si no está
- * escrita, no se estima nada. Inventar un 10% donde no lo hay sería peor que
- * dejarlo vacío, porque nadie revisa una cifra que ya parece calculada.
- */
-function tasaDeDescripcion(desc: string): number | null {
-  const m = (desc || "").match(/(\d+(?:[.,]\d+)?)\s*%/);
-  if (!m) return null;
-  const n = Number(m[1].replace(",", "."));
-  return isFinite(n) && n > 0 && n <= 100 ? n / 100 : null;
-}
-
-const mesDe = (iso: string) => iso.slice(0, 7);
-
 type Movimiento = {
+  /** Id de la transacción, para poder abrirla y corregirla desde aquí. */
+  id: string;
   fecha: string;
   iso: string;
   descripcion: string;
@@ -176,24 +169,88 @@ type Prestamo = {
   persona: string;
   prestado: number;
   abonado: number;
-  /** Intereses REALMENTE registrados en el libro. Es dinero, no estimación. */
-  intereses: number;
   saldo: number;
   movimientos: Movimiento[];
-  /** Tasa escrita en la descripción, si la hay. */
-  tasa: number | null;
-  /** El préstamo salió del mes en que se dio: dentro del mismo mes no se cobra. */
-  cruzoDeMes: boolean;
-  /** Solo orientativo. NUNCA entra en los totales ni en el saldo. */
-  interesEstimado: number;
-  /** Cruzó de mes, tiene tasa, y lo cobrado se queda corto. */
-  faltaCobrarInteres: boolean;
 };
 
-export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: Student[] }) {
+/**
+ * El lápiz y el «no es un préstamo» de cada movimiento.
+ *
+ * Estar aquí importa: casi todo lo que sale mal en esta pantalla se arregla
+ * cambiando la descripción o la categoría de la transacción. Obligar a ir a
+ * Transacciones, buscarla entre cientos y volver hacía que nadie lo corrigiera.
+ *
+ * El segundo botón NO borra nada. Saca el movimiento de esta pantalla y lo deja
+ * intacto en el libro, porque es dinero que se movió de verdad y tiene que
+ * seguir en los informes y en el balance. Lo único que se afirma es "esto no es
+ * un préstamo de nadie".
+ */
+function AccionesMovimiento({
+  mov,
+  onEditar,
+  onDescartar,
+}: {
+  mov: Movimiento;
+  onEditar?: (id: string) => void;
+  onDescartar?: (id: string) => void;
+}) {
+  return (
+    <span className="inline-flex gap-0.5">
+      {onEditar && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          title="Corregir esta transacción"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditar(mov.id);
+          }}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+      )}
+      {onDescartar && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          title="No es un préstamo: quitarlo de esta pantalla (la transacción no se borra)"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDescartar(mov.id);
+          }}
+        >
+          <EyeOff className="h-3.5 w-3.5" />
+        </Button>
+      )}
+    </span>
+  );
+}
+
+export function PrestamosTab({
+  tx,
+  students,
+  onEditar,
+}: {
+  tx: Transaction[];
+  students: Student[];
+  /** Abre la transacción en el formulario de edición. */
+  onEditar?: (id: string) => void;
+}) {
   const [busqueda, setBusqueda] = useState("");
   const [abierta, setAbierta] = useState<string | null>(null);
   const [grupos, setGrupos] = usePrestamoAliases();
+  const [descartes, setDescartes] = usePrestamoDescartes();
+  const [verDescartes, setVerDescartes] = useState(false);
+
+  const descartar = (id: string) => {
+    if (!descartes.includes(id)) setDescartes([...descartes, id]);
+  };
+  const recuperar = (id: string) => setDescartes(descartes.filter((x) => x !== id));
+
+  /** Los movimientos que ya se marcaron como "esto no es un préstamo". */
+  const descartados = useMemo(() => tx.filter((t) => descartes.includes(t.id)), [tx, descartes]);
   const [seleccion, setSeleccion] = useState<string[]>([]);
   const [uniendoAbierto, setUniendoAbierto] = useState(false);
   const [destino, setDestino] = useState("");
@@ -204,9 +261,10 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
   const sueltos = useMemo<Movimiento[]>(() => {
     const nombres = students.map((s) => s.nombre).filter(Boolean);
     return tx
-      .filter((t) => CAT_PRESTAMO.includes(t.categoria) || CAT_INTERES.includes(t.categoria))
+      .filter((t) => CAT_PRESTAMO.includes(t.categoria) && !descartes.includes(t.id))
       .filter((t) => personaDelPrestamo(t.descripcion, nombres, grupos) === null)
       .map((t) => ({
+        id: t.id,
         fecha: t.fecha,
         iso: fechaToIso(t.fecha),
         descripcion: t.descripcion || "(sin descripción)",
@@ -215,43 +273,31 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
         usd: Math.abs(Number(t.montoUsd) || 0),
       }))
       .sort((a, b) => a.iso.localeCompare(b.iso));
-  }, [tx, students, grupos]);
+  }, [tx, students, grupos, descartes]);
 
   const prestamos = useMemo<Prestamo[]>(() => {
     const nombres = students.map((s) => s.nombre).filter(Boolean);
     const porPersona = new Map<string, Prestamo>();
 
     for (const t of tx) {
-      const esPrestamo = CAT_PRESTAMO.includes(t.categoria);
-      const esInteres = CAT_INTERES.includes(t.categoria);
-      if (!esPrestamo && !esInteres) continue;
+      if (!CAT_PRESTAMO.includes(t.categoria)) continue;
+      if (descartes.includes(t.id)) continue; // marcado como "no es un préstamo"
 
       const persona = personaDelPrestamo(t.descripcion, nombres, grupos);
       if (persona === null) continue; // va al bloque de sin asignar
       const clave = normalizar(persona);
       let p = porPersona.get(clave);
       if (!p) {
-        p = {
-          persona,
-          prestado: 0,
-          abonado: 0,
-          intereses: 0,
-          saldo: 0,
-          movimientos: [],
-          tasa: null,
-          cruzoDeMes: false,
-          interesEstimado: 0,
-          faltaCobrarInteres: false,
-        };
+        p = { persona, prestado: 0, abonado: 0, saldo: 0, movimientos: [] };
         porPersona.set(clave, p);
       }
 
       const monto = Math.abs(Number(t.montoUsd) || 0);
-      if (esInteres) p.intereses += monto;
-      else if (t.tipo === "Gasto") p.prestado += monto;
+      if (t.tipo === "Gasto") p.prestado += monto;
       else p.abonado += monto;
 
       p.movimientos.push({
+        id: t.id,
         fecha: t.fecha,
         iso: fechaToIso(t.fecha),
         descripcion: t.descripcion || "",
@@ -262,48 +308,13 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
     }
 
     const lista = [...porPersona.values()];
-    const mesActual = new Date().toISOString().slice(0, 7);
-
     for (const p of lista) {
       p.saldo = p.prestado - p.abonado;
       p.movimientos.sort((a, b) => a.iso.localeCompare(b.iso));
-
-      const entregas = p.movimientos.filter(
-        (m) => m.tipo === "Gasto" && !CAT_INTERES.includes(m.categoria),
-      );
-      const devoluciones = p.movimientos.filter(
-        (m) => m.tipo === "Ingreso" && !CAT_INTERES.includes(m.categoria),
-      );
-
-      // La tasa se busca primero en el movimiento donde se entregó el dinero,
-      // que es donde tiene sentido pactarla.
-      p.tasa =
-        entregas.map((m) => tasaDeDescripcion(m.descripcion)).find((t) => t != null) ??
-        p.movimientos.map((m) => tasaDeDescripcion(m.descripcion)).find((t) => t != null) ??
-        null;
-
-      const mesesEntrega = entregas.map((m) => mesDe(m.iso)).filter(Boolean);
-      const ultimaEntrega = mesesEntrega.length ? mesesEntrega[mesesEntrega.length - 1] : "";
-      const mesesDevolucion = devoluciones.map((m) => mesDe(m.iso)).filter(Boolean);
-      const ultimaDevolucion = mesesDevolucion.length
-        ? mesesDevolucion[mesesDevolucion.length - 1]
-        : "";
-
-      // Dentro del mismo mes no se cobra interés. Si sigue debiendo, se compara
-      // con el mes en curso; si ya pagó, con el mes en que terminó de pagar.
-      if (ultimaEntrega) {
-        p.cruzoDeMes =
-          p.saldo > 0.005
-            ? ultimaEntrega < mesActual
-            : !!ultimaDevolucion && ultimaDevolucion > ultimaEntrega;
-      }
-
-      p.interesEstimado = p.cruzoDeMes && p.tasa ? p.prestado * p.tasa : 0;
-      p.faltaCobrarInteres = p.interesEstimado > 0 && p.intereses < p.interesEstimado - 0.005;
     }
     // Primero quien más debe: es lo que hay que perseguir.
     return lista.sort((a, b) => b.saldo - a.saldo || a.persona.localeCompare(b.persona));
-  }, [tx, students, grupos]);
+  }, [tx, students, grupos, descartes]);
 
   const visibles = useMemo(() => {
     const q = normalizar(busqueda);
@@ -314,12 +325,11 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
   const totales = useMemo(() => {
     const prestado = prestamos.reduce((s, p) => s + p.prestado, 0);
     const abonado = prestamos.reduce((s, p) => s + p.abonado, 0);
-    const intereses = prestamos.reduce((s, p) => s + p.intereses, 0);
     // Un saldo negativo significa que devolvió de más; no debe tapar lo que
     // otros deben, así que en el total pendiente solo cuentan los positivos.
     const pendiente = prestamos.reduce((s, p) => s + Math.max(0, p.saldo), 0);
     const conSaldo = prestamos.filter((p) => p.saldo > 0.005).length;
-    return { prestado, abonado, intereses, pendiente, conSaldo };
+    return { prestado, abonado, pendiente, conSaldo };
   }, [prestamos]);
 
   const alternarSeleccion = (persona: string) =>
@@ -376,12 +386,11 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
     { etiqueta: "Prestado", valor: totales.prestado, ayuda: "Total que ha salido" },
     { etiqueta: "Devuelto", valor: totales.abonado, ayuda: "Total que ha vuelto" },
     { etiqueta: "Por cobrar", valor: totales.pendiente, ayuda: `${totales.conSaldo} persona(s)` },
-    { etiqueta: "Intereses", valor: totales.intereses, ayuda: "No bajan la deuda" },
   ];
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-3 gap-3">
         {tiles.map((t) => (
           <Card key={t.etiqueta} className="p-3">
             <div className="text-xs text-muted-foreground">{t.etiqueta}</div>
@@ -481,7 +490,6 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
                   <th className="p-2 text-left font-medium">Persona</th>
                   <th className="p-2 text-right font-medium">Prestado</th>
                   <th className="p-2 text-right font-medium">Devuelto</th>
-                  <th className="p-2 text-right font-medium">Intereses</th>
                   <th className="p-2 text-right font-medium">Saldo</th>
                   <th className="p-2 text-left font-medium">Estado</th>
                 </tr>
@@ -518,46 +526,24 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
                         </td>
                         <td className="p-2 text-right tabular-nums">${usd(p.prestado)}</td>
                         <td className="p-2 text-right tabular-nums">${usd(p.abonado)}</td>
-                        <td className="p-2 text-right tabular-nums text-muted-foreground">
-                          <div>{p.intereses > 0 ? `$${usd(p.intereses)}` : "—"}</div>
-                          {p.interesEstimado > 0 && (
-                            <div
-                              className="text-[10px] italic opacity-70"
-                              title={`Estimación: ${Math.round((p.tasa ?? 0) * 100)}% de $${usd(p.prestado)}. No entra en ningún total.`}
-                            >
-                              est. ${usd(p.interesEstimado)}
-                            </div>
-                          )}
-                        </td>
                         <td className="p-2 text-right font-semibold tabular-nums">
                           ${usd(Math.max(0, p.saldo))}
                         </td>
                         <td className="p-2">
-                          <div className="flex flex-wrap items-center gap-1">
-                            {pagado ? (
-                              <span className="rounded-md border border-emerald-500/40 bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
-                                {p.saldo < -0.005 ? "Devolvió de más" : "Pagado"}
-                              </span>
-                            ) : (
-                              <span className="rounded-md border border-amber-500/40 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-                                Pendiente
-                              </span>
-                            )}
-                            {p.faltaCobrarInteres && (
-                              <span
-                                className="inline-flex items-center gap-0.5 rounded-md border border-orange-500/40 bg-orange-50 px-1.5 py-0.5 text-[11px] text-orange-900 dark:bg-orange-950/40 dark:text-orange-200"
-                                title="Pasó de mes y el interés cobrado no llega a la estimación. Es un recordatorio, no una deuda calculada."
-                              >
-                                <AlertCircle className="h-3 w-3" />
-                                Revisar interés
-                              </span>
-                            )}
-                          </div>
+                          {pagado ? (
+                            <span className="rounded-md border border-emerald-500/40 bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
+                              {p.saldo < -0.005 ? "Devolvió de más" : "Pagado"}
+                            </span>
+                          ) : (
+                            <span className="rounded-md border border-amber-500/40 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                              Pendiente
+                            </span>
+                          )}
                         </td>
                       </tr>
                       {expandida && (
                         <tr className="border-b bg-muted/20">
-                          <td colSpan={7} className="p-2">
+                          <td colSpan={6} className="p-2">
                             <table className="w-full text-xs">
                               <thead>
                                 <tr className="text-muted-foreground">
@@ -565,25 +551,27 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
                                   <th className="p-1 text-left font-medium">Concepto</th>
                                   <th className="p-1 text-left font-medium">Descripción</th>
                                   <th className="p-1 text-right font-medium">USD</th>
+                                  <th className="w-16 p-1"></th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {p.movimientos.map((m, i) => {
-                                  const esInteres = CAT_INTERES.includes(m.categoria);
-                                  const concepto = esInteres
-                                    ? "Interés"
-                                    : m.tipo === "Gasto"
-                                      ? "Se prestó"
-                                      : "Devolvió";
-                                  return (
-                                    <tr key={i} className="border-t border-border/50">
-                                      <td className="p-1 tabular-nums">{m.fecha}</td>
-                                      <td className="p-1">{concepto}</td>
-                                      <td className="p-1 text-muted-foreground">{m.descripcion}</td>
-                                      <td className="p-1 text-right tabular-nums">${usd(m.usd)}</td>
-                                    </tr>
-                                  );
-                                })}
+                                {p.movimientos.map((m, i) => (
+                                  <tr key={i} className="border-t border-border/50">
+                                    <td className="p-1 tabular-nums">{m.fecha}</td>
+                                    <td className="p-1">
+                                      {m.tipo === "Gasto" ? "Se prestó" : "Devolvió"}
+                                    </td>
+                                    <td className="p-1 text-muted-foreground">{m.descripcion}</td>
+                                    <td className="p-1 text-right tabular-nums">${usd(m.usd)}</td>
+                                    <td className="p-1 text-right">
+                                      <AccionesMovimiento
+                                        mov={m}
+                                        onEditar={onEditar}
+                                        onDescartar={descartar}
+                                      />
+                                    </td>
+                                  </tr>
+                                ))}
                               </tbody>
                             </table>
                           </td>
@@ -609,17 +597,80 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
               márcalas y usa «Unir»; queda agrupada también para lo que se cargue en adelante.
             </p>
             <p>
-              <span className="font-medium">Intereses.</span> La cifra de arriba es lo que realmente
-              se cobró. Para que aparezca la estimación en cursiva, escribe la tasa en la
-              descripción del préstamo — por ejemplo{" "}
-              <span className="font-medium">«Ricardo García: se presta 10%»</span>. Solo se estima
-              si el préstamo pasó de mes; dentro del mismo mes no se cobra interés.{" "}
-              <span className="font-medium">
-                La estimación no suma en ningún total ni aumenta el saldo:
-              </span>{" "}
-              es un recordatorio para revisar, no una deuda calculada.
+              Solo se cuenta la categoría <span className="font-medium">PRESTAMO</span>. «INTERESES
+              PTAMO» queda fuera: en el libro recoge las comisiones que cobra el banco por mantener
+              la cuenta, no intereses de un préstamo a una persona.
+            </p>
+            <p>
+              Si algo está mal clasificado, corrígelo con el lápiz de su fila sin salir de aquí. Y
+              si un movimiento no es un préstamo, el ojo tachado lo quita de esta pantalla —{" "}
+              <span className="font-medium">la transacción no se borra</span>, sigue en el libro y
+              en los informes.
             </p>
           </div>
+        </Card>
+      )}
+
+      {descartados.length > 0 && (
+        <Card className="p-4">
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 text-left"
+            onClick={() => setVerDescartes((v) => !v)}
+          >
+            <EyeOff className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold">
+              Marcados como «no son préstamos» ({descartados.length})
+            </h2>
+            <ChevronRight
+              className={`ml-auto h-4 w-4 text-muted-foreground transition-transform ${
+                verDescartes ? "rotate-90" : ""
+              }`}
+            />
+          </button>
+
+          {verDescartes && (
+            <>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Estos movimientos siguen en el libro y en los informes; solo se ocultaron de esta
+                pantalla. Si alguno sí era un préstamo, devuélvelo con el botón.
+              </p>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-xs text-muted-foreground">
+                      <th className="p-2 text-left font-medium">Fecha</th>
+                      <th className="p-2 text-left font-medium">Descripción</th>
+                      <th className="p-2 text-right font-medium">USD</th>
+                      <th className="w-24 p-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {descartados.map((t) => (
+                      <tr key={t.id} className="border-b">
+                        <td className="p-2 tabular-nums">{t.fecha}</td>
+                        <td className="p-2 text-muted-foreground">{t.descripcion}</td>
+                        <td className="p-2 text-right tabular-nums">
+                          ${usd(Math.abs(Number(t.montoUsd) || 0))}
+                        </td>
+                        <td className="p-2 text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-xs"
+                            onClick={() => recuperar(t.id)}
+                          >
+                            <Eye className="mr-1 h-3.5 w-3.5" />
+                            Devolver
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </Card>
       )}
 
@@ -655,34 +706,30 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
                   <th className="p-2 text-left font-medium">Concepto</th>
                   <th className="p-2 text-left font-medium">Descripción</th>
                   <th className="p-2 text-right font-medium">USD</th>
+                  <th className="w-16 p-2"></th>
                 </tr>
               </thead>
               <tbody>
-                {sueltos.map((m, i) => {
-                  const esInteres = CAT_INTERES.includes(m.categoria);
-                  const concepto = esInteres
-                    ? "Interés"
-                    : m.tipo === "Gasto"
-                      ? "Se prestó"
-                      : "Devolvió";
-                  return (
-                    <tr key={`${m.iso}-${i}`} className="border-b transition hover:bg-muted/40">
-                      <td className="p-2">
-                        <input
-                          type="checkbox"
-                          className="cursor-pointer"
-                          checked={seleccion.includes(m.descripcion)}
-                          onChange={() => alternarSeleccion(m.descripcion)}
-                          title={`Marcar «${m.descripcion}» para asignar`}
-                        />
-                      </td>
-                      <td className="p-2 tabular-nums">{m.fecha}</td>
-                      <td className="p-2">{concepto}</td>
-                      <td className="p-2 text-muted-foreground">{m.descripcion}</td>
-                      <td className="p-2 text-right tabular-nums">${usd(m.usd)}</td>
-                    </tr>
-                  );
-                })}
+                {sueltos.map((m, i) => (
+                  <tr key={`${m.iso}-${i}`} className="border-b transition hover:bg-muted/40">
+                    <td className="p-2">
+                      <input
+                        type="checkbox"
+                        className="cursor-pointer"
+                        checked={seleccion.includes(m.descripcion)}
+                        onChange={() => alternarSeleccion(m.descripcion)}
+                        title={`Marcar «${m.descripcion}» para asignar`}
+                      />
+                    </td>
+                    <td className="p-2 tabular-nums">{m.fecha}</td>
+                    <td className="p-2">{m.tipo === "Gasto" ? "Se prestó" : "Devolvió"}</td>
+                    <td className="p-2 text-muted-foreground">{m.descripcion}</td>
+                    <td className="p-2 text-right tabular-nums">${usd(m.usd)}</td>
+                    <td className="p-2 text-right">
+                      <AccionesMovimiento mov={m} onEditar={onEditar} onDescartar={descartar} />
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
