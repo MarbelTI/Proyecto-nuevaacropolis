@@ -1173,22 +1173,29 @@ export default function AsistenciasTab({
                         key={al}
                         className={`hover:bg-primary/5 ${fila % 2 === 1 ? "bg-muted/20" : ""}`}
                       >
-                        {/* La columna fija tiene que ser OPACA: con un gris
-                            translúcido las fechas se veían por debajo al
-                            desplazar a la derecha. El color se mezcla contra el
-                            fondo para que coincida con el rayado de la fila, y
-                            si el navegador no soporta color-mix se queda el
-                            fondo sólido, que tampoco deja ver nada detrás. */}
+                        {/*
+                          Un color plano y siempre el mismo, sin seguir el
+                          rayado de la fila.
+
+                          Antes se calculaba el tono con color-mix para imitar
+                          la franja gris. Eso hacía depender la opacidad de que
+                          el navegador entendiera la función: cuando no la
+                          entiende, la declaración entera se descarta y la
+                          celda se queda sin fondo. De ahí que se vieran unas
+                          filas pintadas y otras transparentes, con los meses
+                          pasando por debajo al desplazar.
+
+                          Que esta columna no lleve rayado no estorba: es fija
+                          y no se recorre con la vista como las de fechas.
+                          Distinguirse del resto incluso ayuda a leerla como lo
+                          que es, una columna anclada.
+
+                          El ancho es el mismo que declara su cabecera. Cuando
+                          no coincidían, el navegador tomaba el mayor y el
+                          encabezado quedaba corrido respecto a los nombres.
+                        */}
                         <td
-                          className="sticky left-0 z-10 w-[160px] max-w-[160px] truncate border-b border-r border-dashed border-[#bbb] bg-background px-1.5 py-1 text-[11px] font-medium"
-                          style={
-                            fila % 2 === 1
-                              ? {
-                                  backgroundColor:
-                                    "color-mix(in srgb, hsl(var(--muted)) 20%, hsl(var(--background)))",
-                                }
-                              : undefined
-                          }
+                          className="sticky left-0 z-20 w-[128px] max-w-[128px] truncate border-b border-r border-dashed border-[#bbb] bg-card px-1.5 py-1 text-[11px] font-medium"
                           title={al}
                         >
                           {al}
@@ -1455,7 +1462,10 @@ export default function AsistenciasTab({
                   <table className="w-full text-xs border-collapse">
                     <thead>
                       <tr className="border-b">
-                        <th className="sticky left-0 bg-background z-10 p-1 text-left font-medium min-w-[160px]">
+                        {/* Mismo ancho y mismo fondo sólido que en el cuerpo:
+                            si no coinciden, el navegador toma el mayor y la
+                            cabecera queda corrida respecto a los nombres. */}
+                        <th className="sticky left-0 z-30 w-[160px] max-w-[160px] bg-card p-1 text-left font-medium">
                           Participante
                         </th>
                         {meses.map((m) => (
@@ -1499,7 +1509,7 @@ export default function AsistenciasTab({
                         return (
                           <tr key={al} className="border-b border-muted/30 hover:bg-muted/20">
                             <td
-                              className="sticky left-0 bg-background z-10 p-1 text-xs truncate max-w-[160px]"
+                              className="sticky left-0 z-20 w-[160px] max-w-[160px] truncate bg-card p-1 text-xs"
                               title={al}
                             >
                               {al}
