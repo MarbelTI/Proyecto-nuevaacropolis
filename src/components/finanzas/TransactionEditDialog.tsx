@@ -108,7 +108,9 @@ function TransactionEditDialog({
     <Dialog open={!!editing} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Modificar transacción</DialogTitle>
+          {/* Título neutro a propósito: este diálogo se abre desde Transacciones
+              y desde Resumen, y debe verse igual venga de donde venga. */}
+          <DialogTitle>Transacciones</DialogTitle>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Fecha (dd/mm/aaaa)">
@@ -192,7 +194,7 @@ function TransactionEditDialog({
                 ))}
                 <SelectItem value="__editar__">
                   <span className="text-muted-foreground italic text-xs">
-                    ✎ Editar desde Categorías…
+                    ✎ Editar desde Settings…
                   </span>
                 </SelectItem>
               </SelectContent>

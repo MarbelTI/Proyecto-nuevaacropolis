@@ -58,13 +58,20 @@ const ETIQUETA_ROL: Record<string, string> = {
 };
 
 // Estilos del menú lateral: en escritorio cada ítem ocupa toda la fila.
+// El ancho es la clave de que el menú cambie de forma según la pantalla.
+//
+// En escritorio (lg) el menú es una columna lateral y cada opción ocupa todo
+// el ancho de esa columna. En pantallas estrechas —un teléfono, o la ventana
+// a media pantalla— el menú pasa a ser una barra horizontal, y ahí cada opción
+// debe medir lo que mida su texto: con w-full se apilarían una debajo de otra
+// y volveríamos a tener una columna, solo que ocupando el ancho entero.
 const NAV_ITEM =
-  "w-full justify-start gap-2 px-2.5 py-1.5 text-[13px] lg:w-full data-[state=active]:bg-background data-[state=active]:shadow-sm";
+  "w-auto justify-start gap-2 px-2.5 py-1.5 text-[13px] lg:w-full data-[state=active]:bg-background data-[state=active]:shadow-sm";
 const NAV_ICON = "h-3.5 w-3.5 shrink-0";
 // Las vistas de Finanzas cuelgan del grupo: van sangradas y algo más chicas
 // para que se lea de un vistazo que dependen de él.
 const NAV_SUB =
-  "w-full justify-start gap-2 py-1 pl-3 pr-2 text-[12px] text-muted-foreground lg:w-full data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm";
+  "w-auto justify-start gap-2 py-1 pl-3 pr-2 text-[12px] text-muted-foreground lg:w-full data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -375,7 +382,7 @@ function Index() {
               {userInfo.canAccessExisting && (
                 <TabsTrigger value="tx" className={NAV_ITEM}>
                   <Receipt className={NAV_ICON} /> Transacciones
-                  <span className="ml-auto rounded bg-background/60 px-1.5 py-0.5 text-[11px] font-normal">
+                  <span className="rounded bg-background/60 px-1.5 py-0.5 text-[11px] font-normal lg:ml-auto">
                     {transactions.list.length}
                   </span>
                 </TabsTrigger>
@@ -389,7 +396,7 @@ function Index() {
                     type="button"
                     onClick={() => setFinanzasAbierto((v) => !v)}
                     aria-expanded={finanzasAbierto}
-                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] font-medium hover:bg-background/60"
+                    className="flex w-auto items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] font-medium hover:bg-background/60 lg:w-full"
                   >
                     <BarChart3 className={NAV_ICON} /> Finanzas
                     <ChevronDown

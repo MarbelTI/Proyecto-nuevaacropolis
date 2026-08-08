@@ -94,6 +94,27 @@ const monthName = (iso: string) => {
   return d.toLocaleString("es", { month: "long" });
 };
 
+/**
+ * Fondos de las filas de la cuadrícula de asistencia.
+ *
+ * Tienen que ser OPACOS, sin excepción. La columna de participantes va fija
+ * (sticky) y hereda el fondo de su fila con bg-inherit; en cuanto ese fondo
+ * lleva alfa —bg-muted/20, bg-background/80, hover:bg-primary/5— las columnas
+ * de fechas se ven por debajo del nombre al desplazar la tabla a la derecha.
+ *
+ * Se mezcla contra --card, que es el fondo real de la tarjeta que envuelve la
+ * tabla, y no contra --background: en modo oscuro los dos no coinciden y la
+ * columna fija quedaba como una franja más oscura que el resto.
+ *
+ * Se usa color-mix sobre las variables tal cual están declaradas (oklch). El
+ * intento anterior las envolvía en hsl(), que con valores oklch produce una
+ * declaración inválida; el navegador la descarta y background-color vuelve a
+ * su valor inicial, que es transparent. De ahí el "uno pintado y uno no".
+ */
+const FILA_PAR = "bg-card";
+const FILA_IMPAR = "bg-[color:color-mix(in_oklab,var(--muted)_55%,var(--card))]";
+const FILA_HOVER = "hover:bg-[color:color-mix(in_oklab,var(--primary)_10%,var(--card))]";
+
 function nextMark(current: "" | "A" | "I" | "NC"): "" | "A" | "I" | "NC" {
   if (current === "") return "A";
   if (current === "A") return "I";
@@ -919,10 +940,12 @@ export default function AsistenciasTab({
           <TabsList>
             <TabsTrigger value="control">Control de Asistencia</TabsTrigger>
             <TabsTrigger value="analisis">Análisis por aula</TabsTrigger>
-            <TabsTrigger value="ficha">Ficha del participante</TabsTrigger>
             {user.canAccessDiagnostico && (
               <TabsTrigger value="global">Diagnóstico Global</TabsTrigger>
             )}
+            {/* La ficha va la última: se consulta de una persona concreta,
+                mientras que las tres anteriores son la vista de grupo. */}
+            <TabsTrigger value="ficha">Ficha del participante</TabsTrigger>
           </TabsList>
 
           <TabsContent value="control">
@@ -998,12 +1021,14 @@ export default function AsistenciasTab({
                 <table
                   className="text-xs border-collapse border-dashed border-[#bbb] table-fixed"
                   style={{
-                    width: semestreFechas.length * 30 + 160 + semestreReflexiones.length * 30,
+                    width: semestreFechas.length * 30 + 128 + semestreReflexiones.length * 30,
                   }}
                 >
                   <thead>
                     <tr>
-                      <th className="sticky left-0 bg-background z-10 p-1 text-left font-medium w-[160px] border-b border-r border-dashed border-[#bbb]">
+                      {/* La esquina también es celda fija: opaca y por encima
+                          de todo, o los meses se le meten por debajo. */}
+                      <th className="sticky left-0 z-30 w-[128px] border-b border-r border-dashed border-[#bbb] bg-card p-1 text-left font-medium">
                         Participante
                       </th>
                       {semestreMeses.map((m) => {
@@ -1030,7 +1055,7 @@ export default function AsistenciasTab({
                       )}
                     </tr>
                     <tr>
-                      <th className="sticky left-0 bg-background z-10 border-b border-r border-dashed border-[#bbb]"></th>
+                      <th className="sticky left-0 z-30 border-b border-r border-dashed border-[#bbb] bg-card"></th>
                       {semestreFechas.map((f, col) => {
                         const iniciaMes =
                           col > 0 && f.slice(0, 7) !== semestreFechas[col - 1].slice(0, 7);
@@ -1099,7 +1124,7 @@ export default function AsistenciasTab({
                     </tr>
                     {reflectionGroups.some((g) => g.isGroup) && (
                       <tr>
-                        <th className="sticky left-0 bg-background z-10 border-b border-r border-dashed border-[#bbb]"></th>
+                        <th className="sticky left-0 z-30 border-b border-r border-dashed border-[#bbb] bg-card"></th>
                         {semestreFechas.map((f) => (
                           <th key={f} className="border-b border-dashed border-[#bbb]"></th>
                         ))}
@@ -1544,18 +1569,6 @@ export default function AsistenciasTab({
             </Card>
           </TabsContent>
 
-          <TabsContent value="ficha">
-            <FichaParticipante
-              students={students}
-              tx={tx}
-              aulasMeta={aulasMeta}
-              records={records}
-              reflexionesMeta={reflexionesMeta}
-              reflexionAsistencia={reflexionAsistencia}
-              role={user.role}
-            />
-          </TabsContent>
-
           {user.canAccessDiagnostico && (
             <TabsContent value="global">
               <Card className="p-4">
@@ -1569,6 +1582,18 @@ export default function AsistenciasTab({
               </Card>
             </TabsContent>
           )}
+
+          <TabsContent value="ficha">
+            <FichaParticipante
+              students={students}
+              tx={tx}
+              aulasMeta={aulasMeta}
+              records={records}
+              reflexionesMeta={reflexionesMeta}
+              reflexionAsistencia={reflexionAsistencia}
+              role={user.role}
+            />
+          </TabsContent>
         </Tabs>
       )}
 

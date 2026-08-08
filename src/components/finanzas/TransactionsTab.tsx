@@ -15,9 +15,16 @@ import {
 } from "@/lib/fees-logic";
 import { exportTransactionsExcel } from "@/lib/excel-export";
 import { parseExcelToTransactions, rellenarTasasFaltantes } from "@/lib/excel-import";
+import {
+  armarMensaje,
+  usePlantillas,
+  PLANTILLAS_POR_DEFECTO,
+  type Plantillas,
+} from "@/lib/mensajes-store";
 import { TransactionEditDialog } from "@/components/finanzas/TransactionEditDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -54,6 +61,8 @@ import {
   ClipboardCopy,
   MoreHorizontal,
   ListChecks,
+  Lock,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -246,6 +255,179 @@ function SimpleListEditor({
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+// ---------------- Editor de mensajes de WhatsApp ----------------
+
+/** Nombre inventado para la vista previa: así se ve qué reemplaza a {nombre}. */
+const NOMBRE_EJEMPLO = "María Pérez";
+
+/**
+ * Una entrada por plantilla. El `conceptoEjemplo` es solo decorado de la vista
+ * previa —el concepto real lo arma el sistema con los datos de cada persona—,
+ * pero está redactado igual que el de verdad para que lo que se ve en pantalla
+ * sea lo que va a salir en el WhatsApp.
+ */
+const MENSAJES_META: {
+  clave: keyof Plantillas;
+  titulo: string;
+  cuando: string;
+  conceptoEjemplo: string;
+}[] = [
+  {
+    clave: "pago",
+    titulo: "Pago recibido",
+    cuando: "Se envía desde la tabla de transacciones al confirmar un pago.",
+    conceptoEjemplo: "Monto: $12.00 (480.00 Bs). Concepto: mensualidad de abr-2026.",
+  },
+  {
+    clave: "deuda",
+    titulo: "Mensualidades pendientes",
+    cuando: "Se envía desde Solvencias a quien tiene meses sin pagar.",
+    conceptoEjemplo: "Tienes 2 mensualidades pendientes, equivalentes a $24.00.",
+  },
+  {
+    clave: "alDia",
+    titulo: "Cuenta al día",
+    cuando: "Se envía desde Solvencias a quien no debe nada.",
+    conceptoEjemplo: "Tu cuenta está al día.",
+  },
+  {
+    clave: "clase",
+    titulo: "Recordatorio de clase",
+    cuando: "Se envía a quienes pagan clase por clase.",
+    conceptoEjemplo: "La clase de hoy tiene un valor de $5.00.",
+  },
+];
+
+function BloquePlantilla({
+  meta,
+  plantillas,
+  setPlantillas,
+}: {
+  meta: (typeof MENSAJES_META)[number];
+  plantillas: Plantillas;
+  setPlantillas: (n: Plantillas) => void;
+}) {
+  const { clave, titulo, cuando, conceptoEjemplo } = meta;
+  const plantilla = plantillas[clave];
+  const porDefecto = PLANTILLAS_POR_DEFECTO[clave];
+  const esPorDefecto =
+    plantilla.saludo === porDefecto.saludo && plantilla.cierre === porDefecto.cierre;
+
+  const editar = (campo: "saludo" | "cierre", valor: string) =>
+    setPlantillas({ ...plantillas, [clave]: { ...plantilla, [campo]: valor } });
+
+  // La vista previa se pinta por partes para poder resaltar el concepto; el
+  // resultado es el mismo que devuelve armarMensaje.
+  const primerNombre = NOMBRE_EJEMPLO.split(" ")[0];
+  const conNombre = (t: string) => t.replace(/\{nombre\}/g, primerNombre).trim();
+
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-semibold">{titulo}</h4>
+          <p className="text-xs text-muted-foreground">{cuando}</p>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={esPorDefecto}
+          onClick={() => {
+            setPlantillas({ ...plantillas, [clave]: { ...porDefecto } });
+            toast.success(`"${titulo}" restaurado al texto original`);
+          }}
+          title="Vuelve al texto que trae el sistema"
+        >
+          <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Restaurar
+        </Button>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Saludo (va antes)</label>
+          <Textarea
+            value={plantilla.saludo}
+            onChange={(e) => editar("saludo", e.target.value)}
+            rows={3}
+            className="mt-1 text-sm"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Cierre (va después)</label>
+          <Textarea
+            value={plantilla.cierre}
+            onChange={(e) => editar("cierre", e.target.value)}
+            rows={3}
+            className="mt-1 text-sm"
+          />
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <p className="mb-1 text-xs font-medium text-muted-foreground">
+          Vista previa (ejemplo con {NOMBRE_EJEMPLO})
+        </p>
+        <p className="rounded-md border bg-muted/40 p-3 text-sm leading-relaxed">
+          {conNombre(plantilla.saludo)}{" "}
+          <span
+            className="rounded bg-amber-200/70 px-1 py-0.5 dark:bg-amber-900/50"
+            title="Esta parte la escribe el sistema con los datos reales. No se puede editar."
+          >
+            <Lock className="mr-1 inline h-3 w-3 align-[-1px] opacity-70" />
+            {conceptoEjemplo}
+          </span>{" "}
+          {conNombre(plantilla.cierre)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function EditorMensajes({
+  plantillas,
+  setPlantillas,
+}: {
+  plantillas: Plantillas;
+  setPlantillas: (n: Plantillas) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
+        <p className="text-sm font-medium text-foreground">
+          Cada mensaje se arma en tres partes: saludo + concepto + cierre.
+        </p>
+        <p className="mt-1.5">
+          El <strong className="text-foreground">saludo</strong> y el{" "}
+          <strong className="text-foreground">cierre</strong> los escribes tú: ahí está el tono.
+          Donde pongas <code className="rounded bg-background px-1 py-0.5">{"{nombre}"}</code>{" "}
+          aparecerá el primer nombre de la persona.
+        </p>
+        <p className="mt-1.5">
+          El trozo del medio —el{" "}
+          <span className="rounded bg-amber-200/70 px-1 py-0.5 text-foreground dark:bg-amber-900/50">
+            <Lock className="mr-1 inline h-3 w-3 align-[-1px] opacity-70" />
+            concepto
+          </span>
+          — lo escribe el sistema con los datos reales de cada persona: cuánto pagó, cuántos meses
+          debe, de qué mes. <strong className="text-foreground">No se puede editar</strong>, y es a
+          propósito: si se dejara escribir a mano, bastaría un descuido para mandarle a alguien una
+          cifra que no es la suya, o para borrarla y dejar el mensaje sin decir nada.
+        </p>
+        <p className="mt-1.5">Los cambios se guardan solos en este navegador.</p>
+      </div>
+
+      {MENSAJES_META.map((meta) => (
+        <BloquePlantilla
+          key={meta.clave}
+          meta={meta}
+          plantillas={plantillas}
+          setPlantillas={setPlantillas}
+        />
+      ))}
     </div>
   );
 }
@@ -514,6 +696,7 @@ export function TransactionsTab({
   const [filterDescripcion, setFilterDescripcion] = useState<string>("");
   const [filterBanco, setFilterBanco] = useState<string>("");
   const [filterMes, setFilterMes] = useState<string>("");
+  const [plantillas, setPlantillas] = usePlantillas();
 
   /**
    * Movimientos repetidos: los que coinciden en TODOS sus campos con otro.
@@ -727,7 +910,7 @@ export function TransactionsTab({
   return (
     <Card className="p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold">Transacciones acumuladas</h2>
+        <h2 className="text-lg font-semibold">Histórico de transacciones</h2>
         <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
@@ -754,7 +937,7 @@ export function TransactionsTab({
               setEditing(empty);
             }}
           >
-            <Plus className="mr-1 h-4 w-4" /> Fila
+            <Plus className="mr-1 h-4 w-4" /> Nuevo registro
           </Button>
           <input
             type="file"
@@ -873,9 +1056,6 @@ export function TransactionsTab({
           <Button variant="outline" size="sm" onClick={limpiarFiltros} disabled={!anyFilterActive}>
             Limpiar filtros
           </Button>
-          <Button size="sm" onClick={exportExcel}>
-            <Download className="mr-1.5 h-4 w-4" /> Excel
-          </Button>
 
           {/* El modo selección ya no tiene botón propio en la barra, así que
               necesita un aviso visible mientras está encendido. */}
@@ -896,6 +1076,9 @@ export function TransactionsTab({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onClick={exportExcel}>
+                <Download className="mr-2 h-4 w-4" /> Exportar a Excel
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => document.getElementById("importExcel")?.click()}>
                 <Upload className="mr-2 h-4 w-4" /> Importar Excel
               </DropdownMenuItem>
@@ -909,7 +1092,7 @@ export function TransactionsTab({
                 {selectMode ? "Salir de selección" : "Seleccionar filas"}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setCatOpen(true)}>
-                <Settings className="mr-2 h-4 w-4" /> Categorías y bancos
+                <Settings className="mr-2 h-4 w-4" /> Settings
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -1118,10 +1301,14 @@ export function TransactionsTab({
                         );
                       const moneda =
                         r.moneda === "Bolívares" ? "Bs" : r.moneda === "Pesos" ? "COP" : "USD";
-                      const concepto = r.mensualidad
+                      const detalle = r.mensualidad
                         ? `mensualidad de ${r.mensualidad}`
                         : r.descripcion || `pago`;
-                      const msg = `¡Hola, ${s.nombre.split(" ")[0]}! Te confirmamos la recepción de tu pago por un monto de $${$(Number(r.montoUsd) || 0)} (${r.monto} ${moneda}) correspondiente a: ${concepto}. Tu cuenta se encuentra al día. ¡Gracias por formar parte de nuestra escuela!`;
+                      // El concepto es la parte factual y por eso se arma aquí,
+                      // fuera de las plantillas editables: las cifras salen del
+                      // movimiento registrado y nadie puede tocarlas por error.
+                      const concepto = `Monto: $${$(Number(r.montoUsd) || 0)} (${r.monto} ${moneda}). Concepto: ${detalle}.`;
+                      const msg = armarMensaje(plantillas.pago, s.nombre, concepto);
                       const url = whatsappUrl(s.telefono, msg);
                       return url ? (
                         <>
@@ -1417,13 +1604,14 @@ export function TransactionsTab({
       <Dialog open={catOpen} onOpenChange={setCatOpen}>
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Categorías</DialogTitle>
+            <DialogTitle>Settings</DialogTitle>
           </DialogHeader>
           <Tabs defaultValue="ing">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="ing">Ingresos</TabsTrigger>
               <TabsTrigger value="gas">Gastos</TabsTrigger>
               <TabsTrigger value="bn">Bancos</TabsTrigger>
+              <TabsTrigger value="msg">Mensajes</TabsTrigger>
             </TabsList>
             <TabsContent value="ing" className="mt-4">
               <SimpleListEditor
@@ -1445,6 +1633,9 @@ export function TransactionsTab({
                 setItems={setBancos}
                 placeholder="Nuevo banco/cuenta…"
               />
+            </TabsContent>
+            <TabsContent value="msg" className="mt-4">
+              <EditorMensajes plantillas={plantillas} setPlantillas={setPlantillas} />
             </TabsContent>
           </Tabs>
         </DialogContent>

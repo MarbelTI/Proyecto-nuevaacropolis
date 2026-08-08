@@ -67,6 +67,100 @@ function coerceEntries(raw: unknown): Entry[] {
   });
 }
 
+/** Quita tildes para poder comparar "García" con "garcia" sin falsos negativos. */
+function sinTildes(s: string): string {
+  // \p{Diacritic} en vez del rango de caracteres combinantes escrito a mano:
+  // esos caracteres son invisibles en el editor y cualquiera podría romperlos
+  // sin darse cuenta.
+  return s.normalize("NFD").replace(/\p{Diacritic}/gu, "");
+}
+
+/**
+ * Categorías cuyo movimiento pertenece a una persona concreta.
+ *
+ * Se compara por contenido y no contra la lista exacta porque el modelo devuelve
+ * variantes ("PRESTAMOS", "Préstamos, profesor") y con una comparación estricta
+ * la fila se escaparía de la normalización justo cuando más falta hace.
+ */
+function esCategoriaPrestamo(categoria: string): boolean {
+  const c = sinTildes(categoria).toLowerCase();
+  return c.includes("prestamo") || c.includes("ptamo");
+}
+
+/** Palabra suelta con la posición donde termina dentro del texto original. */
+type Palabra = { texto: string; fin: number };
+
+function palabrasDe(texto: string): Palabra[] {
+  const out: Palabra[] = [];
+  const re = /\S+/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(texto)) !== null) out.push({ texto: m[0], fin: m.index + m[0].length });
+  return out;
+}
+
+/** Clave de comparación: sin tildes, sin mayúsculas y sin la puntuación pegada. */
+function claveDePalabra(p: string): string {
+  return sinTildes(p)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Red de seguridad para la descripción de los préstamos.
+ *
+ * El prompt ya pide "Nombre Apellido: resto del concepto", pero el modelo se lo
+ * salta a menudo y devuelve "Ricardo García abono 10%" sin los dos puntos. La
+ * pestaña de Préstamos agrupa por lo que va ANTES de los dos puntos, así que sin
+ * ellos el movimiento puede quedarse sin dueño. Por eso no basta con el prompt:
+ * el modelo es probabilístico y esta parte tiene que salir bien siempre.
+ *
+ * Solo se repara el caso seguro: la descripción empieza por un nombre de la lista
+ * oficial de integrantes. Se colocan los dos puntos y se conserva intacto todo lo
+ * que venía detrás, que es de donde salen la tasa de interés ("abono 10%") y el
+ * detalle del movimiento. El nombre se sustituye por el de la lista para que las
+ * tildes y el uso de mayúsculas no partan a la misma persona en dos grupos.
+ *
+ * Lo que NO hace, a propósito: adivinar. Si la descripción no empieza por un
+ * nombre conocido se deja tal cual, porque un préstamo sin asignar es preferible
+ * a uno asignado a la persona equivocada.
+ */
+function normalizarDescripcionPrestamo(descripcion: string, nombres: string[]): string {
+  const desc = descripcion.trim();
+  // Ya trae el patrón acordado: no se toca, para no estropear lo que el modelo
+  // sí hizo bien.
+  if (!desc || desc.includes(":")) return desc;
+
+  const palabras = palabrasDe(desc);
+  if (!palabras.length) return desc;
+
+  // El nombre más largo primero: si la lista tiene "Ricardo" y "Ricardo García"
+  // como personas distintas, gana el más específico.
+  const candidatos = [...nombres].sort((a, b) => b.length - a.length);
+
+  for (const nombre of candidatos) {
+    const partes = palabrasDe(nombre)
+      .map((p) => claveDePalabra(p.texto))
+      .filter(Boolean);
+    // Tiene que sobrar texto después del nombre: si la descripción es solo el
+    // nombre no hay concepto que separar y añadir los dos puntos no aporta nada.
+    if (!partes.length || partes.length >= palabras.length) continue;
+
+    const coincide = partes.every((parte, i) => claveDePalabra(palabras[i].texto) === parte);
+    if (!coincide) continue;
+
+    const resto = desc
+      .slice(palabras[partes.length - 1].fin)
+      // A veces el modelo separa con guion o coma en vez de dos puntos; ese
+      // separador sobra porque los dos puntos los ponemos nosotros.
+      .replace(/^[\s:,;.\-–—]+/, "")
+      .trim();
+    if (!resto) return desc;
+    return `${nombre}: ${resto}`;
+  }
+
+  return desc;
+}
+
 function extractJson(text: string): unknown {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const candidate = fenced ? fenced[1] : text;
@@ -195,15 +289,37 @@ REGLAS DE CATEGORÍA:
 - Otras categorías de INGRESO posibles: ${ingresos.join(", ")}
 - Categorías de GASTO típicas: ${gastos.join(", ")}
 
-PRÉSTAMOS — REGLA DEL NOMBRE:
+PRÉSTAMOS — REGLA DEL NOMBRE (LA MÁS IMPORTANTE DE TODO ESTE PROMPT):
 Si la categoría es "PRESTAMO", "PRÉSTAMOS, PROFESOR" o "INTERESES PTAMO", la
-descripción DEBE empezar por el nombre de la persona seguido de dos puntos:
-    "Ricardo García: abono"
-    "Ricardo García: se le presta"
-El nombre va corregido contra la lista de alumnos de arriba si aparece ahí.
+descripción SIEMPRE tiene esta forma exacta:
+
+    Nombre Apellido: <el resto del concepto tal como está escrito en la hoja>
+
+Lo ÚNICO que añades son los dos puntos detrás del nombre. Todo lo que la
+administradora escribió después del nombre se copia IGUAL: no resumas, no
+acortes, no traduzcas y no borres nada (ni "abono", ni "se le presta", ni los
+porcentajes, ni los números). De ese texto se sacan después la tasa de interés
+y el detalle del movimiento, así que si lo pierdes, se pierde información.
+
+El nombre va corregido contra la LISTA OFICIAL DE ALUMNOS de arriba si aparece
+ahí (con la ortografía y las tildes de la lista, aunque en la hoja esté mal
+escrito).
+
+EJEMPLOS — lo escrito en la hoja → la descripción que debes devolver:
+- "Ricardo García abono 10%"      → "Ricardo García: abono 10%"
+- "Ricardo Garcia se le presta"   → "Ricardo García: se le presta"
+- "Maria Perez abono cuota 2"     → "María Pérez: abono cuota 2"
+- "abono préstamo"                → "abono préstamo"   (no dice de quién es: SIN dos puntos)
+
+EJEMPLOS DE LO QUE ESTÁ MAL (con la hoja diciendo "Ricardo García abono 10%"):
+- "Ricardo García"        ← MAL: se perdió "abono 10%"
+- "abono 10%"             ← MAL: se perdió el nombre
+- "Ricardo García abono"  ← MAL: faltan los dos puntos y se perdió el "10%"
+- "Ricardo García: abono" ← MAL: se perdió el "10%"
+
 Si en la hoja no se distingue de quién es el préstamo, deja la descripción tal
 cual SIN los dos puntos: es preferible que quede sin asignar a atribuírselo a
-la persona equivocada.
+la persona equivocada. Nunca inventes un nombre que no esté en la hoja.
 
 ESTRUCTURA DE LA HOJA (de izquierda a derecha):
 1. Fecha (dd/mm o dd/mm/aaaa)
@@ -220,7 +336,11 @@ CAMPOS A DEVOLVER POR ENTRADA:
 - mes: nombre del mes en español ("Abril", "Mayo", etc.)
 - tipo: "Ingreso" o "Gasto"
 - categoria: una de las categorías listadas
-- descripcion: nombre del alumno (corregido contra la lista) o concepto del movimiento. SIN la parte de "C/S xxx-yyyy". En préstamos, "Nombre Apellido: concepto" (ver regla del nombre).
+- descripcion: nombre del alumno (corregido contra la lista) o concepto del movimiento. SIN la parte de "C/S xxx-yyyy".
+  OBLIGATORIO en "PRESTAMO", "PRÉSTAMOS, PROFESOR" e "INTERESES PTAMO": va SIEMPRE como
+  "Nombre Apellido: <resto del concepto completo>", conservando palabra por palabra lo que
+  sigue al nombre en la hoja (ej. "Ricardo García: abono 10%"). Ver REGLA DEL NOMBRE arriba.
+  Solo se deja sin dos puntos cuando la hoja no dice de quién es el préstamo.
 - mensualidad: el periodo que se paga, ej "abr-2026", "mar-2026". Vacío si no aplica.
 - moneda: "USD", "Bolívares" o "Pesos"
 - monto: el monto en su moneda original, como número (usa punto decimal). Ej "12800.00", "20.00"
@@ -244,7 +364,13 @@ Devuelve SOLO JSON válido.`;
                   `\n\nAnaliza esta hoja del libro diario manuscrito y devuelve SOLO JSON con esta forma EXACTA:
 {"entries":[{"fecha":"","mes":"","tipo":"","categoria":"","descripcion":"","mensualidad":"","moneda":"","monto":"","tasa":"","monto_usd":""}]}
 
-Recuerda: una fila con dos monedas → DOS entradas. Corrige nombres usando la lista oficial. SOLO JSON.`,
+Recuerda: una fila con dos monedas → DOS entradas. Corrige nombres usando la lista oficial.
+Recuerda: en "PRESTAMO", "PRÉSTAMOS, PROFESOR" e "INTERESES PTAMO" la descripción va como
+"Nombre Apellido: resto del concepto", con TODO lo que sigue al nombre copiado tal como está
+en la hoja — "Ricardo García abono 10%" se devuelve como "Ricardo García: abono 10%", nunca
+como "Ricardo García" ni como "Ricardo García: abono". Si la hoja no dice de quién es el
+préstamo, va sin dos puntos.
+SOLO JSON.`,
               },
               {
                 type: "image",
@@ -265,5 +391,14 @@ Recuerda: una fila con dos monedas → DOS entradas. Corrige nombres usando la l
       console.error("OCR raw output:", text.slice(0, 500));
       throw new Error("La IA no devolvió JSON válido. Intenta de nuevo.");
     }
-    return { entries: coerceEntries(parsed), raw: text };
+    // Los nombres salen de la misma lista que ya vio el modelo, así que la
+    // corrección de aquí y la que hizo él apuntan siempre a la misma persona.
+    const nombresAlumnos = (data.students ?? []).map((s) => s.nombre.trim()).filter(Boolean);
+    const entries = coerceEntries(parsed).map((e) =>
+      esCategoriaPrestamo(e.categoria)
+        ? { ...e, descripcion: normalizarDescripcionPrestamo(e.descripcion, nombresAlumnos) }
+        : e,
+    );
+
+    return { entries, raw: text };
   });

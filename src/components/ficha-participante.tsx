@@ -9,7 +9,7 @@ import type {
   ReflexionMeta,
   ReflexionAsistencia,
 } from "@/lib/attendance-store";
-import { calcularCuotasDebidas, cuotaMensualUSD, currentYm } from "@/lib/fees-logic";
+import { calcularCuotasDebidas, currentYm } from "@/lib/fees-logic";
 
 /** Los mismos colores validados que usa el Diagnóstico Global. */
 const C_ASIST = "#3F8A5F";
@@ -142,6 +142,15 @@ export function FichaParticipante({
       .sort((a, b) => b.iso.localeCompare(a.iso));
   }, [tx, persona]);
 
+  /**
+   * Aquí NO se expone la cuota individual, a propósito.
+   *
+   * Hay personas becadas y personas que pagan menos de los 20 USD estándar.
+   * Esta ficha se abre delante de quien sea —en clase, en el mostrador—, así
+   * que mostrar la cuota de la persona dejaría a la vista de terceros que paga
+   * menos que el resto. Se conservan los meses debidos y el total, que es lo
+   * que finanzas necesita para gestionar el cobro.
+   */
   const deuda = useMemo(() => {
     if (!persona) return null;
     const ym = currentYm();
@@ -149,7 +158,6 @@ export function FichaParticipante({
     const ultimoYm = ultimo ? ultimo.iso.slice(0, 7) : null;
     return {
       ...calcularCuotasDebidas(persona, ultimoYm, ym, ultimo?.usd),
-      cuotaActual: cuotaMensualUSD(persona, ym),
       ultimo,
     };
   }, [persona, pagos]);
@@ -300,11 +308,7 @@ export function FichaParticipante({
               </div>
 
               {deuda && (
-                <div className="mb-3 grid grid-cols-3 gap-2">
-                  <div className="rounded-lg border p-2">
-                    <div className="text-[11px] text-muted-foreground">Cuota del mes</div>
-                    <div className="text-lg font-bold tabular-nums">${usd(deuda.cuotaActual)}</div>
-                  </div>
+                <div className="mb-3 grid grid-cols-2 gap-2">
                   <div className="rounded-lg border p-2">
                     <div className="text-[11px] text-muted-foreground">Meses debidos</div>
                     <div className="text-lg font-bold tabular-nums">{deuda.meses}</div>
