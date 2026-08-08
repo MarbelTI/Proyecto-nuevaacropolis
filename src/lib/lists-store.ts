@@ -67,7 +67,9 @@ export type Transaction = {
 function parseMoney(s: unknown): number {
   if (typeof s === "number" && isFinite(s)) return s;
   if (typeof s !== "string") return 0;
-  let clean = s.trim().replace(/[^0-9,\-\.]/g, "");
+  // El punto no necesita barra invertida dentro de los corchetes: ahí ya es un
+  // punto literal, no el comodín "cualquier carácter".
+  let clean = s.trim().replace(/[^0-9,\-.]/g, "");
   if (clean.includes(",") && clean.includes(".")) {
     const lastDot = clean.lastIndexOf(".");
     const lastComma = clean.lastIndexOf(",");
@@ -292,7 +294,6 @@ export function useEditableStudents(): [Student[], (next: Student[]) => void] {
     } catch {
       setItems(seedFromDefault());
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const setter = (next: Student[]) => {
     setItems(next);
@@ -317,6 +318,12 @@ export function useTransactions(): {
 } {
   const [list, setList] = useState<Transaction[]>([]);
   useEffect(() => {
+    // Aquí `any` es lo honesto: esto sale de localStorage, escrito por
+    // versiones anteriores de la app cuando los montos eran texto y el OCR
+    // ponía el año mal. Las dos migraciones de abajo existen precisamente para
+    // llevarlo a la forma actual; tipar la entrada como `Transaction` sería
+    // afirmar algo que todavía no es cierto.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let data = load<any[]>(K_TX, []);
 
     // Migración string → number (una vez)
@@ -335,6 +342,7 @@ export function useTransactions(): {
 
     // Migrar fechas 2024 → 2026 (OCR asignó año incorrecto)
     let changed = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data = data.map((t: any) => {
       if (t.fecha && t.fecha.includes("/2024")) {
         changed = true;

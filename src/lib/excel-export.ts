@@ -1,6 +1,9 @@
 import * as XLSX from "xlsx";
 import type { Transaction } from "./lists-store";
 
+/** Lo que puede haber en una celda: un rótulo, un importe, o nada. */
+type CeldaHoja = string | number | null;
+
 function todayIso(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -111,7 +114,9 @@ export function exportResumenExcel(
 
   const maxRecords = Math.max(0, ...allCats.map((c) => catData[c].length));
 
-  const rm: any[][] = [];
+  // Una hoja de cálculo es una rejilla de celdas sueltas: texto en las
+  // cabeceras, números en los importes y null donde esa categoría no llega.
+  const rm: CeldaHoja[][] = [];
 
   // Fila 1: encabezados de categoría
   rm.push([...allCats]);
@@ -265,7 +270,7 @@ export function exportInformeOina(
   const fmtNum = '#,##0.00;(#,##0.00);"-"';
   const fmtPct = '0.0%;(0.0%);"-"';
 
-  const rm: any[][] = [];
+  const rm: CeldaHoja[][] = [];
   rm.push(["Informe OINA — " + mesLabel + " " + year]);
   rm.push([]);
   rm.push(["CUENTAS", "DEBE", "HABER", "ACUMULADO", "% DEBE", "% HABER"]);

@@ -17,13 +17,20 @@ function bcvUrlCandidates(year: number, quarter: number): string[] {
   for (const prefix of prefixCandidates) {
     // La letra principal corresponde al trimestre (a=Q1, b=Q2, c=Q3, d=Q4)
     const L = letters[quarter - 1];
-    if (L) out.push(`https://www.bcv.org.ve/sites/default/files/EstadisticasGeneral/${prefix}${L}${yy}_smc.xls`);
+    if (L)
+      out.push(
+        `https://www.bcv.org.ve/sites/default/files/EstadisticasGeneral/${prefix}${L}${yy}_smc.xls`,
+      );
     // También probar todas las letras como fallback
     for (const L of letters) {
-      out.push(`https://www.bcv.org.ve/sites/default/files/EstadisticasGeneral/${prefix}${L}${yy}_smc.xls`);
+      out.push(
+        `https://www.bcv.org.ve/sites/default/files/EstadisticasGeneral/${prefix}${L}${yy}_smc.xls`,
+      );
     }
     // Formato sin letra:
-    out.push(`https://www.bcv.org.ve/sites/default/files/EstadisticasGeneral/${prefix}${yy}_smc.xls`);
+    out.push(
+      `https://www.bcv.org.ve/sites/default/files/EstadisticasGeneral/${prefix}${yy}_smc.xls`,
+    );
   }
   return [...new Set(out)]; // eliminar duplicados
 }
@@ -41,13 +48,20 @@ function sheetNameToIso(name: string): string | null {
 
 function fetchXlsBuffer(url: string): Promise<Uint8Array | null> {
   return new Promise((resolve) => {
-    const req = https.get(url, { agent: bcvAgent, headers: { "User-Agent": "Mozilla/5.0 SISFIA" } }, (res) => {
-      const chunks: Buffer[] = [];
-      res.on("data", (c: Buffer) => chunks.push(c));
-      res.on("end", () => resolve(new Uint8Array(Buffer.concat(chunks))));
-    });
+    const req = https.get(
+      url,
+      { agent: bcvAgent, headers: { "User-Agent": "Mozilla/5.0 SISFIA" } },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (c: Buffer) => chunks.push(c));
+        res.on("end", () => resolve(new Uint8Array(Buffer.concat(chunks))));
+      },
+    );
     req.on("error", () => resolve(null));
-    req.setTimeout(15000, () => { req.destroy(); resolve(null); });
+    req.setTimeout(15000, () => {
+      req.destroy();
+      resolve(null);
+    });
   });
 }
 
@@ -70,7 +84,10 @@ async function readXlsRates(buf: Uint8Array): Promise<BcvRow[]> {
 // Cache en memoria de la URL que funcionó para cada trimestre.
 const workingUrlCache = new Map<string, string>(); // key: "${year}-${quarter}"
 
-async function fetchQuarterRows(year: number, quarter: number): Promise<{ rows: BcvRow[]; source: string } | null> {
+async function fetchQuarterRows(
+  year: number,
+  quarter: number,
+): Promise<{ rows: BcvRow[]; source: string } | null> {
   const cacheKey = `${year}-${quarter}`;
   const cachedUrl = workingUrlCache.get(cacheKey);
   if (cachedUrl) {
@@ -115,7 +132,8 @@ export const fetchBcvForDate = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => DateInput.parse(d))
   .handler(async ({ data }): Promise<{ rows: BcvRow[]; source: string } | null> => {
     const [ys, ms] = data.isoDate.split("-");
-    const y = Number(ys), m = Number(ms);
+    const y = Number(ys),
+      m = Number(ms);
     const q = quarterOf(m);
     const res = await fetchQuarterRows(y, q);
     if (res) return res;
@@ -129,7 +147,9 @@ export const fetchBcvForDate = createServerFn({ method: "POST" })
           return { rows: [{ isoDate: iso, rate: j.promedio }], source: "dolarapi.com" };
         }
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return null;
   });
 

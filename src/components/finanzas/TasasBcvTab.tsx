@@ -10,10 +10,10 @@ import { toast } from "sonner";
 
 function todayIso(): string {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 function isoToFecha(iso: string): string {
-  const [y,m,d] = iso.split("-");
+  const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;
 }
 
@@ -37,10 +37,17 @@ export function TasasBcvTab({ bcv }: { bcv: ReturnType<typeof useBcvRates> }) {
           if (!bcv.rates[r.isoDate]) nuevas[r.isoDate] = r.rate;
         }
         const c = Object.keys(nuevas).length;
-        if (c) { bcv.merge(nuevas); total += c; }
-      } catch { /* ignore */ }
+        if (c) {
+          bcv.merge(nuevas);
+          total += c;
+        }
+      } catch {
+        /* ignore */
+      }
     }
-    toast.success(total ? `${total} tasas cargadas desde el BCV` : "No se encontraron nuevas tasas");
+    toast.success(
+      total ? `${total} tasas cargadas desde el BCV` : "No se encontraron nuevas tasas",
+    );
     setLoadingAuto(false);
   };
 
@@ -76,13 +83,16 @@ export function TasasBcvTab({ bcv }: { bcv: ReturnType<typeof useBcvRates> }) {
 
   const agregarManual = () => {
     const r = Number(nuevaTasa);
-    if (!r || r <= 0) { toast.error("Tasa inválida"); return; }
+    if (!r || r <= 0) {
+      toast.error("Tasa inválida");
+      return;
+    }
     bcv.set(nuevaFecha, r);
     setNuevaTasa("");
     toast.success("Tasa guardada");
   };
 
-  const rows = Object.entries(bcv.rates).sort((a,b)=>b[0].localeCompare(a[0]));
+  const rows = Object.entries(bcv.rates).sort((a, b) => b[0].localeCompare(a[0]));
 
   useEffect(() => {
     const cur = Object.keys(bcv.rates).filter((k) => !k.startsWith("2025"));
@@ -96,23 +106,39 @@ export function TasasBcvTab({ bcv }: { bcv: ReturnType<typeof useBcvRates> }) {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">Tasas BCV (bolívares por dólar)</h2>
-          <p className="text-xs text-muted-foreground">
-            {rows.length} días cargados.
-          </p>
+          <p className="text-xs text-muted-foreground">{rows.length} días cargados.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={cargarTrimestres} disabled={loadingAuto} size="sm">
-            {loadingAuto ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            {loadingAuto ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
             Actualizar tasas
           </Button>
-          <input type="file" id="importBcvXls" accept=".xls,.xlsx" style={{display:"none"}}
+          <input
+            type="file"
+            id="importBcvXls"
+            accept=".xls,.xlsx"
+            style={{ display: "none" }}
             onChange={async (e) => {
-              const f = e.target.files?.[0]; if (f) await importarXls(f);
+              const f = e.target.files?.[0];
+              if (f) await importarXls(f);
               e.target.value = "";
-            }} />
-          <Button variant="outline" size="sm" disabled={loadingImport}
-            onClick={() => document.getElementById("importBcvXls")?.click()}>
-            {loadingImport ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+            }}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loadingImport}
+            onClick={() => document.getElementById("importBcvXls")?.click()}
+          >
+            {loadingImport ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="mr-2 h-4 w-4" />
+            )}
             Importar XLS
           </Button>
         </div>
@@ -121,14 +147,25 @@ export function TasasBcvTab({ bcv }: { bcv: ReturnType<typeof useBcvRates> }) {
       <div className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border bg-muted/30 p-3">
         <div>
           <label className="text-xs text-muted-foreground">Fecha</label>
-          <input type="date" value={nuevaFecha} onChange={(e)=>setNuevaFecha(e.target.value)}
-            className="block rounded border bg-background px-2 py-1 text-sm" />
+          <input
+            type="date"
+            value={nuevaFecha}
+            onChange={(e) => setNuevaFecha(e.target.value)}
+            className="block rounded border bg-background px-2 py-1 text-sm"
+          />
         </div>
         <div>
           <label className="text-xs text-muted-foreground">Tasa Bs/$</label>
-          <Input value={nuevaTasa} onChange={(e)=>setNuevaTasa(e.target.value)} className="w-32" placeholder="212.34" />
+          <Input
+            value={nuevaTasa}
+            onChange={(e) => setNuevaTasa(e.target.value)}
+            className="w-32"
+            placeholder="212.34"
+          />
         </div>
-        <Button onClick={agregarManual}><Plus className="mr-2 h-4 w-4" /> Guardar tasa</Button>
+        <Button onClick={agregarManual}>
+          <Plus className="mr-2 h-4 w-4" /> Guardar tasa
+        </Button>
       </div>
 
       <div className="max-h-[60vh] overflow-y-auto">
@@ -140,13 +177,19 @@ export function TasasBcvTab({ bcv }: { bcv: ReturnType<typeof useBcvRates> }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(([iso,r]) => (
+            {rows.map(([iso, r]) => (
               <tr key={iso} className="border-b last:border-0">
                 <td className="p-2">{isoToFecha(iso)}</td>
                 <td className="p-2 text-right tabular-nums">{r.toFixed(4)}</td>
               </tr>
             ))}
-            {!rows.length && <tr><td colSpan={2} className="py-8 text-center text-muted-foreground">Sin tasas</td></tr>}
+            {!rows.length && (
+              <tr>
+                <td colSpan={2} className="py-8 text-center text-muted-foreground">
+                  Sin tasas
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

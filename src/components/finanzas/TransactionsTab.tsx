@@ -22,6 +22,7 @@ import {
   type Plantillas,
 } from "@/lib/mensajes-store";
 import { TransactionEditDialog } from "@/components/finanzas/TransactionEditDialog";
+import { CalculadoraDialog } from "@/components/finanzas/CalculadoraDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -63,6 +64,7 @@ import {
   ListChecks,
   Lock,
   RotateCcw,
+  Calculator,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -696,6 +698,7 @@ export function TransactionsTab({
   const [filterDescripcion, setFilterDescripcion] = useState<string>("");
   const [filterBanco, setFilterBanco] = useState<string>("");
   const [filterMes, setFilterMes] = useState<string>("");
+  const [calcOpen, setCalcOpen] = useState(false);
   const [plantillas, setPlantillas] = usePlantillas();
 
   /**
@@ -938,6 +941,17 @@ export function TransactionsTab({
             }}
           >
             <Plus className="mr-1 h-4 w-4" /> Nuevo registro
+          </Button>
+          {/* Va pegada a "Nuevo registro" porque es cuando hace falta: al
+              anotar un pago que no se hizo a la tasa del BCV. Discreta a
+              propósito — se usa de vez en cuando, no todos los días. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setCalcOpen(true)}
+            title="Calculadora de conversión (montos y tasas)"
+          >
+            <Calculator className="mr-1 h-4 w-4" /> Calculadora
           </Button>
           <input
             type="file"
@@ -1578,6 +1592,10 @@ export function TransactionsTab({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Siempre montada (no `{calcOpen && …}`): así lo tecleado sigue ahí si
+          se cierra para mirar un movimiento y se vuelve a abrir. */}
+      <CalculadoraDialog open={calcOpen} onOpenChange={setCalcOpen} bcvRates={bcvRates} />
 
       <TransactionEditDialog
         editing={editing}

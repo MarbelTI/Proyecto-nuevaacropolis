@@ -1,8 +1,6 @@
 function readEnv(name: string): string {
   return (
-    (process.env[name] as string | undefined) ??
-    (import.meta.env[name] as string | undefined) ??
-    ""
+    (process.env[name] as string | undefined) ?? (import.meta.env[name] as string | undefined) ?? ""
   );
 }
 
