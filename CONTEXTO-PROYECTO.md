@@ -88,7 +88,10 @@ src/
 │   │   ├── AuthDialog.tsx          Entrar, registrarse, recuperar contraseña
 │   │   └── CuentasPendientes.tsx   Aprobar cuentas nuevas (solo super_admin)
 │   │
-│   └── ui/                     Componentes shadcn/ui (base de la interfaz)
+│   └── ui/                     Componentes shadcn/ui en uso (button, card,
+│                               input, dialog, select, tabs, textarea,
+│                               dropdown-menu, sonner). El resto del catálogo
+│                               que traía la plantilla se eliminó por no usarse
 │
 ├── lib/
 │   ├── branding.ts             ⭐ Nombre visible de la app. Vive AQUÍ y solo aquí
@@ -116,7 +119,6 @@ src/
 │       ├── students.functions.ts      Sincroniza alumnos (con vistas por rol)
 │       └── attendance.functions.ts    Sincroniza asistencias (tablas att_)
 │
-├── hooks/use-mobile.tsx        Detecta pantalla pequeña
 ├── styles.css                  Tailwind v4 y la paleta de colores
 ├── router.tsx / start.ts       Arranque del enrutador
 ├── server.ts                   Envoltorio de SSR que atrapa los errores

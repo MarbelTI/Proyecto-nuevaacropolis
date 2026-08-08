@@ -1,89 +1,73 @@
-# SISFIA — Nueva Acrópolis San Cristóbal
+# Mnemósine — Nueva Acrópolis San Cristóbal
 
-App web para la gestión de la escuela Nueva Acrópolis SC: control de asistencias (52 clases/año), finanzas (ingresos/egresos), solvencias de alumnos, diagnóstico global y OCR de cuadernos contables.
+Aplicación web de una sola página para la escuela Nueva Acrópolis SC. Reúne dos
+mundos que antes iban por separado:
 
-## Stack
+- **Escolásticas** — asistencia a las 52 clases del año, análisis por aula,
+  diagnóstico global y ficha de cada participante.
+- **Finanzas** — libro diario con lectura por OCR, transacciones, resumen
+  mensual, análisis anual, préstamos, tasas BCV y solvencias.
 
-- **Framework**: TanStack Start (React + SSR + Server Functions)
-- **Lenguaje**: TypeScript
-- **Estilos**: Tailwind CSS + shadcn/ui (Radix primitives)
-- **Build**: Vite + Nitro
-- **Base de datos**: Supabase (PostgreSQL + RLS)
-- **Auth**: Supabase Auth (Google OAuth), roles por usuario
-- **OCR**: Gemini API (IA) para extraer transacciones de imágenes
-- **Excel**: `xlsx` (SheetJS) para importar/exportar
-- **Despliegue**: Vercel (auto-deploy desde GitHub main)
+Cada persona entra con su correo y solo ve la parte que le corresponde.
 
-## Desarrollo
+Nombre interno del proyecto: **SISFIA**.
+Producción: <https://nueva-acropolis-sc.vercel.app>
+
+## Arrancar en local
 
 ```bash
 npm install
-npm run dev      # dev server
-npx tsc --noEmit # typecheck
-npx vite build   # build de producción
+npm run dev      # http://localhost:8080
 ```
+
+Antes hay que crear un archivo `.env` en la raíz con las variables de abajo.
+No se sube al repositorio.
+
+## Otros comandos
+
+```bash
+npm run build    # compilar para producción
+npx tsc --noEmit # comprobar tipos
+npm run lint     # revisar estilo del código
+npm run format   # formatear con Prettier
+```
+
+El despliegue en Vercel es automático en cada push a `main`.
 
 ## Variables de entorno
 
-- `SUPABASE_URL` — URL del proyecto Supabase
-- `SUPABASE_ANON_KEY` — anon key (pública, para client + RLS)
-- `SUPABASE_SERVICE_ROLE_KEY` — solo para server functions que requieren acceso elevado
-- `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` — expuestas al cliente
-- `GOOGLE_API_KEY` — clave de Gemini para OCR
-- `OPENROUTER_API_KEY` — alternativa de proveedor de IA
-- `SISFIA_DEV_BYPASS_AUTH=1` — SOLO desarrollo local (permite entrar sin Supabase)
-- `DATABASE_URL` — para migraciones/CLI de Supabase
+| Variable                   | Para qué                                         |
+| -------------------------- | ------------------------------------------------ |
+| `VITE_SUPABASE_URL`        | Dirección del proyecto Supabase                   |
+| `VITE_SUPABASE_ANON_KEY`   | Clave pública de Supabase                         |
+| `GOOGLE_API_KEY`           | Gemini, para el OCR del libro diario              |
+| `GEMINI_MODEL`             | Opcional: fijar otra versión del modelo           |
+| `OPENROUTER_API_KEY`       | Proveedor de IA de reserva                        |
+| `SISFIA_DEV_BYPASS_AUTH=1` | SOLO en local: entra sin pedir sesión             |
 
-## Seguridad / privacidad
+Las que llevan `VITE_` viajan al navegador de cualquiera que abra la página:
+**ahí nunca va una clave secreta**. La aplicación comprueba al arrancar que la
+clave configurada no sea la `service_role` y avisa en pantalla si lo es.
 
-- Los roles se leen de la tabla `profiles` (nunca del navegador).
-- Las server functions validan sesión real de Supabase (`auth-guard.ts`).
-- No se guardan datos personales (nombres/emails reales) en el repositorio:
-  la semilla de alumnos está vacía y las migraciones usan hash `md5` de los emails.
-- `CODIGO_COMPLETO.txt`, `.output/` y `.vercel/` están en `.gitignore` (sin rastrear).
+## Dónde seguir leyendo
 
-## Estructura
+Este README solo sirve para poner el proyecto en marcha. Lo demás está en los
+dos documentos que se mantienen al día:
 
-```
-src/
-├── routes/
-│   ├── __root.tsx
-│   └── index.tsx              ← página principal (tabs de la app)
-├── components/
-│   ├── asistencias-tab.tsx    ← control de asistencias + análisis por aula
-│   ├── diagnostico-global.tsx ← diagnóstico global por aula
-│   └── finanzas/
-│       ├── DashboardTab.tsx   ← dashboard ejecutivo (KPIs, gráficos)
-│       ├── TransactionsTab.tsx← transacciones (CRUD)
-│       ├── ResumenTab.tsx     ← resumen mensual + exportación Excel
-│       ├── AnalisisTab.tsx    ← análisis de ingresos/gastos
-│       ├── TasasBcvTab.tsx    ← tasas BCV
-│       ├── OcrTab.tsx         ← OCR de cuadernos contables
-│       ├── SolvenciasTab.tsx  ← solvencias/cuotas de alumnos
-│       ├── SupabaseSync.tsx   ← sincronización con Supabase
-│       └── AuthDialog.tsx     ← login (Supabase Auth)
-├── lib/
-│   ├── api/
-│   │   ├── auth-guard.ts            ← sesión + roles (server)
-│   │   ├── auth.functions.ts        ← authCallback, logout, etc.
-│   │   ├── transactions.functions.ts← sync transacciones/tasas con Supabase
-│   │   └── bcv.functions.ts         ← tasa BCV
-│   ├── ocr.functions.ts       ← server function OCR (Gemini)
-│   ├── attendance-store.ts    ← store de asistencias (localStorage)
-│   ├── lists-store.ts         ← store de transacciones y alumnos
-│   ├── fees-logic.ts          ← lógica de cuotas y precios
-│   └── students-data.ts       ← aulas, categorías, seed vacía (sin nombres reales)
-├── components/ui/  ← shadcn/ui
-└── styles/         ← CSS global
-```
+| Pregunta                                          | Dónde se responde         |
+| ------------------------------------------------- | ------------------------- |
+| ¿Dónde está X y por qué está hecho así?           | `CONTEXTO-PROYECTO.md`    |
+| Estructura de archivos, roles, base de datos      | `CONTEXTO-PROYECTO.md`    |
+| ¿Qué funciona, qué falta, quién es quién?         | `ESTADO-DEL-PROYECTO.txt` |
+| ¿Qué se hizo en la última tanda de trabajo?       | `ESTADO-DEL-PROYECTO.txt` |
 
-## Base de datos (Supabase)
+## Reglas al tocar el código
 
-Migraciones en `supabase/migrations/`:
-
-- `20260715223600_rls_active_no_policies.sql`
-- `20260716000001_transactions_and_bcv_rates.sql`
-- `20260717000001_auth_profiles_and_rls.sql` — enum de roles, tabla `profiles`, trigger `handle_new_user` (roles por hash de email), policies RLS
-- `20260717000002_full_setup.sql` — setup completo (tablas + auth + RLS)
-
-Tablas principales: `aulas`, `participantes`, `aula_participantes`, `asistencias`, `temas`, `students`, `transactions`, `bcv_rates`, `profiles`.
+1. **Nada de datos reales en el repositorio** — ni Excel, ni nombres, ni
+   correos en texto plano. Los archivos reales van a `datos-privados/`, que está
+   ignorada por git.
+2. **No renombrar las claves de localStorage** (`sisfia_…`, `lector_ocr_…`):
+   quien ya tenga datos cargados los perdería.
+3. **El rol se lee siempre del servidor**, nunca de algo que mande el navegador.
+4. **`src/routeTree.gen.ts` no se edita a mano**, se regenera solo.
+5. **Todo el texto y los comentarios, en español.**
