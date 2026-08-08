@@ -84,6 +84,15 @@ export const syncStudentsToSupabase = createServerFn({ method: "POST" })
       global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
     });
 
+    // OJO al tocar esto: aquí se escriben TODAS las columnas, así que un campo
+    // que llegue vacío borra lo que hubiera en la base.
+    //
+    // Hoy no es un problema porque subir exige rol de control de estudio, y
+    // esos roles leen la tabla `students` entera: lo que suben es lo mismo que
+    // leyeron. Pero si algún día se le dan permisos de escritura a finanzas
+    // —que lee una vista recortada— pulsar "Subir a nube" borraría de un golpe
+    // las cédulas, correos y direcciones de todo el mundo. En ese caso hay que
+    // pasar a actualizar solo las columnas que el rol pudo ver.
     const mapped = data.students.map((s) => ({
       id: s.id,
       nombre: s.nombre,
