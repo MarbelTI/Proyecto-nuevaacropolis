@@ -640,7 +640,13 @@ export default function SolvenciasTab({
   attAulas?: AulaMeta[];
   attRecords?: AttendanceRecord[];
 }) {
-  const [filterActividad, setFilterActividad] = useState<"Activo" | "Retirado" | "Todos">("Activo");
+  const [filterActividad, setFilterActividad] = useState<
+    "Activo" | "Retirado" | "Otra sede" | "Todos"
+  >("Activo");
+  /** Personas marcadas para unir en una sola ficha. Se guardan por índice. */
+  const [seleccion, setSeleccion] = useState<number[]>([]);
+  const [uniendoAbierto, setUniendoAbierto] = useState(false);
+  const [nombreDefinitivo, setNombreDefinitivo] = useState("");
   const [q, setQ] = useState("");
   const [nuevaAula, setNuevaAula] = useState("");
   const [editIdx, setEditIdx] = useState<number | null>(null);
@@ -873,8 +879,17 @@ export default function SolvenciasTab({
     return students
       .map((st, idx) => ({ st, idx }))
       .filter(({ st }) => {
-        if (filterActividad !== "Todos" && (st.actividad ?? "Activo") !== filterActividad)
+        // Quien pertenece a otra sede no cuenta en las cuentas de esta. Se ve
+        // en "Todos" y en su propio filtro, pero no entre los activos: si no,
+        // engorda la lista de morosos con gente que no debe nada aquí.
+        const otraSede = !!st.sede?.trim();
+        if (filterActividad === "Otra sede") {
+          if (!otraSede) return false;
+        } else if (otraSede) {
+          if (filterActividad !== "Todos") return false;
+        } else if (filterActividad !== "Todos" && (st.actividad ?? "Activo") !== filterActividad) {
           return false;
+        }
         if (!s) return true;
         return (
           st.nombre.toLowerCase().includes(s) || st.aulas.some((a) => a.toLowerCase().includes(s))
@@ -897,6 +912,79 @@ export default function SolvenciasTab({
    * su deuda a la vista, que es la respuesta correcta.
    */
   const visibleStudents = filteredStudents;
+
+  const alternarSeleccion = (idx: number) =>
+    setSeleccion((prev) => (prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]));
+
+  /**
+   * Funde varias fichas en una sola.
+   *
+   * Es una fusión de verdad, no una tabla de equivalencias: al terminar queda
+   * UNA persona y las demás dejan de existir. Se pidió así expresamente —"al
+   * unirlos ya quedó, no que me muestres fulano con fulano"—, y tiene sentido:
+   * dos fichas de la misma persona no son un problema de presentación, son un
+   * error del registro.
+   *
+   * Se conserva lo más completo de cada una. Un dato vacío nunca pisa a uno
+   * lleno: si una ficha tiene teléfono y la otra no, gana la que lo tiene, sin
+   * importar cuál se eligiera como nombre definitivo.
+   */
+  const unirFichas = () => {
+    const nombre = nombreDefinitivo.trim();
+    if (!nombre || seleccion.length < 2) return;
+
+    const fichas = seleccion.map((i) => students[i]).filter(Boolean);
+    const primeroCon = <K extends keyof Student>(k: K): Student[K] | undefined => {
+      for (const f of fichas) {
+        const v = f[k];
+        if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+      }
+      return undefined;
+    };
+
+    const fusionada: Student = {
+      ...fichas[0],
+      nombre,
+      aulas: [...new Set(fichas.flatMap((f) => f.aulas))],
+      celador: fichas.some((f) => f.celador),
+      // Si alguna estaba activa, la persona está activa: dar por retirado a
+      // quien sigue viniendo es el error caro de los dos.
+      actividad: fichas.some((f) => (f.actividad ?? "Activo") === "Activo") ? "Activo" : "Retirado",
+      condicion: primeroCon("condicion"),
+      telefono: primeroCon("telefono"),
+      fechaIngreso: primeroCon("fechaIngreso"),
+      cedula: primeroCon("cedula"),
+      correo: primeroCon("correo"),
+      direccion: primeroCon("direccion"),
+      sede: primeroCon("sede"),
+      cuotaOverride: fichas.find((f) => typeof f.cuotaOverride === "number")?.cuotaOverride,
+      cuotaOverridesTemporales: fichas.find((f) => f.cuotaOverridesTemporales?.length)
+        ?.cuotaOverridesTemporales,
+    };
+
+    const aQuitar = new Set(seleccion);
+    const next = students.filter((_, i) => !aQuitar.has(i));
+    next.push(fusionada);
+    setStudents(next);
+    setSeleccion([]);
+    setUniendoAbierto(false);
+    setNombreDefinitivo("");
+    toast.success(`${fichas.length} fichas unidas en «${nombre}»`);
+  };
+
+  /** Marca a los seleccionados como pertenecientes a otra sede. */
+  const marcarOtraSede = () => {
+    const sede = prompt("¿De qué sede son?", "Táriba");
+    if (sede === null) return;
+    const marcados = new Set(seleccion);
+    setStudents(students.map((s, i) => (marcados.has(i) ? { ...s, sede: sede.trim() } : s)));
+    setSeleccion([]);
+    toast.success(
+      sede.trim()
+        ? `${marcados.size} persona(s) marcadas como de ${sede.trim()}`
+        : `${marcados.size} persona(s) devueltas a esta sede`,
+    );
+  };
 
   /**
    * Lo que las listas de asistencia saben de cada integrante YA registrado.
@@ -988,6 +1076,7 @@ export default function SolvenciasTab({
               <SelectContent>
                 <SelectItem value="Activo">Activos</SelectItem>
                 <SelectItem value="Retirado">Retirados</SelectItem>
+                <SelectItem value="Otra sede">Otra sede</SelectItem>
                 <SelectItem value="Todos">Todos</SelectItem>
               </SelectContent>
             </Select>
@@ -1074,6 +1163,48 @@ export default function SolvenciasTab({
             </Button>
           </div>
         </div>
+
+        {seleccion.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 p-2.5">
+            <span className="text-xs font-medium">
+              {seleccion.length} seleccionada{seleccion.length > 1 ? "s" : ""}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {seleccion.map((i) => students[i]?.nombre).join(" · ")}
+            </span>
+            <div className="ml-auto flex flex-wrap gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs"
+                onClick={() => setSeleccion([])}
+              >
+                Quitar selección
+              </Button>
+              <Button variant="outline" size="sm" className="text-xs" onClick={marcarOtraSede}>
+                Marcar de otra sede
+              </Button>
+              <Button
+                size="sm"
+                className="text-xs"
+                disabled={seleccion.length < 2}
+                title={
+                  seleccion.length < 2 ? "Marca al menos dos fichas de la misma persona" : undefined
+                }
+                onClick={() => {
+                  // Se propone el nombre más largo: entre "Karina" y "Karina
+                  // Rodríguez" el completo es casi siempre el bueno.
+                  const nombres = seleccion.map((i) => students[i]?.nombre ?? "");
+                  setNombreDefinitivo([...nombres].sort((a, b) => b.length - a.length)[0] ?? "");
+                  setUniendoAbierto(true);
+                }}
+              >
+                <Users className="mr-1 h-3.5 w-3.5" />
+                Unir en una sola ficha
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Un aula por fila hasta 1536px. Dos tablas de seis columnas lado a lado
@@ -1155,6 +1286,13 @@ export default function SolvenciasTab({
                         <tr key={idx} className="border-b last:border-0">
                           <td className="px-1.5 py-1.5">
                             <div className="flex items-center gap-1.5">
+                              <input
+                                type="checkbox"
+                                className="shrink-0 cursor-pointer"
+                                checked={seleccion.includes(idx)}
+                                onChange={() => alternarSeleccion(idx)}
+                                title={`Marcar a ${st.nombre}`}
+                              />
                               <button
                                 onClick={() => setViewTxStudent(st)}
                                 className={
@@ -1509,6 +1647,44 @@ export default function SolvenciasTab({
               </span>
             ))}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={uniendoAbierto} onOpenChange={(v) => !v && setUniendoAbierto(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Unir {seleccion.length} fichas en una sola</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-1">
+              {seleccion.map((i) => (
+                <span key={i} className="rounded-md border bg-muted/40 px-1.5 py-0.5 text-xs">
+                  {students[i]?.nombre}
+                </span>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Quedará una sola ficha con las aulas de todas y el dato más completo de cada campo: si
+              una tiene teléfono y la otra no, se conserva el que existe. Las demás desaparecen.
+            </p>
+            <div>
+              <label className="text-xs text-muted-foreground">Nombre definitivo</label>
+              <Input
+                value={nombreDefinitivo}
+                autoFocus
+                onChange={(e) => setNombreDefinitivo(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && unirFichas()}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setUniendoAbierto(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={unirFichas} disabled={!nombreDefinitivo.trim()}>
+              Unir
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
