@@ -3,7 +3,6 @@ import * as XLSX from "xlsx";
 
 const K_ASIST = "sisfia_asistencias_v1";
 const K_AULAS = "sisfia_aulas_meta_v2";
-const K_USER = "sisfia_user";
 const K_IMPORT = "sisfia_asist_imported";
 const K_REF_META = "sisfia_reflexiones_meta_v1";
 const K_REF_ASIST = "sisfia_reflexiones_asist_v1";
@@ -112,14 +111,6 @@ export function useAttendance(): [
     save(K_ASIST, items);
   }, [items]);
   return [items, setItems];
-}
-
-export function useCurrentUser(): [string, Dispatch<SetStateAction<string>>] {
-  const [user, setUser] = useState<string>(() => load<string>(K_USER, ""));
-  useEffect(() => {
-    save(K_USER, user);
-  }, [user]);
-  return [user, setUser];
 }
 
 export function useReflexionesMeta(): [ReflexionMeta[], Dispatch<SetStateAction<ReflexionMeta[]>>] {
@@ -381,63 +372,20 @@ function serialToIso(serial: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export const USERS: {
-  name: string;
-  canAccessExisting: boolean;
-  canAccessAsistencias: boolean;
-  canAccessDiagnostico: boolean;
-  canEditAnyAula: boolean;
-}[] = [
-  {
-    name: "Manuela Zambrano",
-    canAccessExisting: true,
-    canAccessAsistencias: false,
-    canAccessDiagnostico: false,
-    canEditAnyAula: false,
-  },
-  {
-    name: "Margelys Santos",
-    canAccessExisting: true,
-    canAccessAsistencias: true,
-    canAccessDiagnostico: true,
-    canEditAnyAula: true,
-  },
-  {
-    name: "Ricardo Garcia",
-    canAccessExisting: true,
-    canAccessAsistencias: true,
-    canAccessDiagnostico: true,
-    canEditAnyAula: true,
-  },
-  {
-    name: "Karina Rodrigues",
-    canAccessExisting: true,
-    canAccessAsistencias: true,
-    canAccessDiagnostico: true,
-    canEditAnyAula: true,
-  },
-];
-
-export function getUserInfo(name: string, aulasMeta: AulaMeta[]) {
-  const known = USERS.find((u) => u.name.toLowerCase() === name.toLowerCase());
-  if (known) return { ...known, celadorAula: undefined as string | undefined };
-  const celadorAula = aulasMeta.find((a) => a.celador.toLowerCase() === name.toLowerCase());
-  if (celadorAula) {
-    return {
-      name,
-      canAccessExisting: false,
-      canAccessAsistencias: true,
-      canAccessDiagnostico: false,
-      canEditAnyAula: false,
-      celadorAula: celadorAula.nombre,
-    };
-  }
-  return {
-    name,
-    canAccessExisting: false,
-    canAccessAsistencias: false,
-    canAccessDiagnostico: false,
-    canEditAnyAula: false,
-    celadorAula: undefined as string | undefined,
-  };
-}
+// Aquí vivía un sistema de permisos anterior a Supabase: una lista `USERS` con
+// los nombres del personal escritos a mano y un `getUserInfo()` que repartía
+// accesos comparando el nombre que la persona hubiera tecleado.
+//
+// Se eliminó por dos razones, y la primera pesa más:
+//
+// 1. Guardaba CUATRO NOMBRES REALES del personal en texto plano, en un
+//    repositorio al que tienen acceso personas que no deben ver esos datos.
+//    Es justo lo que la escuela decidió evitar, y por lo que la semilla de
+//    alumnos en students-data.ts se dejó vacía.
+//
+// 2. Ya no lo usaba nadie. Los permisos salen de `profiles.role` en Supabase
+//    (ver ROLE_PERMS en src/lib/api/auth.functions.ts), donde los correos van
+//    como hash md5 y el rol lo decide el servidor, no un nombre tecleado.
+//
+// Con él se fueron `useCurrentUser()` y la clave `sisfia_user`, que eran el
+// resto del mismo mecanismo.
