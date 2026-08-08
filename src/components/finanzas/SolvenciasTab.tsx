@@ -257,6 +257,21 @@ function copyAndLog(msg: string, alumno: string) {
     .catch(() => toast.error("No se pudo copiar"));
 }
 
+/**
+ * Categorías que son cuota social. Lo que se paga por pertenecer a la escuela,
+ * y nada más.
+ *
+ * Todo lo demás —un campamento, una consulta de MTC, un curso de mitología, un
+ * préstamo— es dinero que se mueve entre la misma persona y la escuela, pero NO
+ * dice nada sobre si está solvente. Mezclarlo aquí solo confunde: alguien que
+ * pagó un campamento parecería estar al día sin haber pagado su mensualidad.
+ *
+ * El detalle completo de una persona, con todo separado por concepto, está en
+ * Escolásticas › Ficha del participante. Esta pantalla responde a una sola
+ * pregunta: ¿está al día con su cuota?
+ */
+const CATEGORIAS_CUOTA = ["MIEMBROS", "PROBAS", "CLASE"];
+
 function findStudentInDesc(desc: string, students: Student[]): Student | null {
   const n = normalizeName(desc);
   for (const s of students) {
@@ -281,8 +296,8 @@ function StudentTxDialog({
   const filtered = useMemo(() => {
     if (!student) return [];
     return tx.filter((r) => {
-      const found = findStudentInDesc(r.descripcion, [student]);
-      return found !== null;
+      if (!CATEGORIAS_CUOTA.includes(r.categoria)) return false;
+      return findStudentInDesc(r.descripcion, [student]) !== null;
     });
   }, [tx, student]);
   const rows =
@@ -664,7 +679,7 @@ export default function SolvenciasTab({
     const conteo = new Map<string, { nombre: string; pagos: number }>();
     for (const t of tx) {
       if (t.tipo !== "Ingreso") continue;
-      if (!["MIEMBROS", "PROBAS", "CLASE"].includes(t.categoria)) continue;
+      if (!CATEGORIAS_CUOTA.includes(t.categoria)) continue;
       // La descripción del libro diario suele ser el nombre del alumno.
       // Se limpia lo que no es nombre (montos, "C/S abr-2026", etc.).
       const limpio = (t.descripcion || "")
@@ -830,7 +845,7 @@ export default function SolvenciasTab({
     const map = new Map<string, { fecha: string; monto: number; mes?: string }>();
     for (const t of tx) {
       if (t.tipo !== "Ingreso") continue;
-      if (!["MIEMBROS", "PROBAS", "CLASE"].includes(t.categoria)) continue;
+      if (!CATEGORIAS_CUOTA.includes(t.categoria)) continue;
       const iso = fechaToIso(t.fecha);
       if (!iso) continue;
       const desc = normalizeName(t.descripcion);

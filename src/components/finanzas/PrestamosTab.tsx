@@ -44,31 +44,39 @@ function normalizar(s: string): string {
 }
 
 /**
- * Saca de quién es el préstamo a partir de la descripción.
+ * ¿De quién es este préstamo? Devuelve null cuando no se sabe.
  *
- * El orden importa:
+ * Devolver null es la parte importante. Antes, si no se reconocía a nadie se
+ * usaba la descripción entera como si fuera el nombre de una persona, y la
+ * tabla se llenaba de filas tipo "abono ptmo" o "deposito" haciéndose pasar por
+ * gente. Un préstamo sin dueño no es una persona con un nombre raro: es un
+ * préstamo sin dueño, y merece decirlo así.
  *
- * 1. Las equivalencias que cargó la administradora. Mandan sobre todo lo
- *    demás porque son una decisión explícita: si dijo que "profesor" es
- *    Ricardo García, no hay nada que discutir.
- * 2. Lo que va antes de los dos puntos ("Ricardo García: abono"), que es la
- *    forma acordada de escribirlo.
- * 3. Un nombre de la lista de integrantes que aparezca en la descripción.
- *    Esto rescata lo que ya estaba cargado sin tocarlo.
- * 4. La descripción entera. Esa fila se ve rara a propósito: es la señal de
- *    que hay que unirla a alguien.
+ * Los que devuelven null se agrupan aparte, al final de la pantalla, para
+ * asignarlos a mano.
+ *
+ * El orden de búsqueda:
+ *
+ * 1. Las equivalencias cargadas desde la pantalla. Mandan sobre todo lo demás
+ *    porque son una decisión explícita: si se dijo que "míos" es Manuela
+ *    Zambrano, no hay nada que discutir.
+ * 2. Lo que va antes de los dos puntos ("Jesús Rodríguez: abono"), que es la
+ *    forma acordada de escribirlo — PERO solo si de verdad parece un nombre.
+ *    "abono ptmo: 50" tiene dos puntos y no nombra a nadie.
+ * 3. Un integrante de la lista de la escuela mencionado en la descripción.
+ *    Esto reconoce lo ya cargado sin tener que reescribirlo.
  */
 function personaDelPrestamo(
   descripcion: string,
   nombresConocidos: string[],
   grupos: GrupoPrestamo[],
-): string {
+): string | null {
   const desc = (descripcion || "").trim();
-  if (!desc) return "(sin descripción)";
+  if (!desc) return null;
   const plano = normalizar(desc);
 
-  // La clave más larga primero: si alguien configuró "Ricardo" y también
-  // "Ricardo García" para personas distintas, gana la más específica.
+  // La clave más larga primero: si se configuró "Ricardo" y también "Ricardo
+  // García" para personas distintas, gana la más específica.
   const claves = grupos
     .flatMap((g) => g.claves.map((c) => ({ persona: g.persona, clave: c })))
     .sort((a, b) => b.clave.length - a.clave.length);
@@ -79,7 +87,7 @@ function personaDelPrestamo(
   const dosPuntos = desc.indexOf(":");
   if (dosPuntos > 0) {
     const antes = desc.slice(0, dosPuntos).trim();
-    if (antes) return antes;
+    if (pareceNombre(antes)) return antes;
   }
 
   const porLargo = [...nombresConocidos].sort((a, b) => b.length - a.length);
@@ -87,7 +95,55 @@ function personaDelPrestamo(
     if (plano.includes(normalizar(nombre))) return nombre;
   }
 
-  return desc;
+  return null;
+}
+
+/**
+ * ¿Este texto parece el nombre de una persona?
+ *
+ * No hay forma perfecta de saberlo, pero sí una regla que acierta con lo que se
+ * escribe de verdad en el libro: un nombre son una o más palabras de letras,
+ * sin cifras y sin verbos de movimiento de dinero.
+ *
+ * Sirve para que "abono ptmo: 50" no cree una persona llamada "abono ptmo",
+ * mientras "Jesús Rodríguez: abono" sí reconozca a Jesús Rodríguez.
+ */
+function pareceNombre(texto: string): boolean {
+  const t = texto.trim();
+  if (t.length < 3 || t.length > 60) return false;
+  if (/\d/.test(t)) return false;
+
+  const palabras = normalizar(t).split(" ").filter(Boolean);
+  if (!palabras.length || palabras.length > 5) return false;
+
+  // Palabras que delatan que esto es un concepto contable, no una persona.
+  const NO_SON_NOMBRES = [
+    "abono",
+    "abonos",
+    "pago",
+    "pagos",
+    "prestamo",
+    "prestamos",
+    "ptmo",
+    "ptamo",
+    "deposito",
+    "transferencia",
+    "efectivo",
+    "saldo",
+    "cuota",
+    "interes",
+    "intereses",
+    "devolucion",
+    "se",
+    "le",
+    "por",
+    "del",
+    "para",
+  ];
+  if (palabras.some((p) => NO_SON_NOMBRES.includes(p))) return false;
+
+  // Solo letras: descarta códigos y referencias bancarias.
+  return palabras.every((p) => /^[a-zñ]+$/.test(p));
 }
 
 /**
@@ -143,6 +199,24 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
   const [destino, setDestino] = useState("");
   const [verGrupos, setVerGrupos] = useState(false);
 
+  // Los movimientos que no se pudieron atribuir a nadie. No son personas: son
+  // préstamos esperando dueño, y van en su propio bloque al final.
+  const sueltos = useMemo<Movimiento[]>(() => {
+    const nombres = students.map((s) => s.nombre).filter(Boolean);
+    return tx
+      .filter((t) => CAT_PRESTAMO.includes(t.categoria) || CAT_INTERES.includes(t.categoria))
+      .filter((t) => personaDelPrestamo(t.descripcion, nombres, grupos) === null)
+      .map((t) => ({
+        fecha: t.fecha,
+        iso: fechaToIso(t.fecha),
+        descripcion: t.descripcion || "(sin descripción)",
+        tipo: t.tipo,
+        categoria: t.categoria,
+        usd: Math.abs(Number(t.montoUsd) || 0),
+      }))
+      .sort((a, b) => a.iso.localeCompare(b.iso));
+  }, [tx, students, grupos]);
+
   const prestamos = useMemo<Prestamo[]>(() => {
     const nombres = students.map((s) => s.nombre).filter(Boolean);
     const porPersona = new Map<string, Prestamo>();
@@ -153,6 +227,7 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
       if (!esPrestamo && !esInteres) continue;
 
       const persona = personaDelPrestamo(t.descripcion, nombres, grupos);
+      if (persona === null) continue; // va al bloque de sin asignar
       const clave = normalizar(persona);
       let p = porPersona.get(clave);
       if (!p) {
@@ -276,7 +351,10 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
     setDestino("");
   };
 
-  if (!prestamos.length) {
+  // Solo se da por vacío si NO hay nada de nada. Con préstamos sin asignar hay
+  // trabajo que hacer y hay que enseñarlo, aunque todavía no haya ni una
+  // persona reconocida.
+  if (!prestamos.length && !sueltos.length) {
     return (
       <Card className="p-6">
         <div className="flex items-center gap-2">
@@ -313,236 +391,310 @@ export function PrestamosTab({ tx, students }: { tx: Transaction[]; students: St
         ))}
       </div>
 
-      <Card className="p-4">
-        <div className="mb-3 flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <HandCoins className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold">Préstamos por persona</h2>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            {grupos.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs"
-                onClick={() => setVerGrupos((v) => !v)}
-              >
-                <Link2 className="mr-1 h-3.5 w-3.5" />
-                Nombres unidos ({grupos.length})
-              </Button>
-            )}
-            <Input
-              className="h-8 w-56"
-              placeholder="Buscar persona..."
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-            />
+      {/* Va aquí arriba, fuera de las tarjetas, porque se marcan filas en dos
+          tablas distintas —personas y sin asignar— y la acción tiene que
+          alcanzarse igual desde las dos. */}
+      {seleccion.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 p-2.5">
+          <span className="text-xs font-medium">
+            {seleccion.length} seleccionado{seleccion.length > 1 ? "s" : ""}
+          </span>
+          <span className="text-xs text-muted-foreground">{seleccion.join(" · ")}</span>
+          <div className="ml-auto flex gap-2">
+            <Button variant="ghost" size="sm" className="text-xs" onClick={() => setSeleccion([])}>
+              Quitar selección
+            </Button>
+            <Button size="sm" className="text-xs" onClick={abrirUnion}>
+              <Link2 className="mr-1 h-3.5 w-3.5" />
+              Unir en una sola persona
+            </Button>
           </div>
         </div>
+      )}
 
-        {verGrupos && (
-          <div className="mb-3 rounded-lg border bg-muted/30 p-3">
-            <p className="mb-2 text-xs text-muted-foreground">
-              Cada movimiento cuya descripción contenga una de estas palabras se suma a esa persona.
-            </p>
-            <div className="space-y-1.5">
-              {grupos.map((g) => (
-                <div key={g.persona} className="flex flex-wrap items-center gap-1.5 text-xs">
-                  <span className="font-medium">{g.persona}</span>
-                  <span className="text-muted-foreground">←</span>
-                  {g.claves.map((c) => (
-                    <span
-                      key={c}
-                      className="inline-flex items-center gap-1 rounded-md border bg-background px-1.5 py-0.5"
-                    >
-                      {c}
-                      <button
-                        type="button"
-                        className="text-muted-foreground hover:text-foreground"
-                        title={`Dejar de asociar «${c}» con ${g.persona}`}
-                        onClick={() => setGrupos(separar(grupos, g.persona, c))}
+      {prestamos.length > 0 && (
+        <Card className="p-4">
+          <div className="mb-3 flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <HandCoins className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold">Préstamos por persona</h2>
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              {grupos.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs"
+                  onClick={() => setVerGrupos((v) => !v)}
+                >
+                  <Link2 className="mr-1 h-3.5 w-3.5" />
+                  Nombres unidos ({grupos.length})
+                </Button>
+              )}
+              <Input
+                className="h-8 w-56"
+                placeholder="Buscar persona..."
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {verGrupos && (
+            <div className="mb-3 rounded-lg border bg-muted/30 p-3">
+              <p className="mb-2 text-xs text-muted-foreground">
+                Cada movimiento cuya descripción contenga una de estas palabras se suma a esa
+                persona.
+              </p>
+              <div className="space-y-1.5">
+                {grupos.map((g) => (
+                  <div key={g.persona} className="flex flex-wrap items-center gap-1.5 text-xs">
+                    <span className="font-medium">{g.persona}</span>
+                    <span className="text-muted-foreground">←</span>
+                    {g.claves.map((c) => (
+                      <span
+                        key={c}
+                        className="inline-flex items-center gap-1 rounded-md border bg-background px-1.5 py-0.5"
                       >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              ))}
+                        {c}
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-foreground"
+                          title={`Dejar de asociar «${c}» con ${g.persona}`}
+                          onClick={() => setGrupos(separar(grupos, g.persona, c))}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {seleccion.length > 0 && (
-          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 p-2.5">
-            <span className="text-xs font-medium">
-              {seleccion.length} seleccionado{seleccion.length > 1 ? "s" : ""}
-            </span>
-            <span className="text-xs text-muted-foreground">{seleccion.join(" · ")}</span>
-            <div className="ml-auto flex gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs"
-                onClick={() => setSeleccion([])}
-              >
-                Quitar selección
-              </Button>
-              <Button size="sm" className="text-xs" onClick={abrirUnion}>
-                <Link2 className="mr-1 h-3.5 w-3.5" />
-                Unir en una sola persona
-              </Button>
-            </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-xs text-muted-foreground">
+                  <th className="w-8 p-2"></th>
+                  <th className="p-2 text-left font-medium">Persona</th>
+                  <th className="p-2 text-right font-medium">Prestado</th>
+                  <th className="p-2 text-right font-medium">Devuelto</th>
+                  <th className="p-2 text-right font-medium">Intereses</th>
+                  <th className="p-2 text-right font-medium">Saldo</th>
+                  <th className="p-2 text-left font-medium">Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibles.map((p) => {
+                  const clave = normalizar(p.persona);
+                  const expandida = abierta === clave;
+                  const pagado = p.saldo <= 0.005;
+                  return (
+                    <Fragment key={clave}>
+                      <tr
+                        className="cursor-pointer border-b transition hover:bg-muted/40 hover:font-semibold"
+                        onClick={() => setAbierta(expandida ? null : clave)}
+                      >
+                        <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            className="cursor-pointer"
+                            checked={seleccion.includes(p.persona)}
+                            onChange={() => alternarSeleccion(p.persona)}
+                            title={`Marcar «${p.persona}» para unir`}
+                          />
+                        </td>
+                        <td className="p-2">
+                          <span className="flex items-center gap-1">
+                            <ChevronRight
+                              className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${
+                                expandida ? "rotate-90" : ""
+                              }`}
+                            />
+                            {p.persona}
+                          </span>
+                        </td>
+                        <td className="p-2 text-right tabular-nums">${usd(p.prestado)}</td>
+                        <td className="p-2 text-right tabular-nums">${usd(p.abonado)}</td>
+                        <td className="p-2 text-right tabular-nums text-muted-foreground">
+                          <div>{p.intereses > 0 ? `$${usd(p.intereses)}` : "—"}</div>
+                          {p.interesEstimado > 0 && (
+                            <div
+                              className="text-[10px] italic opacity-70"
+                              title={`Estimación: ${Math.round((p.tasa ?? 0) * 100)}% de $${usd(p.prestado)}. No entra en ningún total.`}
+                            >
+                              est. ${usd(p.interesEstimado)}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-2 text-right font-semibold tabular-nums">
+                          ${usd(Math.max(0, p.saldo))}
+                        </td>
+                        <td className="p-2">
+                          <div className="flex flex-wrap items-center gap-1">
+                            {pagado ? (
+                              <span className="rounded-md border border-emerald-500/40 bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
+                                {p.saldo < -0.005 ? "Devolvió de más" : "Pagado"}
+                              </span>
+                            ) : (
+                              <span className="rounded-md border border-amber-500/40 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                                Pendiente
+                              </span>
+                            )}
+                            {p.faltaCobrarInteres && (
+                              <span
+                                className="inline-flex items-center gap-0.5 rounded-md border border-orange-500/40 bg-orange-50 px-1.5 py-0.5 text-[11px] text-orange-900 dark:bg-orange-950/40 dark:text-orange-200"
+                                title="Pasó de mes y el interés cobrado no llega a la estimación. Es un recordatorio, no una deuda calculada."
+                              >
+                                <AlertCircle className="h-3 w-3" />
+                                Revisar interés
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                      {expandida && (
+                        <tr className="border-b bg-muted/20">
+                          <td colSpan={7} className="p-2">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-muted-foreground">
+                                  <th className="p-1 text-left font-medium">Fecha</th>
+                                  <th className="p-1 text-left font-medium">Concepto</th>
+                                  <th className="p-1 text-left font-medium">Descripción</th>
+                                  <th className="p-1 text-right font-medium">USD</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {p.movimientos.map((m, i) => {
+                                  const esInteres = CAT_INTERES.includes(m.categoria);
+                                  const concepto = esInteres
+                                    ? "Interés"
+                                    : m.tipo === "Gasto"
+                                      ? "Se prestó"
+                                      : "Devolvió";
+                                  return (
+                                    <tr key={i} className="border-t border-border/50">
+                                      <td className="p-1 tabular-nums">{m.fecha}</td>
+                                      <td className="p-1">{concepto}</td>
+                                      <td className="p-1 text-muted-foreground">{m.descripcion}</td>
+                                      <td className="p-1 text-right tabular-nums">${usd(m.usd)}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-xs text-muted-foreground">
-                <th className="w-8 p-2"></th>
-                <th className="p-2 text-left font-medium">Persona</th>
-                <th className="p-2 text-right font-medium">Prestado</th>
-                <th className="p-2 text-right font-medium">Devuelto</th>
-                <th className="p-2 text-right font-medium">Intereses</th>
-                <th className="p-2 text-right font-medium">Saldo</th>
-                <th className="p-2 text-left font-medium">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibles.map((p) => {
-                const clave = normalizar(p.persona);
-                const expandida = abierta === clave;
-                const pagado = p.saldo <= 0.005;
-                return (
-                  <Fragment key={clave}>
-                    <tr
-                      className="cursor-pointer border-b transition hover:bg-muted/40 hover:font-semibold"
-                      onClick={() => setAbierta(expandida ? null : clave)}
-                    >
-                      <td className="p-2" onClick={(e) => e.stopPropagation()}>
+          {!visibles.length && (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Nadie coincide con «{busqueda}».
+            </p>
+          )}
+
+          <div className="mt-3 space-y-1.5 border-t pt-3 text-[11px] text-muted-foreground">
+            <p>
+              Los préstamos no entran en Solvencias: la deuda de cuota social se calcula solo con
+              MIEMBROS, PROBAS y CLASE. Si la misma persona aparece escrita de varias formas,
+              márcalas y usa «Unir»; queda agrupada también para lo que se cargue en adelante.
+            </p>
+            <p>
+              <span className="font-medium">Intereses.</span> La cifra de arriba es lo que realmente
+              se cobró. Para que aparezca la estimación en cursiva, escribe la tasa en la
+              descripción del préstamo — por ejemplo{" "}
+              <span className="font-medium">«Ricardo García: se presta 10%»</span>. Solo se estima
+              si el préstamo pasó de mes; dentro del mismo mes no se cobra interés.{" "}
+              <span className="font-medium">
+                La estimación no suma en ningún total ni aumenta el saldo:
+              </span>{" "}
+              es un recordatorio para revisar, no una deuda calculada.
+            </p>
+          </div>
+        </Card>
+      )}
+
+      {/*
+        Préstamos sin dueño.
+
+        Van aparte y no dentro de la tabla de personas a propósito: antes, cuando
+        no se reconocía a nadie se usaba la descripción entera como si fuera un
+        nombre, y aparecían filas como "abono ptmo" haciéndose pasar por gente.
+        Un movimiento sin dueño no es una persona con nombre raro.
+
+        Se marcan y se asignan con el mismo botón «Unir» que el resto: la
+        descripción pasa a ser una equivalencia de esa persona, así que lo que se
+        cargue después con ese mismo texto ya entra solo.
+      */}
+      {sueltos.length > 0 && (
+        <Card className="p-4">
+          <div className="mb-1 flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <h2 className="text-sm font-semibold">Préstamos sin asignar ({sueltos.length})</h2>
+          </div>
+          <p className="mb-3 text-xs text-muted-foreground">
+            En estos movimientos no se reconoce de quién son. Márcalos y pulsa «Unir en una sola
+            persona» para asignarlos; a partir de ahí se agrupan solos.
+          </p>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-xs text-muted-foreground">
+                  <th className="w-8 p-2"></th>
+                  <th className="p-2 text-left font-medium">Fecha</th>
+                  <th className="p-2 text-left font-medium">Concepto</th>
+                  <th className="p-2 text-left font-medium">Descripción</th>
+                  <th className="p-2 text-right font-medium">USD</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sueltos.map((m, i) => {
+                  const esInteres = CAT_INTERES.includes(m.categoria);
+                  const concepto = esInteres
+                    ? "Interés"
+                    : m.tipo === "Gasto"
+                      ? "Se prestó"
+                      : "Devolvió";
+                  return (
+                    <tr key={`${m.iso}-${i}`} className="border-b transition hover:bg-muted/40">
+                      <td className="p-2">
                         <input
                           type="checkbox"
                           className="cursor-pointer"
-                          checked={seleccion.includes(p.persona)}
-                          onChange={() => alternarSeleccion(p.persona)}
-                          title={`Marcar «${p.persona}» para unir`}
+                          checked={seleccion.includes(m.descripcion)}
+                          onChange={() => alternarSeleccion(m.descripcion)}
+                          title={`Marcar «${m.descripcion}» para asignar`}
                         />
                       </td>
-                      <td className="p-2">
-                        <span className="flex items-center gap-1">
-                          <ChevronRight
-                            className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${
-                              expandida ? "rotate-90" : ""
-                            }`}
-                          />
-                          {p.persona}
-                        </span>
-                      </td>
-                      <td className="p-2 text-right tabular-nums">${usd(p.prestado)}</td>
-                      <td className="p-2 text-right tabular-nums">${usd(p.abonado)}</td>
-                      <td className="p-2 text-right tabular-nums text-muted-foreground">
-                        <div>{p.intereses > 0 ? `$${usd(p.intereses)}` : "—"}</div>
-                        {p.interesEstimado > 0 && (
-                          <div
-                            className="text-[10px] italic opacity-70"
-                            title={`Estimación: ${Math.round((p.tasa ?? 0) * 100)}% de $${usd(p.prestado)}. No entra en ningún total.`}
-                          >
-                            est. ${usd(p.interesEstimado)}
-                          </div>
-                        )}
-                      </td>
-                      <td className="p-2 text-right font-semibold tabular-nums">
-                        ${usd(Math.max(0, p.saldo))}
-                      </td>
-                      <td className="p-2">
-                        <div className="flex flex-wrap items-center gap-1">
-                          {pagado ? (
-                            <span className="rounded-md border border-emerald-500/40 bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
-                              {p.saldo < -0.005 ? "Devolvió de más" : "Pagado"}
-                            </span>
-                          ) : (
-                            <span className="rounded-md border border-amber-500/40 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-                              Pendiente
-                            </span>
-                          )}
-                          {p.faltaCobrarInteres && (
-                            <span
-                              className="inline-flex items-center gap-0.5 rounded-md border border-orange-500/40 bg-orange-50 px-1.5 py-0.5 text-[11px] text-orange-900 dark:bg-orange-950/40 dark:text-orange-200"
-                              title="Pasó de mes y el interés cobrado no llega a la estimación. Es un recordatorio, no una deuda calculada."
-                            >
-                              <AlertCircle className="h-3 w-3" />
-                              Revisar interés
-                            </span>
-                          )}
-                        </div>
-                      </td>
+                      <td className="p-2 tabular-nums">{m.fecha}</td>
+                      <td className="p-2">{concepto}</td>
+                      <td className="p-2 text-muted-foreground">{m.descripcion}</td>
+                      <td className="p-2 text-right tabular-nums">${usd(m.usd)}</td>
                     </tr>
-                    {expandida && (
-                      <tr className="border-b bg-muted/20">
-                        <td colSpan={7} className="p-2">
-                          <table className="w-full text-xs">
-                            <thead>
-                              <tr className="text-muted-foreground">
-                                <th className="p-1 text-left font-medium">Fecha</th>
-                                <th className="p-1 text-left font-medium">Concepto</th>
-                                <th className="p-1 text-left font-medium">Descripción</th>
-                                <th className="p-1 text-right font-medium">USD</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {p.movimientos.map((m, i) => {
-                                const esInteres = CAT_INTERES.includes(m.categoria);
-                                const concepto = esInteres
-                                  ? "Interés"
-                                  : m.tipo === "Gasto"
-                                    ? "Se prestó"
-                                    : "Devolvió";
-                                return (
-                                  <tr key={i} className="border-t border-border/50">
-                                    <td className="p-1 tabular-nums">{m.fecha}</td>
-                                    <td className="p-1">{concepto}</td>
-                                    <td className="p-1 text-muted-foreground">{m.descripcion}</td>
-                                    <td className="p-1 text-right tabular-nums">${usd(m.usd)}</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
-        {!visibles.length && (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            Nadie coincide con «{busqueda}».
+          <p className="mt-3 border-t pt-3 text-[11px] text-muted-foreground">
+            Para que no vuelvan a caer aquí, escribe el nombre delante de dos puntos al registrar el
+            movimiento: <span className="font-medium">«Jesús Rodríguez: abono»</span>. Si en la hoja
+            no se distingue de quién es, es mejor dejarlo sin asignar que atribuírselo a la persona
+            equivocada.
           </p>
-        )}
-
-        <div className="mt-3 space-y-1.5 border-t pt-3 text-[11px] text-muted-foreground">
-          <p>
-            Los préstamos no entran en Solvencias: la deuda de cuota social se calcula solo con
-            MIEMBROS, PROBAS y CLASE. Si la misma persona aparece escrita de varias formas, márcalas
-            y usa «Unir»; queda agrupada también para lo que se cargue en adelante.
-          </p>
-          <p>
-            <span className="font-medium">Intereses.</span> La cifra de arriba es lo que realmente
-            se cobró. Para que aparezca la estimación en cursiva, escribe la tasa en la descripción
-            del préstamo — por ejemplo{" "}
-            <span className="font-medium">«Ricardo García: se presta 10%»</span>. Solo se estima si
-            el préstamo pasó de mes; dentro del mismo mes no se cobra interés.{" "}
-            <span className="font-medium">
-              La estimación no suma en ningún total ni aumenta el saldo:
-            </span>{" "}
-            es un recordatorio para revisar, no una deuda calculada.
-          </p>
-        </div>
-      </Card>
+        </Card>
+      )}
 
       <Dialog open={uniendoAbierto} onOpenChange={(v) => !v && setUniendoAbierto(false)}>
         <DialogContent className="max-w-md">
