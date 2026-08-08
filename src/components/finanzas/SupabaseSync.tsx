@@ -13,6 +13,7 @@ import {
 import { syncStudentsToSupabase, loadStudentsFromSupabase } from "@/lib/api/students.functions";
 import type { Student, Transaction } from "@/lib/lists-store";
 import { supabase } from "@/lib/supabase";
+import { useEstaEnLinea } from "@/lib/conexion";
 
 async function getAccessToken(): Promise<string | undefined> {
   try {
@@ -47,6 +48,7 @@ export function SupabaseSync({
   const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const enLinea = useEstaEnLinea();
 
   const syncTx = useServerFn(syncTransactionsToSupabase);
   const syncBcv = useServerFn(syncBcvRatesToSupabase);
@@ -185,8 +187,18 @@ export function SupabaseSync({
             <span className="text-xs text-muted-foreground">Última sincronización: {lastSync}</span>
           )}
         </div>
+        {!enLinea && (
+          <span className="text-xs text-amber-700 dark:text-amber-400">
+            Sin internet: la nube no está disponible.
+          </span>
+        )}
         <div className="flex gap-2 ml-auto">
-          <Button variant="outline" size="sm" onClick={handleLoad} disabled={loading || syncing}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleLoad}
+            disabled={loading || syncing || !enLinea}
+          >
             {loading ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
@@ -194,7 +206,12 @@ export function SupabaseSync({
             )}
             {loading ? "Cargando..." : "Cargar desde nube"}
           </Button>
-          <Button variant="default" size="sm" onClick={handleSync} disabled={syncing || loading}>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={handleSync}
+            disabled={syncing || loading || !enLinea}
+          >
             {syncing ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (

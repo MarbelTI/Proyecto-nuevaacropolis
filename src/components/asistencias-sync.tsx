@@ -15,6 +15,7 @@ import type {
   ReflexionAsistencia,
 } from "@/lib/attendance-store";
 import { supabase } from "@/lib/supabase";
+import { useEstaEnLinea } from "@/lib/conexion";
 
 async function getAccessToken(): Promise<string | undefined> {
   try {
@@ -63,6 +64,7 @@ export function AsistenciasSync({
   const [subiendo, setSubiendo] = useState(false);
   const [cargando, setCargando] = useState(false);
   const [ultima, setUltima] = useState<string | null>(null);
+  const enLinea = useEstaEnLinea();
 
   const subir = useServerFn(syncAttendanceToSupabase);
   const cargar = useServerFn(loadAttendanceFromSupabase);
@@ -139,7 +141,13 @@ export function AsistenciasSync({
   };
 
   const botonCargar = (
-    <Button variant="outline" size="sm" onClick={handleCargar} disabled={cargando || subiendo}>
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={handleCargar}
+      disabled={cargando || subiendo || !enLinea}
+      title={enLinea ? undefined : "Sin internet no se puede acceder a la nube"}
+    >
       {cargando ? (
         <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
       ) : (
@@ -170,7 +178,8 @@ export function AsistenciasSync({
               variant="default"
               size="sm"
               onClick={handleSubir}
-              disabled={subiendo || cargando}
+              disabled={subiendo || cargando || !enLinea}
+              title={enLinea ? undefined : "Sin internet no se puede acceder a la nube"}
             >
               {subiendo ? (
                 <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />

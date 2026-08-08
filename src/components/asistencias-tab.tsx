@@ -40,6 +40,7 @@ import {
 } from "@/lib/attendance-store";
 import { AsistenciasSync } from "@/components/asistencias-sync";
 import { FichaParticipante } from "@/components/ficha-participante";
+import { useEstaEnLinea } from "@/lib/conexion";
 import type { Student, Transaction } from "@/lib/lists-store";
 
 type UserPerms = {
@@ -158,6 +159,7 @@ export default function AsistenciasTab({
   students?: Student[];
   tx?: Transaction[];
 }) {
+  const enLinea = useEstaEnLinea();
   const [importing, setImporting] = useState(false);
   const [semestre, setSemestre] = useState<1 | 2>(1);
 
@@ -485,6 +487,13 @@ export default function AsistenciasTab({
 
   const toggleAsistencia = useCallback(
     (alumno: string, fecha: string) => {
+      // Sin internet no se marca. Un celador podría pasar la lista entera y
+      // perderla: los datos viven en su navegador y solo llegan a la nube al
+      // pulsar «Subir a nube», que sin conexión no funciona.
+      if (!enLinea) {
+        toast.error("Sin internet no se puede marcar asistencia: se perdería al cerrar.");
+        return;
+      }
       // Se lee de records y no de getAsistencia porque ese helper se define
       // más abajo: usarlo aquí lo metería en el array de dependencias, que sí
       // se evalúa durante el render, y reventaría por acceso anticipado.
@@ -557,11 +566,15 @@ export default function AsistenciasTab({
         return prev.map((r, i) => (i === idx ? { ...r, asistencia: siguiente } : r));
       });
     },
-    [selectedAula, alumnos, records, setRecords],
+    [selectedAula, alumnos, records, setRecords, enLinea],
   );
 
   const toggleReflexion = useCallback(
     (alumno: string, fecha: string) => {
+      if (!enLinea) {
+        toast.error("Sin internet no se puede marcar la entrega: se perdería al cerrar.");
+        return;
+      }
       setRecords((prev: AttendanceRecord[]) => {
         const idx = prev.findIndex(
           (r) =>
@@ -586,7 +599,7 @@ export default function AsistenciasTab({
         return prev.map((r, i) => (i === idx ? { ...r, reflexion: newVal } : r));
       });
     },
-    [selectedAula],
+    [selectedAula, enLinea],
   );
 
   const getAsistencia = useCallback(

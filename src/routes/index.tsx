@@ -43,7 +43,9 @@ import {
   ShieldAlert,
   ChevronDown,
   Cloud,
+  WifiOff,
 } from "lucide-react";
+import { useEstaEnLinea } from "@/lib/conexion";
 import { toast } from "sonner";
 
 // Nombre legible del rol, para que en una PC compartida se vea de un vistazo
@@ -122,6 +124,7 @@ function Index() {
   const [bcvSources, setBcvSources] = useState<Record<string, string>>({});
   /** Transacción que se está corrigiendo desde la pestaña de Préstamos. */
   const [prestamoEnEdicion, setPrestamoEnEdicion] = useState<string | null>(null);
+  const enLinea = useEstaEnLinea();
   const fetchForDate = useServerFn(fetchBcvForDate);
 
   const {
@@ -211,6 +214,24 @@ function Index() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/*
+        Sin internet la aplicación pasa a solo lectura, y hay que decirlo bien
+        claro: los datos viven en el navegador y solo llegan a la nube cuando
+        alguien pulsa «Subir a nube». Trabajar sin conexión sería trabajar para
+        nada, y peor, sin saberlo.
+
+        Va arriba del todo y fijo, no como un aviso que se cierra: mientras la
+        limitación esté vigente, tiene que estar a la vista.
+      */}
+      {!enLinea && (
+        <div className="sticky top-0 z-50 flex flex-wrap items-center justify-center gap-2 bg-amber-500 px-4 py-2 text-center text-sm font-medium text-amber-950">
+          <WifiOff className="h-4 w-4 shrink-0" />
+          <span>
+            Sin conexión a internet. Puedes consultar todo, pero no registrar ni modificar: lo que
+            escribieras ahora no se guardaría en la nube y se perdería.
+          </span>
+        </div>
+      )}
       <div className="mx-auto max-w-[1920px] px-4 py-6">
         <header className="mb-4 rounded-2xl bg-primary p-4 text-primary-foreground shadow-lg">
           <div className="flex flex-wrap items-center gap-4">

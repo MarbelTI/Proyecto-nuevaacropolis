@@ -23,6 +23,7 @@ import {
 } from "@/lib/mensajes-store";
 import { TransactionEditDialog } from "@/components/finanzas/TransactionEditDialog";
 import { CalculadoraDialog } from "@/components/finanzas/CalculadoraDialog";
+import { useEstaEnLinea } from "@/lib/conexion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -700,6 +701,7 @@ export function TransactionsTab({
   const [filterMes, setFilterMes] = useState<string>("");
   const [calcOpen, setCalcOpen] = useState(false);
   const [plantillas, setPlantillas] = usePlantillas();
+  const enLinea = useEstaEnLinea();
 
   /**
    * Movimientos repetidos: los que coinciden en TODOS sus campos con otro.
@@ -918,6 +920,8 @@ export function TransactionsTab({
           <Button
             variant="outline"
             size="sm"
+            disabled={!enLinea}
+            title={enLinea ? undefined : "Sin internet no se pueden crear registros"}
             onClick={() => {
               const d = new Date();
               const dd = String(d.getDate()).padStart(2, "0");
