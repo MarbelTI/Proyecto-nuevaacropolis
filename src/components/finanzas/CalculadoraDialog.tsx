@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { bcvRateFor } from "@/lib/lists-store";
+import { aNumero } from "@/lib/formato";
 import { calcularMontoUsd, formatTasa, redondearTasa, TASA_PESOS_DEFAULT } from "@/lib/fees-logic";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,26 +31,6 @@ const $ = (n: number) =>
 function todayIso(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-/**
- * Lee una cifra escrita a mano.
- *
- * Se aceptan las cuatro formas en que la gente la escribe de verdad: "4500",
- * "4500,50", "4.500,50" y "4,500.50" (pegada del comprobante del banco). Cuando
- * aparecen los dos separadores, manda el último: el otro es de miles. Sin esto,
- * pegar una cifra del banco daría NaN y el resultado quedaría en blanco sin que
- * se entienda por qué.
- */
-function aNumero(texto: string): number {
-  const limpio = texto.trim();
-  if (!limpio) return 0;
-  const punto = limpio.lastIndexOf(".");
-  const coma = limpio.lastIndexOf(",");
-  const normalizado =
-    coma > punto ? limpio.replace(/\./g, "").replace(",", ".") : limpio.replace(/,/g, "");
-  const n = Number(normalizado);
-  return isFinite(n) ? n : 0;
 }
 
 /**

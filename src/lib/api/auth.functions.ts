@@ -209,8 +209,22 @@ export const resolverCuentaPendiente = createServerFn({ method: "POST" })
       return { ok: false, error: "No autorizado" };
     }
     // Un super_admin no puede quitarse a sí mismo el acceso por accidente.
-    if (data.userId === session.userId && !data.aprobar) {
-      return { ok: false, error: "No puedes desactivar tu propia cuenta" };
+    //
+    // Antes esto solo cubría el rechazo, así que aprobarse a uno mismo con otro
+    // rol —"super_admin" cambiándose a "celador"— pasaba sin más y dejaba la
+    // cuenta sin panel: para recuperarla había que entrar al SQL Editor de
+    // Supabase. Perder el acceso de administración no puede depender de haberle
+    // dado a la casilla equivocada.
+    if (data.userId === session.userId) {
+      if (!data.aprobar) {
+        return { ok: false, error: "No puedes desactivar tu propia cuenta" };
+      }
+      if (data.role !== "super_admin") {
+        return {
+          ok: false,
+          error: "No puedes cambiarte el rol a ti mismo. Pídeselo al otro administrador.",
+        };
+      }
     }
     const { createClient } = await import("@supabase/supabase-js");
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {

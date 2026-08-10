@@ -77,3 +77,18 @@ export const supabase = createClient(
   supabaseUrl || "https://sin-configurar.supabase.co",
   configError ? "configuracion-invalida" : supabaseAnonKey,
 );
+
+/**
+ * El token de la sesión actual, para mandárselo a las funciones de servidor.
+ *
+ * Devuelve undefined si no hay sesión, y entonces el servidor responde "No
+ * autorizado": es lo que queremos, mejor que reventar aquí.
+ */
+export async function getAccessToken(): Promise<string | undefined> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? undefined;
+  } catch {
+    return undefined;
+  }
+}

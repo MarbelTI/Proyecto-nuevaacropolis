@@ -70,23 +70,139 @@ export function cuotaEsExplicita(student: Student, yearMonth: string): boolean {
   });
 }
 
-/** Calcula cuotas debidas mes a mes desde el arranque (o último pago) hasta hoy. */
+/**
+ * Pasa una mensualidad escrita a mano a "YYYY-MM".
+ *
+ * En la columna `mensualidad` la gente escribe "ene-26", "ene-2026", "enero
+ * 2026", "2026-01" o "01/2026", y todas quieren decir lo mismo. Devuelve null
+ * si no se reconoce: eso significa "este pago no dice qué mes cubre", que es
+ * distinto de cubrir el mes cero.
+ */
+const MESES_ABR = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+export function mensualidadAYm(texto: string | undefined | null): string | null {
+  const t = (texto ?? "").trim().toLowerCase();
+  if (!t) return null;
+
+  // "2026-01" o "2026/1"
+  const iso = t.match(/^(\d{4})[-/](\d{1,2})$/);
+  if (iso) {
+    const m = Number(iso[2]);
+    if (m >= 1 && m <= 12) return `${iso[1]}-${String(m).padStart(2, "0")}`;
+    return null;
+  }
+
+  // "ene-26", "enero-2026", "01/2026", "1-26"
+  const par = t.match(/^([a-záéíóú]{3,10}|\d{1,2})[-/\s]+(\d{2,4})$/);
+  if (!par) return null;
+  const anio = par[2].length === 2 ? 2000 + Number(par[2]) : Number(par[2]);
+  if (!isFinite(anio)) return null;
+
+  let mes: number;
+  if (/^\d+$/.test(par[1])) {
+    mes = Number(par[1]);
+  } else {
+    // "septiembre" y "sep" caen los dos en el mismo sitio con los 3 primeros.
+    // ̀-ͯ son las tildes sueltas que deja NFD: "septiembre" y
+    // "setiembre" mal acentuado acaban igual.
+    const abr = par[1]
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .slice(0, 3);
+    mes = MESES_ABR.indexOf(abr) + 1;
+  }
+  if (mes < 1 || mes > 12) return null;
+  return `${anio}-${String(mes).padStart(2, "0")}`;
+}
+
+/** Los pagos de un alumno, resumidos para el cálculo de deuda. */
+export type PagosDelAlumno = {
+  /**
+   * La mensualidad más adelantada que se ha pagado (YYYY-MM). Es la línea de
+   * flotación: se debe de ahí en adelante.
+   *
+   * Se mira la mensualidad DECLARADA, nunca la fecha del movimiento. Si en
+   * marzo alguien paga la cuota de enero, lo que salda es enero.
+   */
+  ultimaMensualidad: string | null;
+  /**
+   * Mes (YYYY-MM) del pago más reciente que NO declaró mensualidad.
+   *
+   * Los movimientos antiguos no traen esa columna. Para esos no queda más
+   * remedio que usar la fecha del pago y dar por saldado lo anterior: es lo
+   * único que se sabe. Sin esto, a media escuela le aparecería una deuda de
+   * meses que sí estaban pagados, solo que sin registrar cuál.
+   */
+  ultimoMesSinDeclarar: string | null;
+  /** Importe del último pago: referencia para quien no tiene cuota fija. */
+  ultimoMonto?: number;
+};
+
+/**
+ * Resume los pagos de una persona a partir de sus movimientos de cuota.
+ *
+ * `iso` es la fecha del movimiento en formato YYYY-MM-DD (null si no se pudo
+ * leer) y `mensualidad` el mes que ese pago dice cubrir.
+ */
+export function resumirPagos(
+  pagos: { iso: string | null; mensualidad?: string; monto?: number }[],
+): PagosDelAlumno {
+  let ultimaMensualidad: string | null = null;
+  let ultimoMesSinDeclarar: string | null = null;
+  let ultimoIso: string | null = null;
+  let ultimoMonto: number | undefined;
+
+  for (const p of pagos) {
+    const ym = mensualidadAYm(p.mensualidad);
+    if (ym) {
+      if (!ultimaMensualidad || ym > ultimaMensualidad) ultimaMensualidad = ym;
+    } else if (p.iso) {
+      const mesPago = p.iso.slice(0, 7);
+      if (!ultimoMesSinDeclarar || mesPago > ultimoMesSinDeclarar) ultimoMesSinDeclarar = mesPago;
+    }
+    if (p.iso && (!ultimoIso || p.iso > ultimoIso)) {
+      ultimoIso = p.iso;
+      ultimoMonto = p.monto;
+    }
+  }
+
+  return { ultimaMensualidad, ultimoMesSinDeclarar, ultimoMonto };
+}
+
+/**
+ * Cuotas debidas, mes a mes, desde el arranque hasta hoy.
+ *
+ * Se cuenta desde el mes siguiente a la última MENSUALIDAD pagada. Antes se
+ * contaba desde la FECHA del último movimiento, que es otra cosa: si en marzo
+ * alguien paga la cuota de enero, lo que salda es enero, no marzo. Con el
+ * criterio viejo esa persona salía solvente hasta abril, y quien pagaba el año
+ * entero por adelantado seguía saliendo moroso todo el año.
+ */
 export function calcularCuotasDebidas(
   student: Student,
-  lastPaidYm: string | null,
+  pagos: PagosDelAlumno | null,
   currentYm: string,
-  lastPayAmount?: number,
 ): { meses: number; totalUSD: number; detalle: { ym: string; cuota: number }[] } {
   if (student.condicion === "ClasePorClase") {
     return { meses: 0, totalUSD: 0, detalle: [] };
   }
   const detalle: { ym: string; cuota: number }[] = [];
   const ingresoYm = student.fechaIngreso ? student.fechaIngreso.slice(0, 7) : "2000-01";
-  const start = lastPaidYm
-    ? nextYm(lastPaidYm)
-    : ingresoYm > aulaStartYm(student.aulas)
-      ? ingresoYm
-      : aulaStartYm(student.aulas);
+  const arranque =
+    ingresoYm > aulaStartYm(student.aulas) ? ingresoYm : aulaStartYm(student.aulas);
+  // De dónde arranca la cuenta. Manda el más tardío de los tres:
+  //   - el arranque del aula, o el ingreso de la persona si es posterior;
+  //   - el mes siguiente a la última MENSUALIDAD pagada (la línea de
+  //     flotación: si pagó hasta enero, debe de febrero en adelante, sin que
+  //     importe en qué fecha lo pagó);
+  //   - el mes siguiente al último pago que no declaró mensualidad, donde la
+  //     fecha es lo único que hay.
+  const suelos = [arranque];
+  if (pagos?.ultimaMensualidad) suelos.push(nextYm(pagos.ultimaMensualidad));
+  if (pagos?.ultimoMesSinDeclarar) suelos.push(nextYm(pagos.ultimoMesSinDeclarar));
+  const start = suelos.reduce((a, b) => (b > a ? b : a));
+  const lastPayAmount = pagos?.ultimoMonto;
+
   let cur = start;
   let guard = 0;
   while (cur <= currentYm && guard++ < 120) {

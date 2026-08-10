@@ -161,10 +161,14 @@ export function useEditableAulas(): [string[], (next: string[]) => void] {
   return [items, setter];
 }
 
+// Igualdad exacta y de más específico a más general, igual que aulaStartYm en
+// fees-logic.ts. Antes se comparaba con `a.includes("Arjuna I")`, que es
+// subcadena: "Arjuna II" y "Arjuna II 2026" contienen "Arjuna I", así que la
+// primera condición se quedaba con las tres aulas Arjuna y la segunda línea
+// nunca llegaba a ejecutarse.
 function defaultFechaIngreso(aulas: string[]): string {
-  if (aulas.some((a) => a.includes("Arjuna I"))) return "2026-02-05";
-  if (aulas.some((a) => a.includes("Arjuna II 2026") || a.includes("Arjuna II")))
-    return "2026-06-05";
+  if (aulas.includes("Arjuna II 2026")) return "2026-06-05";
+  if (aulas.includes("Arjuna I")) return "2026-02-05";
   return "2026-01-01";
 }
 

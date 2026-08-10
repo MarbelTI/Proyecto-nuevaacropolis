@@ -9,7 +9,7 @@ import type {
   ReflexionMeta,
   ReflexionAsistencia,
 } from "@/lib/attendance-store";
-import { calcularCuotasDebidas, currentYm } from "@/lib/fees-logic";
+import { calcularCuotasDebidas, currentYm, resumirPagos } from "@/lib/fees-logic";
 import { grupoDeCategoria } from "@/lib/categorias";
 import { usd } from "@/lib/formato";
 
@@ -189,9 +189,14 @@ export function FichaParticipante({
     if (!persona) return null;
     const ym = currentYm();
     const ultimo = pagos.length ? pagos[0] : null;
-    const ultimoYm = ultimo ? ultimo.iso.slice(0, 7) : null;
+    // La deuda son los meses que ningún pago declara cubrir (columna
+    // mensualidad), no los posteriores a la fecha del último pago: pagar en
+    // agosto la mensualidad de enero no deja a nadie al día.
+    const resumen = resumirPagos(
+      pagos.map((p) => ({ iso: p.iso, mensualidad: p.mensualidad, monto: p.usd })),
+    );
     return {
-      ...calcularCuotasDebidas(persona, ultimoYm, ym, ultimo?.usd),
+      ...calcularCuotasDebidas(persona, resumen, ym),
       ultimo,
     };
   }, [persona, pagos]);

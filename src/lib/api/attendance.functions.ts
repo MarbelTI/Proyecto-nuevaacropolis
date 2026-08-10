@@ -44,23 +44,6 @@ function fechaONull(v: string | undefined): string | null {
   return v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
 }
 
-/**
- * Supabase acepta lotes grandes, pero una sola petición con miles de filas es
- * frágil (tiempo de espera, límite de tamaño). Un aula de 80 alumnos por 52
- * clases ya son 4.160 filas, así que se manda por partes.
- */
-async function enLotes<T>(
-  filas: T[],
-  tamano: number,
-  fn: (lote: T[]) => Promise<{ error: { message: string } | null }>,
-): Promise<string | null> {
-  for (let i = 0; i < filas.length; i += tamano) {
-    const { error } = await fn(filas.slice(i, i + tamano));
-    if (error) return error.message;
-  }
-  return null;
-}
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function clienteConSesion(accessToken?: string): Promise<any | null> {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
@@ -122,7 +105,15 @@ export const syncAttendanceToSupabase = createServerFn({ method: "POST" })
       };
     }
 
-    // 1. Las aulas primero: el resto de tablas apuntan a ellas.
+    // Se prepara TODO y se manda de una vez a la función sync_asistencias, que
+    // borra y reinserta dentro de una sola transacción.
+    //
+    // Antes esto eran cinco pasos por HTTP: subir aulas, borrar las tres tablas
+    // y reinsertar en lotes de 500. Un corte de red o un timeout de Vercel
+    // entre el borrado y el último lote dejaba la nube vacía o a medias, sin
+    // vuelta atrás. Con la transacción, o entra todo o no se toca nada.
+    const validas = new Set(nombresAulas);
+
     const aulasRows = aulasPermitidas.map((a) => ({
       nombre: a.nombre,
       celador: a.celador,
@@ -132,21 +123,10 @@ export const syncAttendanceToSupabase = createServerFn({ method: "POST" })
       temas: a.temas ?? {},
       activa: a.activa !== false,
     }));
-    const errAulas = await enLotes(aulasRows, 200, (lote) =>
-      supabase.from("att_aulas").upsert(lote, { onConflict: "nombre" }),
-    );
-    if (errAulas) return { ok: false, error: `Aulas: ${errAulas}` };
 
-    // 2. Limpiar lo viejo de esas aulas, de hijas a madres para no chocar
-    //    con las claves foráneas.
-    for (const tabla of ["att_reflexion_asistencia", "att_reflexiones", "att_asistencias"]) {
-      const { error } = await supabase.from(tabla).delete().in("aula", nombresAulas);
-      if (error) return { ok: false, error: `Limpiando ${tabla}: ${error.message}` };
-    }
-
-    // 3. Asistencias. Se descartan las filas sin fecha válida o de un aula que
-    //    no viene en el envío: violarían la clave foránea y abortarían todo.
-    const validas = new Set(nombresAulas);
+    // Se descartan las filas sin fecha válida o de un aula que no viene en el
+    // envío: violarían la clave foránea. La función repite estos filtros, pero
+    // mandar menos datos por la red también cuenta.
     const asistRows = data.records
       .filter((r) => validas.has(r.aula) && fechaONull(r.fecha) && r.alumno)
       .map((r) => ({
@@ -156,12 +136,7 @@ export const syncAttendanceToSupabase = createServerFn({ method: "POST" })
         asistencia: r.asistencia || "",
         reflexion: r.reflexion || "",
       }));
-    const errAsist = await enLotes(asistRows, 500, (lote) =>
-      supabase.from("att_asistencias").upsert(lote, { onConflict: "aula,alumno,fecha" }),
-    );
-    if (errAsist) return { ok: false, error: `Asistencias: ${errAsist}` };
 
-    // 4. Reflexiones.
     const reflexRows = data.reflexionesMeta
       .filter((r) => validas.has(r.aula) && r.id)
       .map((r) => ({
@@ -172,13 +147,7 @@ export const syncAttendanceToSupabase = createServerFn({ method: "POST" })
         fecha: fechaONull(r.fecha),
         tema_fecha: fechaONull(r.temaFecha),
       }));
-    const errReflex = await enLotes(reflexRows, 500, (lote) =>
-      supabase.from("att_reflexiones").upsert(lote, { onConflict: "id" }),
-    );
-    if (errReflex) return { ok: false, error: `Reflexiones: ${errReflex}` };
 
-    // 5. Entregas de reflexión. Solo las que apuntan a una reflexión que
-    //    acabamos de subir.
     const idsReflex = new Set(reflexRows.map((r) => r.id));
     const entregaRows = data.reflexionAsistencia
       .filter((e) => idsReflex.has(e.reflexionId) && e.alumno)
@@ -188,17 +157,32 @@ export const syncAttendanceToSupabase = createServerFn({ method: "POST" })
         aula: e.aula,
         estado: e.estado || "",
       }));
-    const errEntregas = await enLotes(entregaRows, 500, (lote) =>
-      supabase.from("att_reflexion_asistencia").upsert(lote, { onConflict: "reflexion_id,alumno" }),
-    );
-    if (errEntregas) return { ok: false, error: `Entregas: ${errEntregas}` };
 
+    const { data: resumen, error } = await supabase.rpc("sync_asistencias", {
+      p_aulas: aulasRows,
+      p_asistencias: asistRows,
+      p_reflexiones: reflexRows,
+      p_entregas: entregaRows,
+    });
+
+    if (error) {
+      // Si falla, no se ha escrito nada: la transacción se deshizo entera.
+      console.error("[asistencias.sync]", error);
+      return {
+        ok: false,
+        error:
+          "No se pudo subir. No se ha borrado ni cambiado nada en la nube. " +
+          "Vuelve a intentarlo; si sigue fallando, avisa a Tecnologías.",
+      };
+    }
+
+    const r = (resumen ?? {}) as Record<string, number>;
     return {
       ok: true,
-      aulas: aulasRows.length,
-      asistencias: asistRows.length,
-      reflexiones: reflexRows.length,
-      entregas: entregaRows.length,
+      aulas: r.aulas ?? aulasRows.length,
+      asistencias: r.asistencias ?? asistRows.length,
+      reflexiones: r.reflexiones ?? reflexRows.length,
+      entregas: r.entregas ?? entregaRows.length,
     };
   });
 

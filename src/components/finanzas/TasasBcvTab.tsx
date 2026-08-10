@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { fetchBcvQuarter } from "@/lib/bcv.functions";
+import { getAccessToken } from "@/lib/supabase";
 import { useBcvRates, type BcvRates } from "@/lib/lists-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,9 +31,10 @@ export function TasasBcvTab({ bcv }: { bcv: ReturnType<typeof useBcvRates> }) {
     setLoadingAuto(true);
     let total = 0;
     const y = new Date().getFullYear();
+    const accessToken = await getAccessToken();
     for (const q of [1, 2, 3, 4]) {
       try {
-        const res = await fetchQuarter({ data: { year: y, quarter: q } });
+        const res = await fetchQuarter({ data: { year: y, quarter: q, accessToken } });
         if (!res || !res.rows.length) continue;
         const nuevas: Record<string, number> = {};
         for (const r of res.rows) {
@@ -96,10 +98,15 @@ export function TasasBcvTab({ bcv }: { bcv: ReturnType<typeof useBcvRates> }) {
 
   const rows = Object.entries(bcv.rates).sort((a, b) => b[0].localeCompare(a[0]));
 
+  // Sin tasas guardadas, se traen las del BCV al abrir la pestaña.
+  //
+  // Aquí había además un bcv.clean(iso => iso.startsWith("2025")) que borraba
+  // TODAS las tasas de 2025. Era una limpieza pensada para ejecutarse una vez,
+  // pero corría en cada montaje del componente, y Radix desmonta la pestaña
+  // cada vez que se sale de ella: quien importaba el XLS de 2025 lo perdía al
+  // volver, y los movimientos de ese año se quedaban sin tasa.
   useEffect(() => {
-    const cur = Object.keys(bcv.rates).filter((k) => !k.startsWith("2025"));
-    bcv.clean((iso) => iso.startsWith("2025"));
-    if (!cur.length) cargarTrimestres();
+    if (!Object.keys(bcv.rates).length) cargarTrimestres();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

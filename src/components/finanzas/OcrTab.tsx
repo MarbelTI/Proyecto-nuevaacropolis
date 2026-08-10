@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { analyzeJournalImage, type Entry } from "@/lib/ocr.functions";
+import { aNumero, aDosDecimales, CELDA_NUMERO } from "@/lib/formato";
 import { bcvRateFor, firmaTransaccion, useTransactions, type Student } from "@/lib/lists-store";
 import { calcularMontoUsd, redondearTasa, TASA_PESOS_DEFAULT } from "@/lib/fees-logic";
 import { Button } from "@/components/ui/button";
@@ -58,27 +59,31 @@ function fileToDataUrl(file: File): Promise<string> {
 function normalizeMoneyRow<
   T extends { fecha: string; moneda: string; monto: string; tasa: string; montoUsd: string },
 >(row: T, bcvRates: Record<string, number>): T {
+  // Las cifras de esta tabla viajan como TEXTO: es lo que devuelve el modelo y
+  // es lo que se escribe a mano encima. Se leen siempre con aNumero, nunca con
+  // Number(): Number("1.234,56") es NaN y acababa entrando como 0 sin avisar,
+  // que es justo lo que no puede pasar en un libro contable.
   const next = { ...row };
-  if (next.moneda === "Pesos" && (!next.tasa || Number(next.tasa) === 0)) {
-    next.tasa = String(TASA_PESOS_DEFAULT);
+  if (next.moneda === "Pesos" && aNumero(next.tasa) === 0) {
+    next.tasa = TASA_PESOS_DEFAULT.toFixed(2);
   }
-  if (next.moneda === "Bolívares" && (!next.tasa || Number(next.tasa) === 0)) {
+  if (next.moneda === "Bolívares" && aNumero(next.tasa) === 0) {
     const iso = fechaToIso(next.fecha);
     if (iso) {
       const r = bcvRateFor(bcvRates, iso);
-      if (r != null) next.tasa = String(r);
+      if (r != null) next.tasa = r.toFixed(2);
     }
   }
   // La tasa se guarda siempre con 2 decimales (venga del BCV o escrita a mano),
   // y el monto en USD se calcula con esa misma tasa redondeada.
-  const tasaNum = redondearTasa(next.tasa ? Number(next.tasa) : null);
-  if (tasaNum != null) next.tasa = String(tasaNum);
-  const montoNum = Number(next.monto) || 0;
-  next.montoUsd = String(calcularMontoUsd(next.moneda, montoNum, tasaNum));
+  const tasaNum = redondearTasa(next.tasa ? aNumero(next.tasa) : null);
+  if (tasaNum != null) next.tasa = tasaNum.toFixed(2);
+  const montoNum = aNumero(next.monto);
+  next.montoUsd = calcularMontoUsd(next.moneda, montoNum, tasaNum).toFixed(2);
   return next;
 }
 
-type PreviewItem = {
+export type PreviewItem = {
   name: string;
   url: string;
   status: "pending" | "processing" | "ok" | "error";
@@ -99,6 +104,7 @@ function EntriesTable({
   duplicateRow,
   removeRow,
   duplicados,
+  problemas,
 }: {
   entries: Entry[];
   ingresos: string[];
@@ -108,6 +114,8 @@ function EntriesTable({
   removeRow: (i: number) => void;
   /** Índices de filas que ya existen en Transacciones o están repetidas aquí. */
   duplicados: Set<number>;
+  /** Índice → qué está mal leído en esa fila. */
+  problemas: Map<number, string[]>;
 }) {
   return (
     <div className="overflow-x-auto">
@@ -137,14 +145,27 @@ function EntriesTable({
           {entries.map((e, i) => {
             const cats = e.tipo === "Gasto" ? gastos : ingresos;
             const esDup = duplicados.has(i);
+            // El ámbar (mal leído) manda sobre el rosado (duplicada): de nada
+            // sirve saber que está repetida si además está mal.
+            const fallos = problemas.get(i);
             return (
               <tr
                 key={i}
                 className={
                   "border-b last:border-0 align-top " +
-                  (esDup ? "bg-pink-100 dark:bg-pink-950/40" : "")
+                  (fallos
+                    ? "bg-amber-100 dark:bg-amber-950/40"
+                    : esDup
+                      ? "bg-pink-100 dark:bg-pink-950/40"
+                      : "")
                 }
-                title={esDup ? "Este movimiento ya existe en Transacciones" : undefined}
+                title={
+                  fallos
+                    ? `Mal leído: ${fallos.join(" · ")}`
+                    : esDup
+                      ? "Este movimiento ya existe en Transacciones"
+                      : undefined
+                }
               >
                 <td className="p-1">
                   <Input
@@ -221,25 +242,33 @@ function EntriesTable({
                     </SelectContent>
                   </Select>
                 </td>
+                {/* Dinero: a la derecha, con cifras de ancho fijo y dos
+                    decimales al salir del campo. Alineado a la izquierda se
+                    leía como texto —y de hecho lo era— y no había forma de
+                    comparar dos importes de un vistazo. */}
                 <td className="p-1">
                   <Input
+                    inputMode="decimal"
                     value={e.monto}
                     onChange={(x) => updateEntry(i, "monto", x.target.value)}
-                    className="h-9 w-24"
+                    onBlur={(x) => updateEntry(i, "monto", aDosDecimales(x.target.value))}
+                    className={`h-9 w-24 ${CELDA_NUMERO}`}
                   />
                 </td>
                 <td className="p-1">
                   <Input
+                    inputMode="decimal"
                     value={e.tasa}
                     onChange={(x) => updateEntry(i, "tasa", x.target.value)}
-                    className="h-9 w-24"
+                    onBlur={(x) => updateEntry(i, "tasa", aDosDecimales(x.target.value))}
+                    className={`h-9 w-24 ${CELDA_NUMERO}`}
                   />
                 </td>
                 <td className="p-1">
                   <Input
                     value={e.montoUsd}
                     readOnly
-                    className="h-9 w-24 bg-muted/40"
+                    className={`h-9 w-24 bg-muted/40 ${CELDA_NUMERO}`}
                     title="Calculado automáticamente"
                   />
                 </td>
@@ -268,18 +297,38 @@ export function OcrTab({
   bcvRates,
   students,
   transactions,
+  entries,
+  setEntries,
+  previews,
+  setPreviews,
 }: {
   ingresos: string[];
   gastos: string[];
   bcvRates: Record<string, number>;
   students: Student[];
   transactions: ReturnType<typeof useTransactions>;
+  /**
+   * Las filas extraídas y las fotos viven en el componente padre, no aquí.
+   *
+   * Radix desmonta el contenido de la pestaña que no está activa, así que con
+   * el estado dentro de este componente bastaba con ir un momento a
+   * Transacciones —a comprobar un pago repetido, por ejemplo— para perder
+   * varias hojas de libro diario ya revisadas a mano. Al vivir arriba, el
+   * trabajo sobrevive al cambio de pestaña.
+   */
+  entries: Entry[];
+  setEntries: React.Dispatch<React.SetStateAction<Entry[]>>;
+  previews: PreviewItem[];
+  setPreviews: React.Dispatch<React.SetStateAction<PreviewItem[]>>;
 }) {
   const analyze = useServerFn(analyzeJournalImage);
-  const [previews, setPreviews] = useState<PreviewItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
-  const [entries, setEntries] = useState<Entry[]>([]);
+
+  // Sin padrón cargado, el modelo no tiene contra qué contrastar la letra y
+  // transcribe nombres a ojo. Es un fallo silencioso: las filas salen con
+  // aspecto normal y los nombres mal.
+  const sinPadron = students.length === 0;
 
   const processFiles = async (files: File[]) => {
     const newItems: PreviewItem[] = await Promise.all(
@@ -387,6 +436,9 @@ export function OcrTab({
         `Solo se procesarán ${restantes} de las ${arr.length} imágenes (máximo ${MAX_IMAGENES} por carga).`,
       );
     }
+    if (sinPadron) {
+      toast.warning("Sin lista de alumnos: los nombres saldrán como se lean, sin corregir.");
+    }
     await processFiles(arr.slice(0, restantes));
   };
 
@@ -412,6 +464,38 @@ export function OcrTab({
    * repiten dentro del propio lote escaneado (ej. la misma hoja subida dos
    * veces). Se marcan en rosado para revisarlas antes de guardar.
    */
+  /**
+   * Filas que el modelo devolvió mal leídas: categoría que no existe, importe
+   * ilegible, fecha que no se entiende.
+   *
+   * El modelo responde con seguridad aunque se haya equivocado, así que sin
+   * esto una categoría inventada o un monto que no es un número entraban en el
+   * libro y el error solo aparecía después, cuadrando cuentas. Se marcan en
+   * ámbar y no se puede guardar hasta arreglarlas.
+   */
+  const problemas = useMemo(() => {
+    const m = new Map<number, string[]>();
+    entries.forEach((e, i) => {
+      const fallos: string[] = [];
+      const cats = e.tipo === "Gasto" ? gastos : ingresos;
+
+      if (!e.tipo) fallos.push("falta decir si es ingreso o gasto");
+      if (!fechaToIso(e.fecha)) fallos.push("la fecha no se entiende");
+      if (!e.categoria) fallos.push("sin categoría");
+      else if (!cats.includes(e.categoria)) fallos.push(`la categoría «${e.categoria}» no existe`);
+
+      const montoTexto = e.monto.trim();
+      if (!montoTexto) fallos.push("sin monto");
+      else if (aNumero(montoTexto) === 0) fallos.push(`el monto «${montoTexto}» no es una cifra`);
+
+      if (!e.moneda) fallos.push("sin moneda");
+      else if (e.moneda !== "USD" && aNumero(e.tasa) === 0) fallos.push("falta la tasa");
+
+      if (fallos.length) m.set(i, fallos);
+    });
+    return m;
+  }, [entries, ingresos, gastos]);
+
   const duplicados = useMemo(() => {
     const yaRegistradas = new Set(transactions.list.map((t) => firmaTransaccion(t)));
     const vistasEnLote = new Set<string>();
@@ -440,6 +524,14 @@ export function OcrTab({
   };
 
   const guardar = (soloNuevas: boolean) => {
+    // Nada entra al libro con errores de lectura sin arreglar. Es más barato
+    // corregir una casilla aquí que buscar el descuadre dentro de un mes.
+    if (problemas.size > 0) {
+      toast.error(
+        `${problemas.size} fila(s) en ámbar tienen algo mal leído. Corrígelas antes de guardar.`,
+      );
+      return;
+    }
     const aGuardar = soloNuevas ? entries.filter((_, i) => !duplicados.has(i)) : entries;
     if (!aGuardar.length) {
       toast.info("No hay filas nuevas que guardar");
@@ -454,9 +546,9 @@ export function OcrTab({
         descripcion: e.descripcion,
         mensualidad: e.mensualidad,
         moneda: e.moneda,
-        monto: Number(e.monto) || 0,
-        tasa: e.tasa ? Number(e.tasa) : null,
-        montoUsd: Number(e.montoUsd) || 0,
+        monto: aNumero(e.monto),
+        tasa: e.tasa ? aNumero(e.tasa) || null : null,
+        montoUsd: aNumero(e.montoUsd),
         banco: "",
       })),
     );
@@ -472,6 +564,16 @@ export function OcrTab({
   return (
     <>
       <Card className="p-6">
+        {sinPadron && (
+          <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+            <p className="font-medium text-amber-300">No hay lista de alumnos cargada</p>
+            <p className="mt-1 text-muted-foreground">
+              El lector corrige los nombres manuscritos comparándolos con el padrón. Sin él, los va
+              a transcribir tal como los lea y saldrán mal escritos. Carga los integrantes en
+              Solvencias antes de escanear.
+            </p>
+          </div>
+        )}
         <label className="relative flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-primary/40 bg-secondary p-8 text-center transition hover:bg-accent/20">
           <input
             type="file"
@@ -543,6 +645,13 @@ export function OcrTab({
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-lg font-semibold">Entradas extraídas ({entries.length})</h2>
+              {problemas.size > 0 && (
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                  <span className="inline-block h-3 w-3 rounded-sm bg-amber-200 dark:bg-amber-900" />
+                  {problemas.size} fila(s) en ámbar están mal leídas — pasa el ratón por encima para
+                  ver qué falla. Hay que arreglarlas antes de guardar.
+                </p>
+              )}
               {duplicados.size > 0 && (
                 <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                   <span className="inline-block h-3 w-3 rounded-sm bg-pink-200 dark:bg-pink-900" />
@@ -559,12 +668,24 @@ export function OcrTab({
                 <Plus className="mr-2 h-4 w-4" /> Fila
               </Button>
               {duplicados.size > 0 && (
-                <Button variant="outline" onClick={() => guardar(true)}>
+                <Button
+                  variant="outline"
+                  onClick={() => guardar(true)}
+                  disabled={problemas.size > 0}
+                >
                   <Save className="mr-2 h-4 w-4" /> Guardar solo las nuevas (
                   {entries.length - duplicados.size})
                 </Button>
               )}
-              <Button onClick={() => guardar(false)}>
+              <Button
+                onClick={() => guardar(false)}
+                disabled={problemas.size > 0}
+                title={
+                  problemas.size > 0
+                    ? "Hay filas mal leídas (en ámbar). Corrígelas para poder guardar."
+                    : undefined
+                }
+              >
                 <Save className="mr-2 h-4 w-4" />
                 {duplicados.size > 0 ? "Guardar todas" : "Guardar en Transacciones"}
               </Button>
@@ -578,6 +699,7 @@ export function OcrTab({
             duplicateRow={duplicateRow}
             removeRow={removeRow}
             duplicados={duplicados}
+            problemas={problemas}
           />
         </Card>
       )}

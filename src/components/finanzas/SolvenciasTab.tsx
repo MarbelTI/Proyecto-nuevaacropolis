@@ -1,12 +1,19 @@
 import { useMemo, useState } from "react";
 import type { Student, Transaction } from "@/lib/lists-store";
 import type { AulaMeta, AttendanceRecord } from "@/lib/attendance-store";
-import { calcularCuotasDebidas, cuotaMensualUSD, currentYm, precioClase } from "@/lib/fees-logic";
+import {
+  calcularCuotasDebidas,
+  cuotaMensualUSD,
+  currentYm,
+  precioClase,
+  resumirPagos,
+  type PagosDelAlumno,
+} from "@/lib/fees-logic";
 import { armarMensaje, usePlantillas } from "@/lib/mensajes-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { usd } from "@/lib/formato";
+import { usd, aNumero, CELDA_NUMERO } from "@/lib/formato";
 import {
   Select,
   SelectContent,
@@ -32,6 +39,9 @@ import {
   Upload,
   UserPlus,
   Users,
+  Settings2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { parseExcelToStudents } from "@/lib/excel-import";
 import { toast } from "sonner";
@@ -163,6 +173,171 @@ function escribirCuotaEspecial(s: Student, monto?: number, desde?: string): Stud
     };
   }
   return { ...s, cuotaOverride: monto, cuotaOverridesTemporales: historico };
+}
+
+/**
+ * Diálogo de cuotas especiales: quién paga algo distinto de la cuota general.
+ *
+ * Vive detrás de un engranaje y no enseña ni una cifra hasta que se abre. Esta
+ * pantalla se usa delante de gente —en clase, en el mostrador— y hay personas
+ * becadas y personas que pagan menos; dejar esos importes a la vista sería
+ * decirle a cualquiera que pase quién paga cuánto. Mismo criterio que en la
+ * ficha del participante, donde la cuota individual tampoco se muestra.
+ *
+ * Se edita sobre una copia y solo se escribe al guardar, así que cerrar sin
+ * querer no deja a nadie con la cuota a medio cambiar.
+ */
+function CuotasEspecialesDialog({
+  open,
+  onClose,
+  students,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  students: Student[];
+  onSave: (next: Student[]) => void;
+}) {
+  const [borrador, setBorrador] = useState<Student[]>(students);
+  const [busca, setBusca] = useState("");
+  const [inicializado, setInicializado] = useState(false);
+  /**
+   * Los importes van tapados como una contraseña. Se ve QUE hay algo escrito,
+   * no cuánto. El ojo los enseña a petición: sin poder verlos nunca, un 15
+   * tecleado como 1.5 quedaría invisible y se cobraría mal durante meses.
+   * Siempre arranca oculto, también al reabrir el diálogo.
+   */
+  const [mostrar, setMostrar] = useState(false);
+
+  if (open && !inicializado) {
+    setBorrador(students);
+    setBusca("");
+    setMostrar(false);
+    setInicializado(true);
+  }
+  if (!open && inicializado) setInicializado(false);
+
+  const filtrados = borrador
+    .map((st, idx) => ({ st, idx }))
+    .filter(({ st }) => !busca || normalizeName(st.nombre).includes(normalizeName(busca)));
+
+  const conExcepcion = borrador.filter((s) => leerCuotaEspecial(s).monto !== undefined).length;
+
+  const cambiar = (idx: number, monto?: number, desde?: string) =>
+    setBorrador((prev) =>
+      prev.map((s, i) => (i === idx ? escribirCuotaEspecial(s, monto, desde) : s)),
+    );
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Cuotas especiales</DialogTitle>
+        </DialogHeader>
+
+        <p className="text-xs text-muted-foreground">
+          Quien no aparezca aquí con un importe paga la cuota general del mes. Un <b>0</b> escrito a
+          mano significa que no paga —una beca— y se respeta; dejarlo vacío no es lo mismo, porque
+          entonces se le calcula la cuota general. El mes de «desde» hace que el importe valga a
+          partir de ahí y no toca los meses anteriores.
+        </p>
+
+        <div className="flex items-center gap-2">
+          <Input
+            placeholder="Buscar por nombre…"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setMostrar((v) => !v)}
+            title={mostrar ? "Ocultar los importes" : "Ver los importes"}
+            aria-label={mostrar ? "Ocultar los importes" : "Ver los importes"}
+          >
+            {mostrar ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </Button>
+        </div>
+
+        <div className="max-h-[50vh] overflow-y-auto rounded-lg border">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-card">
+              <tr className="border-b text-left text-xs text-muted-foreground">
+                <th className="px-2 py-1.5 font-medium">Integrante</th>
+                <th className="w-28 px-2 py-1.5 font-medium">USD</th>
+                <th className="w-36 px-2 py-1.5 font-medium">Desde el mes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtrados.map(({ st, idx }) => {
+                const ce = leerCuotaEspecial(st);
+                return (
+                  <tr key={st.id ?? `${st.nombre}-${idx}`} className="border-b last:border-0">
+                    <td className="truncate px-2 py-1" title={st.nombre}>
+                      {st.nombre}
+                    </td>
+                    <td className="px-2 py-1">
+                      <Input
+                        type={mostrar ? "number" : "password"}
+                        step="0.01"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        className={`h-8 ${CELDA_NUMERO}`}
+                        value={ce.monto ?? ""}
+                        onChange={(e) => {
+                          const v = e.target.value.trim();
+                          // Tapado no hay corrector visual, así que se rechaza
+                          // lo que no sea una cifra en vez de dejar que "abc"
+                          // se convierta en 0 — que aquí significaría beca.
+                          if (v && !/^[\d.,]+$/.test(v)) return;
+                          cambiar(idx, v === "" ? undefined : aNumero(v), ce.desde);
+                        }}
+                      />
+                    </td>
+                    <td className="px-2 py-1">
+                      <Input
+                        type="month"
+                        className="h-8"
+                        disabled={ce.monto === undefined}
+                        value={ce.desde ?? ""}
+                        onChange={(e) => cambiar(idx, ce.monto, e.target.value)}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+              {!filtrados.length && (
+                <tr>
+                  <td colSpan={3} className="px-2 py-6 text-center text-muted-foreground">
+                    Nadie con ese nombre
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <DialogFooter className="items-center justify-between sm:justify-between">
+          <span className="text-xs text-muted-foreground">
+            {conExcepcion} con cuota propia de {borrador.length}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                onSave(borrador);
+                onClose();
+              }}
+            >
+              <Save className="mr-2 h-4 w-4" /> Guardar
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 /**
@@ -383,6 +558,7 @@ function StudentEditDialog({
   student,
   aulas,
   lastPay,
+  pagos,
   onClose,
   onSave,
   onDelete,
@@ -391,6 +567,8 @@ function StudentEditDialog({
   student: Student | null;
   aulas: string[];
   lastPay: { fecha: string; monto: number } | null;
+  /** Meses que los pagos declaran cubrir. Null = sin pagos registrados. */
+  pagos: PagosDelAlumno | null;
   onClose: () => void;
   onSave: (s: Student) => void;
   onDelete?: () => void;
@@ -425,8 +603,7 @@ function StudentEditDialog({
 
   const ymNow = currentYm();
   const cuotaAplicada = cuotaMensualUSD(draft, ymNow);
-  const lastYm = lastPay ? (fechaToIso(lastPay.fecha) || "").slice(0, 7) : null;
-  const deuda = calcularCuotasDebidas(draft, lastYm, ymNow, lastPay?.monto);
+  const deuda = calcularCuotasDebidas(draft, pagos, ymNow);
   const esPorClase = draft.condicion === "ClasePorClase";
   const precioClaseActual = precioClase(ymNow);
 
@@ -631,6 +808,7 @@ export default function SolvenciasTab({
   tx,
   attAulas = [],
   attRecords = [],
+  puedeGestionarCuotas = false,
 }: {
   students: Student[];
   setStudents: (n: Student[]) => void;
@@ -639,6 +817,15 @@ export default function SolvenciasTab({
   tx: Transaction[];
   attAulas?: AulaMeta[];
   attRecords?: AttendanceRecord[];
+  /**
+   * Quién puede ver y tocar las cuotas especiales: solo finanzas y super_admin.
+   *
+   * Esconder el engranaje NO es una medida de seguridad — quien sepa mirar el
+   * código de la página lo encuentra igual. Es discreción: que no aparezca en
+   * la pantalla de un celador ni en la de dirección, porque ahí no pinta nada.
+   * Lo que de verdad protege el dato son las políticas RLS de la base.
+   */
+  puedeGestionarCuotas?: boolean;
 }) {
   const [filterActividad, setFilterActividad] = useState<
     "Activo" | "Retirado" | "Otra sede" | "Todos"
@@ -846,9 +1033,17 @@ export default function SolvenciasTab({
     );
   };
 
-  // último pago por alumno
-  const lastPayByStudent = useMemo(() => {
-    const map = new Map<string, { fecha: string; monto: number; mes?: string }>();
+  // TODOS los pagos de cuota de cada alumno, no solo el último.
+  //
+  // Antes aquí solo se guardaba el más reciente por fecha, y la deuda se
+  // calculaba a partir de esa fecha. Para saber qué meses están cubiertos hace
+  // falta mirarlos todos: los pagos llegan desordenados y uno solo puede
+  // saldar varios meses atrasados.
+  const pagosByStudent = useMemo(() => {
+    const map = new Map<
+      string,
+      { iso: string; fecha: string; mensualidad: string; monto: number }[]
+    >();
     for (const t of tx) {
       if (t.tipo !== "Ingreso") continue;
       if (!CATEGORIAS_CUOTA.includes(t.categoria)) continue;
@@ -860,19 +1055,36 @@ export default function SolvenciasTab({
         const first = nn.split(" ")[0];
         const last = nn.split(" ").slice(-1)[0];
         if (first && last && desc.includes(first) && desc.includes(last)) {
-          const prev = map.get(s.nombre);
-          if (!prev || iso > (fechaToIso(prev.fecha) || "")) {
-            map.set(s.nombre, {
-              fecha: t.fecha,
-              monto: Number(t.montoUsd) || 0,
-              mes: t.mensualidad,
-            });
-          }
+          const arr = map.get(s.nombre) ?? [];
+          arr.push({
+            iso,
+            fecha: t.fecha,
+            mensualidad: t.mensualidad ?? "",
+            monto: Number(t.montoUsd) || 0,
+          });
+          map.set(s.nombre, arr);
         }
       }
     }
     return map;
   }, [tx, students]);
+
+  // Lo que se usa para calcular la deuda: qué meses declara cubrir cada quien.
+  const resumenPagos = useMemo(() => {
+    const map = new Map<string, PagosDelAlumno>();
+    for (const [nombre, pagos] of pagosByStudent) map.set(nombre, resumirPagos(pagos));
+    return map;
+  }, [pagosByStudent]);
+
+  // El último pago, solo para enseñarlo en pantalla.
+  const lastPayByStudent = useMemo(() => {
+    const map = new Map<string, { fecha: string; monto: number; mes?: string }>();
+    for (const [nombre, pagos] of pagosByStudent) {
+      const ultimo = pagos.reduce((a, b) => (b.iso > a.iso ? b : a));
+      map.set(nombre, { fecha: ultimo.fecha, monto: ultimo.monto, mes: ultimo.mensualidad });
+    }
+    return map;
+  }, [pagosByStudent]);
 
   const filteredStudents = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -1014,6 +1226,23 @@ export default function SolvenciasTab({
   const esCelador = (st: Student, idx: number) =>
     !!st.celador || !!respaldoAsistencias.get(idx)?.celador;
 
+  const ymNow = currentYm();
+
+  /**
+   * La deuda de cada persona, calculada una sola vez.
+   *
+   * Antes se calculaba dentro del render de cada fila, así que se rehacía
+   * entera en cada pintado. Además hacía falta tenerla fuera para poder sumarla
+   * por aula sin volver a recorrer todo.
+   */
+  const deudaPorAlumno = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof calcularCuotasDebidas>>();
+    for (const st of students) {
+      m.set(st.nombre, calcularCuotasDebidas(st, resumenPagos.get(st.nombre) ?? null, ymNow));
+    }
+    return m;
+  }, [students, resumenPagos, ymNow]);
+
   // Agrupar por aula (usa la primera aula del alumno).
   const grouped = useMemo(() => {
     const celador = (i: { st: Student; idx: number }) =>
@@ -1034,6 +1263,35 @@ export default function SolvenciasTab({
     return Array.from(g.entries()).sort(([, a], [, b]) => a.length - b.length);
   }, [visibleStudents, respaldoAsistencias]);
 
+  /**
+   * Deuda acumulada por aula, para el rótulo de la cabecera.
+   *
+   * Se enseña sin etiqueta y en gris a propósito: esta pantalla se abre delante
+   * de quien sea, y una cifra suelta no le dice nada a quien pasa por detrás.
+   * Quien tiene que entenderla ya sabe qué es. Mismo criterio que en la ficha
+   * del participante, donde la cuota individual no se muestra.
+   *
+   * Los de "clase por clase" no suman: no tienen cuota mensual, lo suyo se
+   * cobra el día que vienen.
+   */
+  const deudaPorAula = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const [aula, list] of grouped) {
+      let total = 0;
+      for (const { st } of list) {
+        if (st.condicion === "ClasePorClase") continue;
+        total += deudaPorAlumno.get(st.nombre)?.totalUSD ?? 0;
+      }
+      m.set(aula, total);
+    }
+    return m;
+  }, [grouped, deudaPorAlumno]);
+
+  const deudaTotal = useMemo(
+    () => [...deudaPorAula.values()].reduce((s, v) => s + v, 0),
+    [deudaPorAula],
+  );
+
   const addAula = () => {
     const n = nuevaAula.trim();
     if (!n) return;
@@ -1051,7 +1309,7 @@ export default function SolvenciasTab({
     setStudents(students.map((s) => ({ ...s, aulas: s.aulas.filter((x) => x !== a) })));
   };
 
-  const ymNow = currentYm();
+  const [cuotasOpen, setCuotasOpen] = useState(false);
 
   const [plantillas] = usePlantillas();
 
@@ -1063,6 +1321,14 @@ export default function SolvenciasTab({
             Miembros y solvencia{" "}
             <span className="ml-2 text-sm font-normal text-muted-foreground">
               {students.length} participantes
+              {deudaTotal > 0 && (
+                <span
+                  className="ml-2 cursor-help tabular-nums opacity-50"
+                  title={`Deuda acumulada de toda la escuela: $${$(deudaTotal)}`}
+                >
+                  · {$(deudaTotal)}
+                </span>
+              )}
             </span>
           </h2>
           <div className="flex flex-wrap items-center gap-2">
@@ -1138,9 +1404,16 @@ export default function SolvenciasTab({
                     const key = normalizeName(imp.nombre);
                     const prev = byKey.get(key);
                     if (prev) {
+                      // Solo pisan los campos que traen algo. Un `...imp` a
+                      // secas escribe encima también los vacíos, así que
+                      // importar un Excel con una columna sin rellenar
+                      // borraba cédulas, correos y teléfonos ya cargados.
+                      const conValor = Object.fromEntries(
+                        Object.entries(imp).filter(([, v]) => v !== undefined && v !== ""),
+                      ) as Partial<Student>;
                       byKey.set(key, {
                         ...prev,
-                        ...imp,
+                        ...conValor,
                         aulas: Array.from(new Set([...prev.aulas, ...imp.aulas])),
                         cuotaOverride: prev.cuotaOverride,
                         cuotaOverridesTemporales: prev.cuotaOverridesTemporales,
@@ -1158,6 +1431,19 @@ export default function SolvenciasTab({
                 }
               }}
             />
+            {/* Solo el engranaje: ni una cifra en pantalla hasta que se abre.
+                Y solo para finanzas y super_admin. */}
+            {puedeGestionarCuotas && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setCuotasOpen(true)}
+                title="Cuotas especiales"
+                aria-label="Cuotas especiales"
+              >
+                <Settings2 className="h-4 w-4" />
+              </Button>
+            )}
             <Button onClick={() => setAddOpen(true)}>
               <Plus className="mr-2 h-4 w-4" /> Agregar
             </Button>
@@ -1226,7 +1512,17 @@ export default function SolvenciasTab({
                   <span className="mr-2 inline-block w-3">{isCollapsed ? "▶" : "▼"}</span>
                   {aula}
                 </h3>
-                <span className="text-xs text-muted-foreground">{list.length} participantes</span>
+                <span className="text-xs text-muted-foreground">
+                  {list.length} participantes
+                  {deudaPorAula.get(aula) ? (
+                    <span
+                      className="ml-2 cursor-help tabular-nums opacity-50"
+                      title={`Deuda acumulada de ${aula}: $${$(deudaPorAula.get(aula) ?? 0)}`}
+                    >
+                      · {$(deudaPorAula.get(aula) ?? 0)}
+                    </span>
+                  ) : null}
+                </span>
               </button>
               {!isCollapsed && (
                 <table className="w-full table-fixed text-sm">
@@ -1257,8 +1553,11 @@ export default function SolvenciasTab({
                   <tbody>
                     {list.map(({ st, idx }) => {
                       const pay = lastPayByStudent.get(st.nombre);
-                      const lastYm = pay ? (fechaToIso(pay.fecha) || "").slice(0, 7) : null;
-                      const deuda = calcularCuotasDebidas(st, lastYm, ymNow, pay?.monto);
+                      const deuda = deudaPorAlumno.get(st.nombre) ?? {
+                        meses: 0,
+                        totalUSD: 0,
+                        detalle: [],
+                      };
                       const esPorClase = st.condicion === "ClasePorClase";
                       const sinHistorial = !pay && !esPorClase;
                       const celador = esCelador(st, idx);
@@ -1337,8 +1636,10 @@ export default function SolvenciasTab({
                                 Al día
                               </span>
                             ) : (
+                              // cursor-help: sin él nadie descubría que la
+                              // insignia lleva el importe detrás.
                               <span
-                                className="rounded bg-destructive/20 px-1.5 py-px text-xs font-bold text-destructive"
+                                className="cursor-help rounded bg-destructive/20 px-1.5 py-px text-xs font-bold text-destructive"
                                 title={`${deuda.meses} ${deuda.meses === 1 ? "mes" : "meses"} — $${$(deuda.totalUSD)}`}
                               >
                                 {deuda.meses}M
@@ -1399,6 +1700,16 @@ export default function SolvenciasTab({
         <Card className="p-8 text-center text-muted-foreground">Sin resultados</Card>
       )}
 
+      <CuotasEspecialesDialog
+        open={cuotasOpen && puedeGestionarCuotas}
+        onClose={() => setCuotasOpen(false)}
+        students={students}
+        onSave={(next) => {
+          setStudents(next);
+          toast.success("Cuotas especiales guardadas");
+        }}
+      />
+
       <StudentEditDialog
         open={editIdx !== null}
         // La casilla "Es celador(a)" muestra también lo deducido de las listas
@@ -1411,6 +1722,7 @@ export default function SolvenciasTab({
         }
         aulas={aulas}
         lastPay={editIdx != null ? (lastPayByStudent.get(students[editIdx].nombre) ?? null) : null}
+        pagos={editIdx != null ? (resumenPagos.get(students[editIdx].nombre) ?? null) : null}
         onClose={() => setEditIdx(null)}
         onSave={(next) => {
           if (editIdx == null) return;
@@ -1431,6 +1743,7 @@ export default function SolvenciasTab({
         student={null}
         aulas={aulas}
         lastPay={null}
+        pagos={null}
         onClose={() => setAddOpen(false)}
         onSave={(next) => {
           if (students.some((s) => s.nombre.toLowerCase() === next.nombre.toLowerCase())) {

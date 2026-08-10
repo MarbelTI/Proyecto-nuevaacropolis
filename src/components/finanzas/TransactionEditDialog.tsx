@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { bcvRateFor, type Transaction } from "@/lib/lists-store";
+import { aNumero } from "@/lib/formato";
 import { calcularMontoUsd, redondearTasa, TASA_PESOS_DEFAULT } from "@/lib/fees-logic";
 import { Input } from "@/components/ui/input";
 import {
@@ -163,6 +164,28 @@ function TransactionEditDialog({
   students?: { nombre: string }[];
 }) {
   const [draft, setDraft] = useState<Transaction | null>(null);
+
+  // Los campos de dinero se editan como TEXTO y solo se interpretan como
+  // número al escribirlos en el borrador.
+  //
+  // Antes eran inputs controlados por Number(): al teclear "90." el punto
+  // desaparecía en el acto y el siguiente dígito se pegaba como entero, así que
+  // "90.50" acababa guardado como 9050 — cien veces la cifra real, y en la tasa
+  // eso descuadra el movimiento entero. Escribir "0" además vaciaba el campo.
+  //
+  // El texto solo manda mientras siga cuadrando con el número del borrador. Si
+  // algo cambia el valor por detrás (la tasa que se rellena sola al poner la
+  // fecha, por ejemplo), el texto queda obsoleto y se muestra el del modelo.
+  const [textos, setTextos] = useState<Record<string, string>>({});
+  const verNumero = (campo: string, valor: number | null | undefined): string => {
+    const t = textos[campo];
+    if (t !== undefined && aNumero(t) === (valor ?? 0)) return t;
+    return valor != null && valor !== 0 ? String(valor) : "";
+  };
+  const escribirNumero = (campo: string, texto: string): number => {
+    setTextos((prev) => ({ ...prev, [campo]: texto }));
+    return aNumero(texto);
+  };
   useEffect(() => {
     setDraft(editing ? { ...editing } : null);
   }, [editing]);
@@ -355,15 +378,20 @@ function TransactionEditDialog({
           </Field>
           <Field label="Monto">
             <Input
-              value={String(draft.monto || "")}
-              onChange={(e) => update("monto", Number(e.target.value) || 0)}
+              inputMode="decimal"
+              value={verNumero("monto", draft.monto)}
+              onChange={(e) => update("monto", escribirNumero("monto", e.target.value))}
             />
           </Field>
           <Field label="Tasa">
             <div className="flex items-center gap-1">
               <Input
-                value={draft.tasa != null ? String(draft.tasa) : ""}
-                onChange={(e) => update("tasa", e.target.value ? Number(e.target.value) : null)}
+                inputMode="decimal"
+                value={verNumero("tasa", draft.tasa)}
+                onChange={(e) => {
+                  const n = escribirNumero("tasa", e.target.value);
+                  update("tasa", e.target.value.trim() ? n : null);
+                }}
               />
               {(() => {
                 const iso = fechaToIso(draft.fecha);
@@ -392,9 +420,10 @@ function TransactionEditDialog({
           </Field>
           <Field label="USD">
             <Input
-              value={String(draft.montoUsd || "")}
+              inputMode="decimal"
+              value={verNumero("montoUsd", draft.montoUsd)}
               onChange={(e) => {
-                const v = Number(e.target.value) || 0;
+                const v = escribirNumero("montoUsd", e.target.value);
                 update("montoUsd", v);
                 if (draft.monto > 0 && v > 0 && (draft.tasa == null || draft.tasa === 0)) {
                   update("tasa", redondearTasa(draft.monto / v));

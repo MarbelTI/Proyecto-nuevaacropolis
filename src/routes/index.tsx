@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { fetchBcvForDate } from "@/lib/bcv.functions";
+import { getAccessToken } from "@/lib/supabase";
 import {
   bcvRateFor,
   useBcvRates,
@@ -13,7 +14,8 @@ import {
 import { useAulasMeta, useAttendance } from "@/lib/attendance-store";
 import { NOMBRE_APP, SUBTITULO, TITULO_PAGINA, DESCRIPCION } from "@/lib/branding";
 import AsistenciasTab from "@/components/asistencias-tab";
-import { OcrTab } from "@/components/finanzas/OcrTab";
+import { OcrTab, type PreviewItem } from "@/components/finanzas/OcrTab";
+import type { Entry } from "@/lib/ocr.functions";
 import { TransactionsTab } from "@/components/finanzas/TransactionsTab";
 import { ResumenTab } from "@/components/finanzas/ResumenTab";
 import { AnalisisTab } from "@/components/finanzas/AnalisisTab";
@@ -124,6 +126,18 @@ function Index() {
   const [bcvSources, setBcvSources] = useState<Record<string, string>>({});
   /** Transacción que se está corrigiendo desde la pestaña de Préstamos. */
   const [prestamoEnEdicion, setPrestamoEnEdicion] = useState<string | null>(null);
+
+  /**
+   * El trabajo del lector OCR vive aquí, no dentro de OcrTab.
+   *
+   * Radix desmonta el contenido de la pestaña inactiva. Con el estado dentro
+   * del componente, ir un momento a Transacciones —a comprobar si un pago ya
+   * estaba registrado, por ejemplo— borraba las hojas ya escaneadas y
+   * corregidas a mano. Subiéndolo un nivel, el trabajo sobrevive al cambio de
+   * pestaña y solo se vacía cuando se guarda o se pulsa vaciar.
+   */
+  const [ocrEntries, setOcrEntries] = useState<Entry[]>([]);
+  const [ocrPreviews, setOcrPreviews] = useState<PreviewItem[]>([]);
   const enLinea = useEstaEnLinea();
   const fetchForDate = useServerFn(fetchBcvForDate);
 
@@ -181,7 +195,8 @@ function Index() {
     let cancelled = false;
     setHeaderLoading(true);
     setHeaderFetchFailed(false);
-    fetchForDate({ data: { isoDate: headerDate } })
+    getAccessToken()
+      .then((accessToken) => fetchForDate({ data: { isoDate: headerDate, accessToken } }))
       .then((res) => {
         if (cancelled) return;
         if (!res) {
@@ -487,6 +502,10 @@ function Index() {
                   bcvRates={bcv.rates}
                   students={students}
                   transactions={transactions}
+                  entries={ocrEntries}
+                  setEntries={setOcrEntries}
+                  previews={ocrPreviews}
+                  setPreviews={setOcrPreviews}
                 />
               </TabsContent>
 
@@ -611,6 +630,9 @@ function Index() {
                   tx={transactions.list}
                   attAulas={aulasMeta}
                   attRecords={attRecords}
+                  puedeGestionarCuotas={
+                    auth.role === "super_admin" || auth.role === "finanzas"
+                  }
                 />
               </TabsContent>
 

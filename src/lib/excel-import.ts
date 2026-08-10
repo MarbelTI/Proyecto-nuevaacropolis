@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 import { bcvRateNearest, type BcvRates, type Student, type Transaction } from "./lists-store";
 import { calcularMontoUsd, redondearTasa, TASA_PESOS_DEFAULT } from "./fees-logic";
 import type { Actividad, Condicion } from "./students-data";
+import { aNumeroAvisando } from "./formato";
 
 function txFechaToIso(fecha: string): string | null {
   const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
@@ -97,12 +98,24 @@ export function parseExcelToTransactions(file: File): Promise<Transaction[]> {
             : String(r.Moneda || r.moneda || "USD") === "Pesos"
               ? "Pesos"
               : "USD") as "USD" | "Bolívares" | "Pesos",
-          monto: Number(r.Monto || r.monto || 0) || 0,
+          // Las cifras se leen con aNumero, no con Number().
+          //
+          // Number("1.234,56") es NaN, y el `|| 0` que había aquí lo convertía
+          // en un CERO SILENCIOSO: un importe escrito con coma decimal —lo
+          // normal en un Excel en español— entraba como 0.00 sin que nada lo
+          // avisara. aNumero entiende "1.234,56", "1,234.56", "$ 900" y "20,00",
+          // y la variante avisando deja rastro en la consola cuando de verdad
+          // no puede leer algo.
+          monto: aNumeroAvisando(String(r.Monto || r.monto || ""), "Excel: Monto"),
           tasa: (() => {
             const v = r["Tasa cambio"] || r["Tasa"] || r.tasa;
-            return v ? Number(v) : null;
+            const n = aNumeroAvisando(String(v ?? ""), "Excel: Tasa");
+            return n > 0 ? n : null;
           })(),
-          montoUsd: Number(r["Monto USD"] || r["USD"] || r.montoUsd || 0) || 0,
+          montoUsd: aNumeroAvisando(
+            String(r["Monto USD"] || r["USD"] || r.montoUsd || ""),
+            "Excel: Monto USD",
+          ),
           banco: String(r.Banco || r.banco || ""),
         }));
         resolve(mapped);
@@ -148,7 +161,13 @@ function excelSerialToIso(v: unknown): string {
   const ms = Math.round((n - 25569) * 86400 * 1000);
   const d = new Date(ms);
   if (isNaN(d.getTime())) return "";
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  // El número de serie de Excel se convierte contando desde el epoch en UTC, así
+  // que hay que leerlo también en UTC. Antes se calculaba en UTC y se leía con
+  // getFullYear/getMonth/getDate, que son la hora LOCAL: en Venezuela (UTC-4)
+  // toda fecha retrocedía un día. Y `fechaIngreso` es la que decide desde qué
+  // mes se le cobra a cada persona, así que ese día de menos movía el cobro un
+  // mes entero cuando caía en día 1.
+  return d.toISOString().slice(0, 10);
 }
 
 function findSheet(wb: XLSX.WorkBook, ...nameKeywords: string[]): string | null {
@@ -172,8 +191,30 @@ function normalizeCondicion(v: unknown): Condicion | undefined {
   return CONDICIONES.find((c) => c.toLowerCase() === s.toLowerCase());
 }
 
-function normalizeActividad(v: unknown): Actividad {
+/**
+ * Lee una celda de texto SIN borrar lo que ya había.
+ *
+ * Si la columna no existe, o existe pero la celda viene vacía, se conserva el
+ * valor anterior. Antes se escribía "" encima: reimportar un Excel al que le
+ * faltaba rellenar una columna borraba en silencio cédulas, correos,
+ * direcciones y teléfonos de todo el mundo.
+ */
+function celda(row: unknown[], idx: number, previo?: string): string | undefined {
+  if (idx === -1) return previo;
+  const v = (row[idx] ?? "").toString().trim();
+  return v || previo;
+}
+
+/**
+ * Celda vacía = "no dice nada", no "Activo".
+ *
+ * Antes esta función devolvía "Activo" para cualquier cosa que no contuviera
+ * "retir", incluida la celda en blanco. Resultado: cada importación resucitaba
+ * a los retirados y volvían a aparecer en la lista de morosos.
+ */
+function normalizeActividad(v: unknown): Actividad | undefined {
   const s = normText(v);
+  if (!s) return undefined;
   return s.includes("retir") ? "Retirado" : "Activo";
 }
 
@@ -206,7 +247,8 @@ export function parseExcelToStudents(file: File): Promise<Student[]> {
               nombre,
               aulas: aula ? [aula] : [],
               condicion: iCondicion !== -1 ? normalizeCondicion(row[iCondicion]) : undefined,
-              actividad: iActividad !== -1 ? normalizeActividad(row[iActividad]) : "Activo",
+              actividad:
+                (iActividad !== -1 ? normalizeActividad(row[iActividad]) : undefined) ?? "Activo",
               telefono: iTelefono !== -1 ? (row[iTelefono] ?? "").toString().trim() : undefined,
             });
           }
@@ -261,20 +303,14 @@ export function parseExcelToStudents(file: File): Promise<Student[]> {
                 (iEstatus !== -1 ? normalizeActividad(row[iEstatus]) : undefined) ??
                 existing?.actividad ??
                 "Activo",
-              telefono:
-                (iTel !== -1 ? (row[iTel] ?? "").toString().trim() : "") || existing?.telefono,
-              cedula: iDoc !== -1 ? (row[iDoc] ?? "").toString().trim() : existing?.cedula,
-              correo: iCorreo !== -1 ? (row[iCorreo] ?? "").toString().trim() : existing?.correo,
-              direccion: iDir !== -1 ? (row[iDir] ?? "").toString().trim() : existing?.direccion,
-              redesSociales:
-                iRedes !== -1 ? (row[iRedes] ?? "").toString().trim() : existing?.redesSociales,
-              ocupacion: iOcup !== -1 ? (row[iOcup] ?? "").toString().trim() : existing?.ocupacion,
-              habilidades:
-                iHab !== -1 ? (row[iHab] ?? "").toString().trim() : existing?.habilidades,
-              gradoParticipacion:
-                iGrado !== -1
-                  ? (row[iGrado] ?? "").toString().trim()
-                  : existing?.gradoParticipacion,
+              telefono: celda(row, iTel, existing?.telefono),
+              cedula: celda(row, iDoc, existing?.cedula),
+              correo: celda(row, iCorreo, existing?.correo),
+              direccion: celda(row, iDir, existing?.direccion),
+              redesSociales: celda(row, iRedes, existing?.redesSociales),
+              ocupacion: celda(row, iOcup, existing?.ocupacion),
+              habilidades: celda(row, iHab, existing?.habilidades),
+              gradoParticipacion: celda(row, iGrado, existing?.gradoParticipacion),
               fechaIngreso:
                 iFIngreso !== -1
                   ? excelSerialToIso(row[iFIngreso]) || existing?.fechaIngreso
@@ -287,17 +323,11 @@ export function parseExcelToStudents(file: File): Promise<Student[]> {
                 iFfvv !== -1
                   ? excelSerialToIso(row[iFfvv]) || existing?.fechaFfvv
                   : existing?.fechaFfvv,
-              sede: iSede !== -1 ? (row[iSede] ?? "").toString().trim() : existing?.sede,
-              instructor:
-                iInstructor !== -1
-                  ? (row[iInstructor] ?? "").toString().trim()
-                  : existing?.instructor,
-              celadorNombre:
-                iCelador !== -1 ? (row[iCelador] ?? "").toString().trim() : existing?.celadorNombre,
-              horario:
-                iHorario !== -1 ? (row[iHorario] ?? "").toString().trim() : existing?.horario,
-              materias:
-                iMaterias !== -1 ? (row[iMaterias] ?? "").toString().trim() : existing?.materias,
+              sede: celda(row, iSede, existing?.sede),
+              instructor: celda(row, iInstructor, existing?.instructor),
+              celadorNombre: celda(row, iCelador, existing?.celadorNombre),
+              horario: celda(row, iHorario, existing?.horario),
+              materias: celda(row, iMaterias, existing?.materias),
             });
           }
         }

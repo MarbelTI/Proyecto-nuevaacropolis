@@ -47,6 +47,11 @@ export const CATEGORIAS_INGRESO = [
   "MIEMBROS",
   "PROBAS",
   "CLASE",
+  // Lo que se cobra por un campamento. No es cuota social: pagarlo no pone a
+  // nadie al día con su mensualidad, por eso no está en CAT_CUOTA. Se usa
+  // también para los pagos de la sede de Táriba, que llevan "Tariba:" delante
+  // de la descripción igual que los préstamos llevan el nombre.
+  "CAMPAMENTO",
   "DIFUSION",
   "EVENTOS F.C.",
   "Filosofia Café",

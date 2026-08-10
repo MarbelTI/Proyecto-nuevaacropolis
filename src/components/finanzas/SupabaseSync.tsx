@@ -38,8 +38,9 @@ export function SupabaseSync({
 }: {
   transactions: {
     list: Transaction[];
-    clear: () => void;
-    append: (rows: Omit<Transaction, "id">[]) => void;
+    // replaceAll y no clear+append: append reasigna ids nuevos, y encadenar las
+    // dos operaciones no reemplaza nada (ver el comentario en handleLoad).
+    replaceAll: (rows: Transaction[]) => void;
   };
   bcvRates: { rates: Record<string, number>; merge: (next: Record<string, number>) => void };
   students?: { list: Student[]; setAll: (next: Student[]) => void };
@@ -146,8 +147,15 @@ export function SupabaseSync({
           const [bd, bm, by] = b.fecha.split("/");
           return `${ay}-${am}-${ad}`.localeCompare(`${by}-${bm}-${bd}`);
         });
-        transactions.clear();
-        transactions.append(mapped);
+        // Aquí antes se hacía clear() y luego append(), y ninguna de las dos
+        // cosas salía bien:
+        //   - las dos closures capturan el mismo `list` del render, así que el
+        //     append deshacía el clear y quedaba lo local MÁS lo de la nube;
+        //   - append reasigna un id nuevo a cada fila, tirando el id que trae
+        //     la nube, así que el siguiente "Subir a nube" insertaba filas
+        //     nuevas en vez de actualizar las que ya estaban.
+        // Resultado: cada ciclo cargar/subir duplicaba el libro contable.
+        transactions.replaceAll(mapped);
       }
 
       const bcvResult = await loadBcv({ data: { accessToken } });

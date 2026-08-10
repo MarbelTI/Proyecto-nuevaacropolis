@@ -484,8 +484,9 @@ function StudentEditDialog({
 
   const ymNow = currentYm();
   const cuotaAplicada = cuotaMensualUSD(draft, ymNow);
-  const lastYm = lastPay ? (fechaToIso(lastPay.fecha) || "").slice(0, 7) : null;
-  const deuda = calcularCuotasDebidas(draft, lastYm, ymNow, lastPay?.monto);
+  // Este diálogo se abre siempre sin historial de pagos (lastPay llega null),
+  // así que la deuda es la de alguien de quien no consta ningún pago.
+  const deuda = calcularCuotasDebidas(draft, null, ymNow);
   const esPorClase = draft.condicion === "ClasePorClase";
   const precioClaseActual = precioClase(ymNow);
 
@@ -867,9 +868,16 @@ export function TransactionsTab({
 
   const applyBatchEdit = async () => {
     if (!batchField || !batchValue) return;
+    // Se arma la lista entera y se guarda de una sola vez.
+    //
+    // Antes esto llamaba a tx.replace() una vez por fila, y solo sobrevivía el
+    // último cambio: cada replace parte del mismo `list` capturado en el
+    // render, así que la fila N descartaba las N-1 anteriores. El mensaje decía
+    // "40 transacciones actualizadas" y en realidad cambiaba una.
+    const { calcularMontoUsd } = await import("@/lib/fees-logic");
     let count = 0;
-    for (const t of tx.list) {
-      if (!selectedIds.has(t.id)) continue;
+    const actualizadas = tx.list.map((t) => {
+      if (!selectedIds.has(t.id)) return t;
       const next = { ...t };
       if (batchField === "fecha") next.fecha = batchValue;
       else if (batchField === "tipo") next.tipo = batchValue as "Ingreso" | "Gasto";
@@ -883,12 +891,12 @@ export function TransactionsTab({
       else if (batchField === "descripcion") next.descripcion = batchValue;
       else if (batchField === "mensualidad") next.mensualidad = batchValue;
       if (batchField === "moneda" || batchField === "tasa") {
-        const { calcularMontoUsd } = await import("@/lib/fees-logic");
         next.montoUsd = calcularMontoUsd(next.moneda, next.monto, next.tasa);
       }
-      tx.replace(t.id, next);
       count++;
-    }
+      return next;
+    });
+    tx.replaceAll(actualizadas);
     toast.success(`${count} transacciones actualizadas`);
     setSelectedIds(new Set());
     setBatchDialog(false);

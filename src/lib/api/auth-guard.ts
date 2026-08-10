@@ -6,7 +6,16 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./env";
 // en todos sus entornos: production, preview y development), como red de
 // seguridad extra por si alguien define SISFIA_DEV_BYPASS_AUTH=1 por error
 // en el dashboard de Vercel.
-const DEV_BYPASS = process.env.SISFIA_DEV_BYPASS_AUTH === "1" && !process.env.VERCEL;
+// `import.meta.env.DEV` solo es cierto con el servidor de desarrollo: en el
+// build de producción Vite lo sustituye por false y borra el bloque entero, así
+// que el atajo ni siquiera viaja en el paquete que se despliega.
+//
+// Antes la condición era `!process.env.VERCEL`, que funcionaba pero dependía de
+// dos cosas frágiles: que Vercel siguiera exponiendo esa variable (es un ajuste
+// del panel que se puede apagar) y que el despliegue fuera precisamente en
+// Vercel. En un VPS o en otro proveedor, una variable de entorno mal puesta
+// bastaba para que cualquier visitante fuera super_admin.
+const DEV_BYPASS = import.meta.env.DEV && process.env.SISFIA_DEV_BYPASS_AUTH === "1";
 
 export type AuthSession = {
   userId: string;
@@ -81,9 +90,21 @@ export function canReadFinanzas(role: string): boolean {
   return role === "super_admin" || role === "finanzas" || role === "director";
 }
 
-/** Roles que pueden escribir el perfil completo de alumnos (control de estudio). */
+/**
+ * Roles que pueden escribir la ficha de alumnos.
+ *
+ * Finanzas entra desde el 10-ago-2026, por decisión expresa: es quien lleva las
+ * cuotas especiales —quién está becado, quién paga menos— y necesita poder
+ * guardarlas en la nube, no solo en su navegador.
+ *
+ * Conviene tener claro lo que eso concede: la ficha es una sola fila, así que
+ * con permiso para escribirla se puede tocar también cédula, correo, dirección
+ * y teléfono. Se aceptó a cambio de que Manuela pueda trabajar sin depender de
+ * nadie. Si algún día se quiere recortar, hay que separar las columnas de cuota
+ * en su propia tabla o política.
+ */
 export function canManageStudents(role: string): boolean {
-  return role === "super_admin" || role === "celador_estudios";
+  return role === "super_admin" || role === "celador_estudios" || role === "finanzas";
 }
 
 /**

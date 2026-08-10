@@ -274,18 +274,27 @@ export const analyzeJournalImage = createServerFn({ method: "POST" })
 
     const ingresos = data.ingresos?.length ? data.ingresos : [...CATEGORIAS_INGRESO];
     const gastos = data.gastos?.length ? data.gastos : [...CATEGORIAS_GASTO];
-    const studentsList = data.students?.length
-      ? data.students.map((s) => `- ${s.nombre} → ${s.aulas.join(", ")}`).join("\n")
-      : "";
+    // Sin lista de alumnos el modelo no tiene contra qué contrastar la letra
+    // manuscrita y transcribe lo que le parece. Antes el prompt se quedaba con
+    // el encabezado y un hueco en blanco, así que el modelo actuaba como si la
+    // lista existiera y devolvía nombres inventados con total seguridad. Si no
+    // hay lista, se le dice, y se le pide que copie literalmente.
+    const hayLista = !!data.students?.length;
+    const bloqueAlumnos = hayLista
+      ? `LISTA OFICIAL DE ALUMNOS (úsala para corregir nombres mal escritos):
+${data.students!.map((s) => `- ${s.nombre} → ${s.aulas.join(", ")}`).join("\n")}`
+      : `NO HAY LISTA DE ALUMNOS DISPONIBLE en esta ejecución.
+No inventes ni "corrijas" nombres hacia otros que te suenen: copia lo que veas
+escrito, letra por letra. Si un nombre es ilegible, escribe lo que alcances a
+leer y no lo completes de tu cuenta.`;
 
     const systemPrompt = `Eres un experto contable leyendo libros diarios manuscritos en español del centro "Filosofía Café".
 
-LISTA OFICIAL DE ALUMNOS (úsala para corregir nombres mal escritos):
-${studentsList}
+${bloqueAlumnos}
 
 REGLAS DE CATEGORÍA:
-- Alumnos de aulas "Arjuna I" o "Arjuna II" → categoría "PROBAS"
-- Alumnos de aulas "Krishna I/II/III/V/VI" → categoría "MIEMBROS"
+- Alumnos de aulas "Arjuna I", "Arjuna II" o "Arjuna II 2026" → categoría "PROBAS"
+- Alumnos de aulas "Krishna I/II/III/IV/V/VI" → categoría "MIEMBROS"
 - Otras categorías de INGRESO posibles: ${ingresos.join(", ")}
 - Categorías de GASTO típicas: ${gastos.join(", ")}
 

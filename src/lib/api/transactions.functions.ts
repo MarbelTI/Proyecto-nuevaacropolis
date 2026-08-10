@@ -138,14 +138,30 @@ export const loadTransactionsFromSupabase = createServerFn({ method: "POST" })
       global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
     });
 
-    const { data: rows, error } = await supabase
-      .from("transactions")
-      .select("*")
-      .order("fecha", { ascending: true });
-
-    if (error) return { ok: false, error: error.message, data: [] };
+    // PostgREST devuelve como mucho 1000 filas por petición. Sin paginar, a
+    // partir de la transacción 1001 el resto se quedaba fuera en silencio, y
+    // encima con ok:true, así que nadie se enteraba de que faltaba media
+    // contabilidad.
+    //
+    // Se ordena por `id` (clave primaria, estable) y no por `fecha`: esa
+    // columna es texto dd/mm/yyyy, así que ordenarla alfabéticamente ordena
+    // por día del mes (01/12/2025 antes que 02/01/2025). El orden cronológico
+    // lo pone el cliente al guardar.
+    const PAGINA = 1000;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return { ok: true, data: rows as any[] };
+    const todas: any[] = [];
+    for (let desde = 0; ; desde += PAGINA) {
+      const { data: rows, error } = await supabase
+        .from("transactions")
+        .select("*")
+        .order("id", { ascending: true })
+        .range(desde, desde + PAGINA - 1);
+
+      if (error) return { ok: false, error: error.message, data: [] };
+      todas.push(...(rows ?? []));
+      if (!rows || rows.length < PAGINA) break;
+    }
+    return { ok: true, data: todas };
   });
 
 export const loadBcvRatesFromSupabase = createServerFn({ method: "POST" })
@@ -169,13 +185,22 @@ export const loadBcvRatesFromSupabase = createServerFn({ method: "POST" })
       global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
     });
 
-    const { data: rows, error } = await supabase
-      .from("bcv_rates")
-      .select("*")
-      .order("iso_date", { ascending: true });
-
-    if (error) return { ok: false, error: error.message, data: {} };
+    // Igual que en transacciones: sin paginar, el corte de 1000 filas de
+    // PostgREST deja fuera las tasas más recientes (el orden es ascendente),
+    // y bcvRateFor acabaría convirtiendo bolívares con la tasa de hace años.
+    // Son ~365 filas al año, así que el problema aparece solo con el tiempo.
+    const PAGINA = 1000;
     const rates: Record<string, number> = {};
-    for (const r of rows) rates[r.iso_date] = r.rate;
+    for (let desde = 0; ; desde += PAGINA) {
+      const { data: rows, error } = await supabase
+        .from("bcv_rates")
+        .select("*")
+        .order("iso_date", { ascending: true })
+        .range(desde, desde + PAGINA - 1);
+
+      if (error) return { ok: false, error: error.message, data: {} };
+      for (const r of rows ?? []) rates[r.iso_date] = r.rate;
+      if (!rows || rows.length < PAGINA) break;
+    }
     return { ok: true, data: rates };
   });
