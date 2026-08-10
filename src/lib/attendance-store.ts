@@ -16,13 +16,7 @@ function load<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
-function save<T>(key: string, val: T) {
-  try {
-    localStorage.setItem(key, JSON.stringify(val));
-  } catch {
-    /* ignore */
-  }
-}
+import { guardarLocal as save } from "./utils";
 
 export type AulaMeta = {
   nombre: string;

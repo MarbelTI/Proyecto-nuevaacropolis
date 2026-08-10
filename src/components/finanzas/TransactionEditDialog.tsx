@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { bcvRateFor, type Transaction } from "@/lib/lists-store";
 import { aNumero } from "@/lib/formato";
 import { calcularMontoUsd, redondearTasa, TASA_PESOS_DEFAULT } from "@/lib/fees-logic";
@@ -164,6 +164,8 @@ function TransactionEditDialog({
   students?: { nombre: string }[];
 }) {
   const [draft, setDraft] = useState<Transaction | null>(null);
+  /** Evita que un doble clic en Guardar cree el movimiento dos veces. */
+  const guardando = useRef(false);
 
   // Los campos de dinero se editan como TEXTO y solo se interpretan como
   // número al escribirlos en el borrador.
@@ -188,6 +190,7 @@ function TransactionEditDialog({
   };
   useEffect(() => {
     setDraft(editing ? { ...editing } : null);
+    guardando.current = false;
   }, [editing]);
   if (!draft) return null;
   const cats = draft.tipo === "Gasto" ? gastos : ingresos;
@@ -244,7 +247,9 @@ function TransactionEditDialog({
   const pideNombre = CATEGORIAS_CON_NOMBRE.includes(draft.categoria);
   return (
     <Dialog open={!!editing} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg">
+      {/* Un clic fuera ya no cierra: son once campos y se perdían enteros sin
+          preguntar. Esc sigue funcionando, que es el gesto deliberado. */}
+      <DialogContent className="max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           {/* Título neutro a propósito: este diálogo se abre desde Transacciones
               y desde Resumen, y debe verse igual venga de donde venga. */}
@@ -436,7 +441,16 @@ function TransactionEditDialog({
           <Button variant="outline" onClick={onClose}>
             Cancelar
           </Button>
-          <Button onClick={() => onSave(draft)}>
+          {/* Dos clics rápidos creaban el movimiento por duplicado: el diálogo
+              todavía no se había cerrado cuando entraba el segundo. La marca va
+              en una ref y no en estado porque no hace falta repintar nada. */}
+          <Button
+            onClick={() => {
+              if (guardando.current) return;
+              guardando.current = true;
+              onSave(draft);
+            }}
+          >
             <Save className="mr-2 h-4 w-4" /> Guardar
           </Button>
         </DialogFooter>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { analyzeJournalImage, type Entry } from "@/lib/ocr.functions";
 import { aNumero, aDosDecimales, CELDA_NUMERO } from "@/lib/formato";
@@ -324,6 +324,8 @@ export function OcrTab({
   const analyze = useServerFn(analyzeJournalImage);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
+  /** Se levanta al pulsar Cancelar; el bucle lo mira antes de cada foto. */
+  const cancelado = useRef(false);
 
   // Sin padrón cargado, el modelo no tiene contra qué contrastar la letra y
   // transcribe nombres a ojo. Es un fallo silencioso: las filas salen con
@@ -347,8 +349,10 @@ export function OcrTab({
     let okCount = 0,
       errCount = 0,
       zeroCount = 0;
+    cancelado.current = false;
     try {
       for (let i = 0; i < files.length; i++) {
+        if (cancelado.current) break;
         const f = files[i];
         const idx = startIndex + i;
         setPreviews((p) => p.map((x, j) => (j === idx ? { ...x, status: "processing" } : x)));
@@ -407,6 +411,10 @@ export function OcrTab({
   };
 
   const cancelarCarga = () => {
+    // Sin esto, «Cancelar» solo apagaba el indicador: el bucle seguía llamando
+    // a la API por cada foto restante —pagándola— y metiendo filas nuevas en la
+    // tabla mientras el usuario ya había subido otro lote.
+    cancelado.current = true;
     setLoading(false);
     setPreviews((p) =>
       p.map((x) =>

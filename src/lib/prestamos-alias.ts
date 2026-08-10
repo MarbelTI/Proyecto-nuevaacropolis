@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { guardarLocal } from "./utils";
 
 /**
  * Equivalencias de nombre para los préstamos.
@@ -42,11 +43,7 @@ export function usePrestamoAliases(): [GrupoPrestamo[], (next: GrupoPrestamo[]) 
 
   const guardar = (next: GrupoPrestamo[]) => {
     setGrupos(next);
-    try {
-      localStorage.setItem(K_ALIAS, JSON.stringify(next));
-    } catch {
-      /* si el navegador no deja escribir, al menos sigue en pantalla */
-    }
+    guardarLocal(K_ALIAS, next);
   };
 
   return [grupos, guardar];
@@ -96,11 +93,7 @@ export function usePrestamoDescartes(): [string[], (next: string[]) => void] {
 
   const guardar = (next: string[]) => {
     setIds(next);
-    try {
-      localStorage.setItem(K_DESCARTES, JSON.stringify(next));
-    } catch {
-      /* si el navegador no deja escribir, al menos queda aplicado en pantalla */
-    }
+    guardarLocal(K_DESCARTES, next);
   };
 
   return [ids, guardar];

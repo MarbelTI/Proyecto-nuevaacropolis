@@ -495,7 +495,8 @@ function StudentEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg">
+      {/* Un clic fuera ya no descarta el formulario entero. */}
+      <DialogContent className="max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{student ? "Modificar integrante" : "Nuevo integrante"}</DialogTitle>
         </DialogHeader>

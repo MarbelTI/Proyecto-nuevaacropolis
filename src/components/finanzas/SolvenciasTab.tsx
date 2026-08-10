@@ -230,7 +230,7 @@ function CuotasEspecialesDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Cuotas especiales</DialogTitle>
         </DialogHeader>
@@ -482,7 +482,8 @@ function StudentTxDialog({
   const totalUsd = rows.reduce((s, r) => s + (Number(r.montoUsd) || 0), 0);
   return (
     <Dialog open={!!student} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-2xl">
+      {/* Un clic fuera ya no descarta la ficha entera sin preguntar. */}
+      <DialogContent className="max-w-2xl" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{student?.nombre ?? ""}</DialogTitle>
           <p className="text-xs text-muted-foreground">{filtered.length} transacciones</p>
@@ -1026,6 +1027,7 @@ export default function SolvenciasTab({
       }
     }
     setStudents(next);
+    setSeleccion([]); // se añaden filas: ver el comentario en onDelete
     setAsistOpen(false);
     toast.success(
       `${creados} integrante(s) creados desde asistencias` +
@@ -1425,6 +1427,7 @@ export default function SolvenciasTab({
                     }
                   }
                   setStudents(Array.from(byKey.values()));
+                  setSeleccion([]); // el orden cambia: ver el comentario en onDelete
                   toast.success(`${nuevos} alumnos nuevos, ${actualizados} actualizados`);
                 } catch (err) {
                   toast.error(`Error al leer Excel: ${(err as Error).message}`);
@@ -1734,6 +1737,11 @@ export default function SolvenciasTab({
           if (editIdx == null) return;
           if (!confirm(`Eliminar a ${students[editIdx].nombre}?`)) return;
           setStudents(students.filter((_, i) => i !== editIdx));
+          // La selección se guarda por posición en el array. Al borrar a
+          // alguien, todo lo que venía detrás se desplaza y las marcas pasan a
+          // señalar a otras personas: «Unir fichas» fusionaba entonces a quien
+          // no era, borrando las originales y sin forma de deshacerlo.
+          setSeleccion([]);
           setEditIdx(null);
           toast.success("Eliminado");
         }}

@@ -104,13 +104,7 @@ function load<T>(key: string, fallback: T): T {
   }
 }
 
-function save<T>(key: string, val: T) {
-  try {
-    localStorage.setItem(key, JSON.stringify(val));
-  } catch {
-    /* ignore */
-  }
-}
+import { guardarLocal as save } from "./utils";
 
 const BANCOS_DEFAULT = [
   "Efectivo USD",

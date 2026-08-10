@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { guardarLocal } from "./utils";
 
 /**
  * Plantillas de los mensajes de WhatsApp.
@@ -96,11 +97,7 @@ export function usePlantillas(): [Plantillas, (next: Plantillas) => void] {
 
   const guardar = (next: Plantillas) => {
     setPlantillas(next);
-    try {
-      localStorage.setItem(K_MENSAJES, JSON.stringify(next));
-    } catch {
-      /* si el navegador no deja escribir, al menos queda aplicado en pantalla */
-    }
+    guardarLocal(K_MENSAJES, next);
   };
 
   return [plantillas, guardar];

@@ -401,21 +401,36 @@ falta de verdad.
       de Transacciones siguen perdiéndose al cambiar de pestaña — mismo motivo,
       mismo remedio, pero cuesta menos volver a ponerlos que rehacer siete
       hojas de OCR.)*
-- [ ] **4.2** El botón «Cancelar» del OCR no cancela: el bucle sigue llamando a la
-      API y añadiendo filas. `OcrTab.tsx:360-370`. Necesita `AbortController`.
-- [ ] **4.3** La selección de Solvencias se guarda **por índice de array**
-      (`SolvenciasTab.tsx:647, 932, 1421`). Borras una ficha y «Unir en una sola
-      ficha» fusiona a dos personas que no eran — eliminando las originales, sin
-      deshacer. **Identificar por `student.id`, nunca por índice.**
-- [ ] **4.4** Ningún diálogo avisa antes de descartar un formulario de 11 campos
-      (`onOpenChange={(v) => !v && onClose()}` en tres sitios).
-- [ ] **4.5** Ningún botón «Guardar» se deshabilita al pulsarse: doble clic =
-      movimiento duplicado. `AuthDialog.tsx:285` ya lo hace bien, copiar de ahí.
-- [ ] **4.6** La escritura en `localStorage` falla en silencio al superar la cuota
-      (~5 MB, alcanzable: `useAttendance` reescribe el array completo en cada
-      cambio). La pantalla dice que se guardó y no se guardó.
-      `lists-store.ts:107`, `attendance-store.ts:19`, `prestamos-alias.ts:46`,
-      `mensajes-store.ts:99`.
+- [x] **4.2** El botón «Cancelar» del OCR no cancelaba: el bucle seguía llamando
+      a la API —pagándola— y metiendo filas mientras el usuario ya había subido
+      otro lote. *(hecho: una ref `cancelado` que el bucle mira antes de cada
+      foto. No hizo falta AbortController: el corte entre fotos basta y son tres
+      líneas.)*
+- [x] **4.3** La selección de Solvencias se guarda **por índice de array**.
+      Borrabas una ficha, los índices se desplazaban y «Unir fichas» fusionaba a
+      dos personas que no eran, eliminando las originales y sin deshacer.
+      *(hecho: se limpia la selección en las tres operaciones que reordenan la
+      lista — borrar una ficha, importar Excel y traer de asistencias. Las demás
+      (`map` en el sitio, añadir al final) no desplazan nada y no se tocaron.
+      Migrar a `student.id` sigue siendo lo correcto de fondo, pero el id es
+      opcional en el tipo y muchos alumnos importados no lo traen; limpiar la
+      selección quita el peligro hoy sin ese refactor.)*
+- [x] **4.4** Ningún diálogo avisaba antes de descartar un formulario de 11
+      campos. *(hecho: `onInteractOutside` prevenido en los cuatro diálogos con
+      formulario. Un clic fuera ya no descarta nada; **Esc se deja funcionando
+      a propósito**, que es el gesto deliberado y quitarlo rompería la
+      accesibilidad.)*
+- [x] **4.5** Ningún botón «Guardar» se deshabilita al pulsarse: doble clic =
+      movimiento duplicado. *(hecho en `TransactionEditDialog`, que es el que
+      crea dinero, con una ref y sin estado nuevo. **Quedan sin cubrir** los
+      botones de `OcrTab`, `SolvenciasTab` y `TransactionsTab`: ahí un doble
+      clic duplica una ficha o repite un guardado, molesto pero no descuadra
+      cuentas.)*
+- [x] **4.6** La escritura en `localStorage` fallaba en silencio al superar la
+      cuota (~5 MB, alcanzable: las asistencias reescriben el array entero en
+      cada marca). La pantalla decía que se guardó y no se guardaba.
+      *(hecho: un solo `guardarLocal` en `utils.ts` sustituye los cinco
+      `catch {}` mudos de los cuatro stores y avisa con un toast de 10 s.)*
 
 ---
 
