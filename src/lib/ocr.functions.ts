@@ -397,7 +397,11 @@ SOLO JSON.`,
 
     const parsed = extractJson(text);
     if (!parsed) {
-      console.error("OCR raw output:", text.slice(0, 500));
+      // Solo la longitud. Antes se volcaban 500 caracteres de la respuesta,
+      // que son nombres de alumnos y montos del libro contable, a los registros
+      // de Vercel — donde los ve cualquiera con acceso al proyecto, incluido
+      // quien no debe ver finanzas.
+      console.error(`OCR: respuesta sin JSON válido (${text.length} caracteres)`);
       throw new Error("La IA no devolvió JSON válido. Intenta de nuevo.");
     }
     // Los nombres salen de la misma lista que ya vio el modelo, así que la

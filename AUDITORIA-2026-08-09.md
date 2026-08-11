@@ -216,7 +216,12 @@ hay duplicados que limpiar.
       **Arreglo:** el mismo guard que el resto (`canReadFinanzas`), y borrar los
       dos endpoints muertos.
 
-- [ ] **2.4 Fail-open: sin `VITE_SUPABASE_URL` se monta un super_admin ficticio** (alto)
+- [x] **2.4 Fail-open: sin `VITE_SUPABASE_URL` se monta un super_admin ficticio** (alto)
+      *(hecho: fuera el mock. Ahora cae al camino normal, que ya sabía pintar
+      `configError` en pantalla explicando qué falta configurar; `login` y
+      `signUp` devuelven false en vez de true. Mismo criterio que supabase.ts:
+      mejor una aplicación que no funciona y dice por qué, que una que funciona
+      repartiendo permisos.)*
       `src/components/finanzas/AuthDialog.tsx:20, 100, 142-165`. `login()` y
       `signUp()` devuelven `true` sin autenticar. El servidor sigue rechazando,
       pero queda accesible todo lo de `localStorage`.
@@ -236,14 +241,36 @@ hay duplicados que limpiar.
       una app que guarda cédulas y teléfonos en `localStorage`. Empezar la CSP en
       `Content-Security-Policy-Report-Only` por el hidratado de TanStack.
 
-- [ ] **2.7 `xlsx@0.18.5` sin parche posible en npm** (medio)
+- [x] **2.7 `xlsx@0.18.5` sin parche posible en npm** (medio)
+      *(hecho: se instaló la 0.20.3 desde el CDN de SheetJS, que es donde
+      publican desde que dejaron npm. Comprobado: ya no aparece en `npm audit`,
+      `tsc` limpio y el build pasa en 17 s.*
+
+      *Lo que hay que vigilar: `package.json` apunta ahora a una URL
+      (`https://cdn.sheetjs.com/...`) en vez de al registro de npm. Si ese
+      servidor no responde cuando Vercel construya, **el despliegue falla**. Se
+      sabrá en el primer despliegue; la vuelta atrás es `npm i xlsx@0.18.5`.*
+
+      *Nota: quedan 4 vulnerabilidades altas en `npm audit`, pero ya no son de
+      xlsx — vienen de otras dependencias, sin revisar.)*
       CVE-2023-30533 (prototype pollution) y CVE-2024-22363 (ReDoS). SheetJS se
       movió a su CDN y no habrá arreglo por npm. Se le pasan archivos subidos por
       el usuario en `excel-import.ts:83`, `:186` y `attendance-store.ts:148`.
       **Arreglo:** migrar a `exceljs` (cubre también las notas de celda que usa
       `excel-export.ts:184`).
 
-- [ ] **2.8 Errores crudos y datos personales en los logs** (medio)
+- [~] **2.8 Errores crudos y datos personales en los logs** (medio)
+      *(hecha la parte que filtraba datos personales, que es la que importaba:
+      `ocr.functions.ts` ya no vuelca 500 caracteres de la respuesta del modelo
+      —nombres de alumnos y montos del libro— a los registros de Vercel, solo la
+      longitud; y `OcrTab` ya no registra el nombre del archivo, que suele
+      llevar el mes y el aula. También el sync de asistencias devuelve ahora un
+      mensaje propio en vez del error crudo de Postgres.*
+
+      *Sin hacer: los ~12 `return { ok: false, error: error.message }` que
+      siguen devolviendo mensajes de PostgREST al navegador. Revelan nombres de
+      tablas y políticas, pero no datos de personas. Es trabajo mecánico y sin
+      urgencia.)*
       ~15 sitios devuelven `error.message` de Supabase al cliente (nombres de
       tablas, constraints, políticas RLS). Y `src/lib/ocr.functions.ts:391` hace
       `console.error("OCR raw output:", …)` volcando nombres y montos del libro a
@@ -314,7 +341,11 @@ falta de verdad.
       hay que recortarlo, la vía es llevar las columnas de cuota a su propia
       tabla, no afinar la política por columnas.*
 
-- [ ] **3.1 El rol `director` recibe cero alumnos**
+- [x] **3.1 El rol `director` recibe cero alumnos**
+      *(hecho en la migración `20260810000004_vistas_director_y_barrier.sql`,
+      **falta ejecutarla en Supabase**. Se añade `or public.is_director()` al
+      WHERE de `students_finanzas`, conservando exactamente la misma lista de
+      columnas.)*
       `supabase/migrations/20260806000006_vistas_no_pierden_celador.sql:40` vs
       `src/lib/api/students.functions.ts:153-157`. El código lo enruta a
       `students_finanzas`, cuya vista filtra por `is_finanzas() or is_super_admin()`.
@@ -342,7 +373,13 @@ falta de verdad.
       Aprovechar para `drop function public.can_edit()`, que nadie llama y —a
       diferencia del resto— no exige `aprobado`.
 
-- [ ] **3.5 Las vistas de alumnos puentean el RLS de `students`**
+- [x] **3.5 Las vistas de alumnos puentean el RLS de `students`**
+      *(hecho en la misma migración `20260810000004`: `security_barrier = true`
+      en las dos vistas. NO se pasó a `security_invoker`, que habría roto a
+      dirección —no tiene política propia sobre `students`—. De paso, el filtro
+      del celador usa ahora `s.aulas && array[p.aula_nombre]` en vez de
+      `= any(...)`, que no podía aprovechar índice, y se crea el GIN
+      `idx_students_aulas_gin` (el resto del 3.7).)*
       Son SECURITY DEFINER por omisión y no declaran `security_barrier`, así que
       un `where` del usuario puede evaluarse antes que el filtro de rol.
       **Arreglo:** `alter view … set (security_barrier = true)` en
@@ -381,7 +418,12 @@ falta de verdad.
       mismo alumno (el upsert va por `id`, que lo inventa cada navegador).
       Nota buena: **todos los importes son `numeric`, ni un `float8`**.
 
-- [ ] **3.9 Ids generados en el navegador que no son UUID**
+- [x] **3.9 Ids generados en el navegador que no son UUID**
+      *(hecho: `nuevoId()` en `utils.ts` arma un UUID v4 con
+      `crypto.getRandomValues`, que sí existe fuera de contexto seguro. Sustituye
+      los tres respaldos distintos que había en `SupabaseSync`, `lists-store` y
+      `excel-import`. Sin esto, sirviendo la app por IP en la red local el id
+      salía como "lz8k3f9x" y el upsert fallaba con el LOTE entero.)*
       `crypto.randomUUID` solo existe en contexto seguro. Sirviendo la app por
       HTTP en la red local, el fallback produce `"lz8k3f9x"` contra una columna
       `uuid` → falla **el lote entero**, no la fila mala.

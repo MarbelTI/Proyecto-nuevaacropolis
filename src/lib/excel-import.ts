@@ -3,6 +3,7 @@ import { bcvRateNearest, type BcvRates, type Student, type Transaction } from ".
 import { calcularMontoUsd, redondearTasa, TASA_PESOS_DEFAULT } from "./fees-logic";
 import type { Actividad, Condicion } from "./students-data";
 import { aNumeroAvisando } from "./formato";
+import { nuevoId } from "./utils";
 
 function txFechaToIso(fecha: string): string | null {
   const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
@@ -85,7 +86,7 @@ export function parseExcelToTransactions(file: File): Promise<Transaction[]> {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows: Record<string, string>[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
         const mapped: Transaction[] = rows.map((r) => ({
-          id: crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+          id: nuevoId(),
           fecha: String(r.Fecha || r.fecha || ""),
           mes: String(r.Mes || r.mes || ""),
           tipo: (String(r.Tipo || r.tipo || "Ingreso") === "Gasto" ? "Gasto" : "Ingreso") as

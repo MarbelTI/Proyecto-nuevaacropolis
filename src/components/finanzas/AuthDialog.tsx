@@ -97,14 +97,20 @@ export function useAuth() {
   }, [authCallbackFn]);
 
   const login = async (email: string, password: string) => {
-    if (!hasSupabaseConfig) return true;
+    if (!hasSupabaseConfig) {
+      toast.error(configError ?? "Falta configurar Supabase");
+      return false;
+    }
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) toast.error(error.message);
     return !error;
   };
 
   const signUp = async (email: string, password: string) => {
-    if (!hasSupabaseConfig) return true;
+    if (!hasSupabaseConfig) {
+      toast.error(configError ?? "Falta configurar Supabase");
+      return false;
+    }
     const { error } = await supabase.auth.signUp({ email, password });
     if (error) {
       toast.error(error.message);
@@ -139,31 +145,16 @@ export function useAuth() {
     return true;
   };
 
-  if (!hasSupabaseConfig) {
-    // Acceso local sin Supabase configurado (fallback de desarrollo)
-    const mock: Permissions = {
-      ...getPermsForRole("super_admin"),
-      role: "super_admin",
-      profile: {
-        id: "mock",
-        email: "admin@na.com",
-        full_name: "Admin Local",
-        role: "super_admin",
-      },
-    };
-    return {
-      session: mock,
-      loading: false,
-      login,
-      signUp,
-      logout,
-      forgotPassword,
-      updatePassword,
-      recoveryOpen,
-      setRecoveryOpen,
-    };
-  }
-
+  // Aquí había un atajo: sin Supabase configurado se montaba una sesión falsa
+  // de super_admin, con la aplicación entera abierta y sin pedir contraseña.
+  // Estaba pensado como comodidad de desarrollo, pero era un fallo en abierto:
+  // un despliegue con la variable mal escrita no fallaba, daba acceso total a
+  // todo lo que hay en el navegador.
+  //
+  // Ahora se cae al camino normal, que ya sabe qué hacer: `configError` explica
+  // en pantalla qué falta configurar (ver más abajo, donde se pinta). Es el
+  // mismo criterio que en supabase.ts: preferimos una aplicación que no
+  // funciona y dice por qué, a una que funciona repartiendo permisos.
   return {
     session,
     loading,

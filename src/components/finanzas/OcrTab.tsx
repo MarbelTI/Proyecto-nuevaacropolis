@@ -392,7 +392,8 @@ export function OcrTab({
             okCount++;
           }
         } catch (err) {
-          console.error("OCR error on", f.name, err);
+          // Sin el nombre del archivo: suele llevar el mes y el aula.
+          console.error("OCR: falló una hoja —", (err as Error)?.message ?? err);
           const msg = err instanceof Error ? err.message : String(err);
           toast.error(`Foto ${idx + 1} (${f.name}): ${msg}`, { duration: 8000 });
           setPreviews((p) => p.map((x, j) => (j === idx ? { ...x, status: "error" } : x)));

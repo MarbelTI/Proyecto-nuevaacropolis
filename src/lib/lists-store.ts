@@ -104,7 +104,7 @@ function load<T>(key: string, fallback: T): T {
   }
 }
 
-import { guardarLocal as save } from "./utils";
+import { guardarLocal as save, nuevoId } from "./utils";
 
 const BANCOS_DEFAULT = [
   "Efectivo USD",
@@ -367,10 +367,7 @@ export function useTransactions(): {
     append: (rows) => {
       const withIds = rows.map((r) => ({
         ...r,
-        id:
-          typeof crypto !== "undefined" && crypto.randomUUID
-            ? crypto.randomUUID()
-            : Math.random().toString(36).slice(2),
+        id: nuevoId(),
       }));
       persist([...list, ...withIds]);
     },
@@ -389,10 +386,7 @@ export function useTransactions(): {
       const orig = list[idx];
       const copy = {
         ...orig,
-        id:
-          typeof crypto !== "undefined" && crypto.randomUUID
-            ? crypto.randomUUID()
-            : Math.random().toString(36).slice(2),
+        id: nuevoId(),
       };
       const next = [...list];
       next.splice(idx + 1, 0, copy);
