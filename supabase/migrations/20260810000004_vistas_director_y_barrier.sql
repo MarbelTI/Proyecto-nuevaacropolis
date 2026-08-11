@@ -24,8 +24,24 @@
 --   y se crea el GIN correspondiente.
 -- ------------------------------------------------------------------
 
--- Misma lista de columnas que antes; solo cambia el WHERE.
-create or replace view public.students_finanzas as
+-- Se borran y se vuelven a crear en vez de `create or replace`.
+--
+-- Motivo: `create or replace view` no permite cambiar el nombre ni el orden de
+-- las columnas, y la vista que hay en la base no coincide con la del
+-- repositorio (falló con «no se puede cambiar el nombre de la columna de vista
+-- "cuota_override" a "celador"»), señal de que se editó a mano en algún
+-- momento. Una vista no guarda datos: borrarla y rehacerla no pierde nada, y
+-- deja la base igual a lo que dice el repositorio.
+--
+-- Sin CASCADE a propósito: si algo dependiera de estas vistas, preferimos que
+-- falle aquí y se vea, antes que borrarlo en silencio.
+drop view if exists public.students_finanzas;
+drop view if exists public.students_celador;
+
+-- Nota: desde que finanzas puede escribir en `students` (migración
+-- 20260810000003), el código la manda directamente a la tabla. Esta vista
+-- quedó, en la práctica, para el rol `director`.
+create view public.students_finanzas as
   select
     id, nombre, telefono, aulas, actividad, condicion,
     celador, fecha_ingreso,
@@ -43,7 +59,7 @@ comment on view public.students_finanzas is
 
 -- Celador: mismas columnas, mismo criterio, pero con `&&` para que el índice
 -- pueda usarse.
-create or replace view public.students_celador as
+create view public.students_celador as
   select s.id, s.nombre, s.aulas, s.actividad, s.celador
   from public.students s
   where public.is_super_admin()
