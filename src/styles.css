@@ -142,3 +142,18 @@
     color: var(--color-foreground);
   }
 }
+
+/**
+ * Cursor de dólar para las cifras de deuda.
+ *
+ * El de ayuda (la interrogación) daba a entender "aquí hay una explicación", y
+ * lo que hay es dinero. Es un SVG en línea, sin archivos ni peticiones. El
+ * `12 12` es el punto de la flecha, en el centro del icono; `pointer` es lo
+ * que se usa si el navegador no admite cursores personalizados.
+ */
+.cursor-dinero {
+  cursor:
+    url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><text x="12" y="18" font-size="18" font-family="system-ui,sans-serif" font-weight="700" text-anchor="middle" fill="%2322c55e" stroke="white" stroke-width="0.7" paint-order="stroke">$</text></svg>')
+      12 12,
+    pointer;
+}

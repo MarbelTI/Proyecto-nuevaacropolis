@@ -243,19 +243,27 @@ function CuotasEspecialesDialog({
         </p>
 
         <div className="flex items-center gap-2">
+          {/* type="search" + autoComplete="off" + name propio: sin esto el
+              navegador tomaba el campo por uno de correo y lo rellenaba solo
+              con la dirección guardada, dejando la lista en «Nadie con ese
+              nombre» sin que se entendiera por qué. */}
           <Input
+            type="search"
+            name="buscar-integrante"
+            autoComplete="off"
             placeholder="Buscar por nombre…"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
           />
           <Button
-            variant="ghost"
-            size="icon"
+            type="button"
+            variant="outline"
             onClick={() => setMostrar((v) => !v)}
             title={mostrar ? "Ocultar los importes" : "Ver los importes"}
-            aria-label={mostrar ? "Ocultar los importes" : "Ver los importes"}
+            className="shrink-0 gap-2"
           >
             {mostrar ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {mostrar ? "Ocultar" : "Ver importes"}
           </Button>
         </div>
 
@@ -1325,7 +1333,7 @@ export default function SolvenciasTab({
               {students.length} participantes
               {deudaTotal > 0 && (
                 <span
-                  className="ml-2 cursor-help tabular-nums opacity-50"
+                  className="ml-2 cursor-dinero tabular-nums opacity-50"
                   title={`Deuda acumulada de toda la escuela: $${$(deudaTotal)}`}
                 >
                   · {$(deudaTotal)}
@@ -1519,7 +1527,7 @@ export default function SolvenciasTab({
                   {list.length} participantes
                   {deudaPorAula.get(aula) ? (
                     <span
-                      className="ml-2 cursor-help tabular-nums opacity-50"
+                      className="ml-2 cursor-dinero tabular-nums opacity-50"
                       title={`Deuda acumulada de ${aula}: $${$(deudaPorAula.get(aula) ?? 0)}`}
                     >
                       · {$(deudaPorAula.get(aula) ?? 0)}
@@ -1642,7 +1650,7 @@ export default function SolvenciasTab({
                               // cursor-help: sin él nadie descubría que la
                               // insignia lleva el importe detrás.
                               <span
-                                className="cursor-help rounded bg-destructive/20 px-1.5 py-px text-xs font-bold text-destructive"
+                                className="cursor-dinero rounded bg-destructive/20 px-1.5 py-px text-xs font-bold text-destructive"
                                 title={`${deuda.meses} ${deuda.meses === 1 ? "mes" : "meses"} — $${$(deuda.totalUSD)}`}
                               >
                                 {deuda.meses}M

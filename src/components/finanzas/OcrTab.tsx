@@ -75,10 +75,14 @@ function normalizeMoneyRow<
       if (r != null) next.tasa = r.toFixed(2);
     }
   }
-  // La tasa se guarda siempre con 2 decimales (venga del BCV o escrita a mano),
-  // y el monto en USD se calcula con esa misma tasa redondeada.
+  // El monto en USD se calcula con la tasa redondeada, pero el TEXTO de la
+  // tasa NO se reescribe aquí.
+  //
+  // Antes esta función hacía `next.tasa = tasaNum.toFixed(2)`, y como corre en
+  // cada tecla, iba peleando con quien escribe: al teclear 755.60 el campo se
+  // reformateaba a mitad de camino y acababa en 705.00. Dos decimales se ponen
+  // al SALIR del campo (onBlur), que es cuando ya se terminó de escribir.
   const tasaNum = redondearTasa(next.tasa ? aNumero(next.tasa) : null);
-  if (tasaNum != null) next.tasa = tasaNum.toFixed(2);
   const montoNum = aNumero(next.monto);
   next.montoUsd = calcularMontoUsd(next.moneda, montoNum, tasaNum).toFixed(2);
   return next;

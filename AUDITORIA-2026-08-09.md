@@ -13,6 +13,57 @@ Los marcados **[verificado]** los comprobé leyendo el código, no son sospechas
 
 ---
 
+## Sesión del 11-ago-2026 — probado en pantalla y dos regresiones
+
+**Probado en el navegador y funcionando** (hasta ahora casi todo estaba solo
+compilado): la deuda por mensualidad, la edición masiva, los decimales del
+monto y la tasa, el doble clic en Guardar, la importación de Excel de
+transacciones, el aviso ámbar de filas mal leídas, que el trabajo del OCR
+sobreviva al cambio de pestaña, la ficha que no se cierra al hacer clic fuera,
+y la limpieza de la selección al borrar una ficha.
+
+**Dos regresiones introducidas por mí el mismo día, ya corregidas:**
+
+1. **La tasa se reescribía sola mientras se tecleaba** (`OcrTab.tsx`,
+   `normalizeMoneyRow`). Al añadir el formato a dos decimales, la función
+   reescribía el campo **en cada tecla**: al escribir `755.60` acababa
+   quedando `705.00`. Es el mismo error del punto 1.5, reintroducido en otra
+   pantalla. Ahora los dos decimales se ponen al SALIR del campo, nunca
+   mientras se escribe. **Lección: no reformatear un campo de texto en cada
+   pulsación, jamás.**
+
+2. **El primer trimestre de tasas no se cargaba nunca** (`bcv.functions.ts`).
+   Al paralelizar las descargas (punto 2.10), la letra que corresponde al
+   trimestre pedido competía contra todas las demás y ganaba la que respondiera
+   antes — así que el trimestre 1 se quedaba con el archivo del 2 y enero a
+   marzo no aparecían. Ahora va en **dos tandas**: primero la letra correcta y,
+   solo si de verdad no existe, el respaldo. **Lección: paralelizar una lista
+   ordenada por prioridad rompe la prioridad.**
+
+**Además, tres detalles de uso reportados y arreglados:**
+
+- El buscador de «Cuotas especiales» se rellenaba solo con el correo del
+  navegador —lo tomaba por un campo de email— y dejaba la lista vacía sin que
+  se entendiera por qué. Ahora es `type="search"` con autocompletado apagado.
+- El botón de revelar importes era solo un icono y no se veía. Ahora pone
+  **«Ver importes»**.
+- Las cifras de deuda usaban el cursor de ayuda (interrogación), que sugiere
+  «aquí hay una explicación». Ahora usan un **`$`** (clase `.cursor-dinero` en
+  `styles.css`, un SVG en línea sin archivos ni peticiones).
+
+**Pedido pendiente de decidir: foto en la ficha del integrante.**
+Se puede y no es pesado si se hace bien. Con 4 sedes y ~250 integrantes:
+redimensionando a 400×400 en el navegador antes de subir son ~40 KB por foto,
+unos 10 MB en total, contra 1 GB que da el plan gratuito. Van en **Supabase
+Storage**, no en la base ni en Vercel; en la tabla solo se guarda la ruta. Hace
+falta un bucket con reglas de acceso propias — una foto de un menor no puede
+quedar en una URL pública adivinable. Trabajo estimado: medio día, sobre todo
+por el redimensionado, el borrado de la foto vieja al reemplazar y que funcione
+sin conexión (la aplicación es local-first). **Hacerlo DESPUÉS de la
+auditoría.**
+
+---
+
 ## BLOQUE 1 — Críticos: están corrompiendo datos ahora mismo
 
 Antes de tocar nada: **copia de seguridad de la base en Supabase**, por si ya

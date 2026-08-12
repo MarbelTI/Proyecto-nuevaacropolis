@@ -32,16 +32,28 @@ export type BcvRow = { isoDate: string; rate: number };
 // URLs candidatas del XLS trimestral del BCV. El patrón real es:
 //   https://www.bcv.org.ve/sites/default/files/EstadisticasGeneral/2_1_2{LETRA}{YY}_smc.xls
 // donde a=Q1, b=Q2, c=Q3, d=Q4 (la letra es el trimestre).
-function bcvUrlCandidates(year: number, quarter: number): string[] {
+/**
+ * Devuelve las URL en DOS grupos, y el orden importa.
+ *
+ * `exactas` son las de la letra que corresponde al trimestre pedido; `respaldo`
+ * son las demás letras, por si el BCV cambió la nomenclatura.
+ *
+ * Están separadas porque se prueban en paralelo: si se lanzaran todas a la vez,
+ * ganaría la que respondiera antes y el trimestre 1 podía acabar quedándose con
+ * el archivo del trimestre 2. Con dos tandas, la letra correcta siempre tiene
+ * prioridad y el respaldo solo entra si de verdad no existe.
+ */
+function bcvUrlCandidates(year: number, quarter: number): { exactas: string[]; respaldo: string[] } {
   const yy = String(year % 100).padStart(2, "0");
   const letters = ["a", "b", "c", "d", "e"];
   const prefixCandidates = ["2_1_2", "1_1_2"];
+  const exactas: string[] = [];
   const out: string[] = [];
   for (const prefix of prefixCandidates) {
     // La letra principal corresponde al trimestre (a=Q1, b=Q2, c=Q3, d=Q4)
     const L = letters[quarter - 1];
     if (L)
-      out.push(
+      exactas.push(
         `https://www.bcv.org.ve/sites/default/files/EstadisticasGeneral/${prefix}${L}${yy}_smc.xls`,
       );
     // También probar todas las letras como fallback
@@ -55,7 +67,12 @@ function bcvUrlCandidates(year: number, quarter: number): string[] {
       `https://www.bcv.org.ve/sites/default/files/EstadisticasGeneral/${prefix}${yy}_smc.xls`,
     );
   }
-  return [...new Set(out)]; // eliminar duplicados
+  const unicasExactas = [...new Set(exactas)];
+  // El respaldo no repite lo que ya va en la primera tanda.
+  return {
+    exactas: unicasExactas,
+    respaldo: [...new Set(out)].filter((u) => !unicasExactas.includes(u)),
+  };
 }
 
 function quarterOf(month: number): number {
@@ -150,23 +167,32 @@ async function fetchQuarterRows(
     }
     workingUrlCache.delete(cacheKey);
   }
-  // Las candidatas restantes se prueban TODAS A LA VEZ y gana la primera que
-  // traiga filas.
+  // DOS TANDAS, y el orden importa.
   //
-  // Antes se probaban en fila india, con quince segundos de espera cada una:
-  // doce URL × quince segundos son tres minutos en el peor caso, y el peor caso
-  // es justo el día que el BCV está caído, que es cuando más prisa hay. En
-  // paralelo, lo que tarda es la más lenta, no la suma de todas.
-  const pendientes = bcvUrlCandidates(year, quarter).filter((u) => u !== cachedUrl);
-  if (!pendientes.length) return null;
+  // Dentro de cada tanda las URL se prueban a la vez y gana la primera que
+  // traiga filas: en fila india eran doce URL por quince segundos, hasta tres
+  // minutos justo el día que el BCV está caído.
+  //
+  // Pero las candidatas NO son intercambiables: la primera tanda es la letra
+  // que corresponde al trimestre pedido y la segunda son las demás letras. Al
+  // lanzarlas todas juntas ganaba la que respondiera antes, y el trimestre 1
+  // acababa cargando el archivo del 2 — con lo que las tasas de enero a marzo
+  // no aparecían nunca.
+  const { exactas, respaldo } = bcvUrlCandidates(year, quarter);
 
-  const intentos = pendientes.map(async (url) => {
-    const buf = await fetchXlsBuffer(url);
-    if (!buf) throw new Error("sin descarga");
-    const rows = await readXlsRates(buf);
-    if (!rows.length) throw new Error("sin filas");
-    return { rows, source: url };
-  });
+  const primeraQueSirva = async (urls: string[]) => {
+    const pendientes = urls.filter((u) => u !== cachedUrl);
+    if (!pendientes.length) return null;
+    return Promise.any(
+      pendientes.map(async (url) => {
+        const buf = await fetchXlsBuffer(url);
+        if (!buf) throw new Error("sin descarga");
+        const rows = await readXlsRates(buf);
+        if (!rows.length) throw new Error("sin filas");
+        return { rows, source: url };
+      }),
+    ).catch(() => null);
+  };
 
   // Tope de la operación entera, por si alguna se queda colgada: es preferible
   // caer al respaldo de dolarapi que dejar la pantalla esperando.
@@ -177,7 +203,7 @@ async function fetchQuarterRows(
 
   try {
     const ganadora = await Promise.race([
-      Promise.any(intentos).catch(() => null),
+      (async () => (await primeraQueSirva(exactas)) ?? (await primeraQueSirva(respaldo)))(),
       limite,
     ]);
     if (ganadora) workingUrlCache.set(cacheKey, ganadora.source);
