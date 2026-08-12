@@ -145,11 +145,16 @@ function normalizarDescripcionPrestamo(descripcion: string, nombres: string[]): 
     // nombre no hay concepto que separar y añadir los dos puntos no aporta nada.
     if (!partes.length || partes.length >= palabras.length) continue;
 
-    const coincide = partes.every((parte, i) => claveDePalabra(palabras[i].texto) === parte);
+    const coincide = partes.every((parte, i) => {
+      const p = palabras[i];
+      return !!p && claveDePalabra(p.texto) === parte;
+    });
     if (!coincide) continue;
 
+    const ultima = palabras[partes.length - 1];
+    if (!ultima) continue;
     const resto = desc
-      .slice(palabras[partes.length - 1].fin)
+      .slice(ultima.fin)
       // A veces el modelo separa con guion o coma en vez de dos puntos; ese
       // separador sobra porque los dos puntos los ponemos nosotros.
       .replace(/^[\s:,;.\-–—]+/, "")
@@ -163,7 +168,7 @@ function normalizarDescripcionPrestamo(descripcion: string, nombres: string[]): 
 
 function extractJson(text: string): unknown {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fenced ? fenced[1] : text;
+  const candidate = fenced?.[1] ?? text;
   try {
     return JSON.parse(candidate);
   } catch {

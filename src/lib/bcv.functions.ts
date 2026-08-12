@@ -124,6 +124,7 @@ async function readXlsRates(buf: Uint8Array): Promise<BcvRow[]> {
     const iso = sheetNameToIso(sheetName);
     if (!iso) continue;
     const ws = wb.Sheets[sheetName];
+    if (!ws) continue;
     // La tasa Venta USD está en G15 según el formato del BCV.
     const cell = ws["G15"];
     const rate = typeof cell?.v === "number" ? cell.v : Number(cell?.v);
@@ -255,7 +256,7 @@ export const fetchTodayBcv = createServerFn({ method: "GET" }).handler(
     const res = await fetchQuarterRows(y, q);
     if (res && res.rows.length) {
       const last = res.rows[res.rows.length - 1];
-      return { isoDate: last.isoDate, rate: last.rate };
+      if (last) return { isoDate: last.isoDate, rate: last.rate };
     }
     try {
       const alt = await fetch("https://ve.dolarapi.com/v1/dolares/oficial");

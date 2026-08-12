@@ -11,6 +11,35 @@
  * y centenas quedan una debajo de otra.
  */
 
+/**
+ * Qué día es HOY en Venezuela, como "YYYY-MM-DD".
+ *
+ * `new Date()` da la hora de la máquina, y el servidor de Vercel va en UTC
+ * mientras la escuela está en UTC-4. Desde las 20:00 hora de allá, el servidor
+ * ya cree que es el día siguiente: el último día de mes eso le sumaba un mes de
+ * deuda a todo el mundo, y hacía que el servidor y el navegador pintaran meses
+ * distintos.
+ *
+ * Se fija la zona por nombre y no restando cuatro horas: Venezuela estuvo en
+ * UTC-4:30 entre 2007 y 2016, y así esas fechas se interpretan solas.
+ *
+ * Toda la escuela está en el mismo sitio, así que esto es una constante, no
+ * algo configurable.
+ */
+export function hoyVenezuela(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Caracas",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date()); // en-CA ya da "YYYY-MM-DD"
+}
+
+/** El año en curso en Venezuela, para fechas escritas sin año. */
+export function anioVenezuela(): string {
+  return hoyVenezuela().slice(0, 4);
+}
+
 /** Importe con dos decimales y separador de miles: 1234.5 → "1,234.50". */
 export function usd(n: number): string {
   const v = Number(n);

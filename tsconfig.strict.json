@@ -1,0 +1,33 @@
+{
+  // Los dos flags del punto 6.9 de la auditoría, en un archivo aparte.
+  //
+  // POR QUÉ NO ESTÁN EN tsconfig.json:
+  // encenderlos destapa errores que ya existen —220 el primero, 193 el
+  // segundo, medidos el 11-ago-2026— y desde el 6.8 el build ejecuta `tsc`,
+  // así que ponerlos ahí dejaría el proyecto SIN PODER DESPLEGAR hasta
+  // arreglarlos todos. Trabajo de varios días, y a medias es peor que sin
+  // empezar.
+  //
+  // CÓMO SE USA:
+  //   npm run tipos:estricto        → los cuenta y los lista
+  //   npm run tipos:estricto -- src/lib/fees-logic.ts   (no, ver abajo)
+  //
+  // Para ir archivo por archivo es más cómodo filtrar la salida:
+  //   npm run tipos:estricto | Select-String "fees-logic"
+  //
+  // CUANDO NO QUEDE NINGUNO: mover los dos flags a tsconfig.json y borrar
+  // este archivo. Ese día el build los exige y ya no se pueden colar nuevos.
+  //
+  // QUÉ EVITA CADA UNO:
+  // - noUncheckedIndexedAccess: que `lista[0]` se dé por existente. Es el que
+  //   más duele aquí, por sitios como `yearMonth.split("-").map(Number)`, que
+  //   con una cadena mal formada produce NaN en silencio.
+  // - exactOptionalPropertyTypes: que escribir `undefined` en un campo
+  //   opcional cuente como no escribirlo. Es el que habría cazado el borrado
+  //   de datos al importar Excel (punto 5.3).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true
+  }
+}

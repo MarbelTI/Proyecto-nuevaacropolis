@@ -20,33 +20,43 @@ const K_TX = "lector_ocr_transacciones_v1";
 const K_BCV = "lector_ocr_bcv_v1";
 const K_SEED = "lector_ocr_seed_v4";
 
+// Los opcionales se declaran `?: T | undefined` y no solo `?: T`.
+//
+// Con exactOptionalPropertyTypes (ver tsconfig.strict.json), `?: string`
+// significa "o está con un valor, o no está la clave" — y escribir
+// `{ telefono: undefined }` pasa a ser un error. Este código hace eso a
+// propósito en todas partes: `celda()` del importador devuelve undefined para
+// decir "no toques esto", y los formularios ponen undefined para vaciar un
+// campo. Añadir `| undefined` es declarar lo que el código ya hace, no relajar
+// la comprobación: los campos siguen siendo opcionales y hay que comprobarlos
+// antes de usarlos.
 export type Student = {
-  id?: string;
+  id?: string | undefined;
   nombre: string;
   aulas: string[];
-  condicion?: Condicion;
-  actividad?: Actividad;
-  celador?: boolean;
-  cuotaOverride?: number;
-  cuotaOverridesTemporales?: CuotaOverrideTemporal[];
-  telefono?: string;
-  fechaIngreso?: string;
+  condicion?: Condicion | undefined;
+  actividad?: Actividad | undefined;
+  celador?: boolean | undefined;
+  cuotaOverride?: number | undefined;
+  cuotaOverridesTemporales?: CuotaOverrideTemporal[] | undefined;
+  telefono?: string | undefined;
+  fechaIngreso?: string | undefined;
   // Datos de "Ficha" (control de estudio) — solo celador_estudios/super_admin
   // los ven completos; finanzas/celador reciben una vista sin estos campos.
-  cedula?: string;
-  correo?: string;
-  direccion?: string;
-  redesSociales?: string;
-  ocupacion?: string;
-  habilidades?: string;
-  gradoParticipacion?: string;
-  fechaMiembro?: string;
-  fechaFfvv?: string;
-  sede?: string;
-  instructor?: string;
-  celadorNombre?: string;
-  horario?: string;
-  materias?: string;
+  cedula?: string | undefined;
+  correo?: string | undefined;
+  direccion?: string | undefined;
+  redesSociales?: string | undefined;
+  ocupacion?: string | undefined;
+  habilidades?: string | undefined;
+  gradoParticipacion?: string | undefined;
+  fechaMiembro?: string | undefined;
+  fechaFfvv?: string | undefined;
+  sede?: string | undefined;
+  instructor?: string | undefined;
+  celadorNombre?: string | undefined;
+  horario?: string | undefined;
+  materias?: string | undefined;
 };
 
 export type Transaction = {
@@ -384,6 +394,7 @@ export function useTransactions(): {
       const idx = list.findIndex((r) => r.id === id);
       if (idx === -1) return;
       const orig = list[idx];
+      if (!orig) return;
       const copy = {
         ...orig,
         id: nuevoId(),
@@ -426,8 +437,8 @@ export function useBcvRates(): {
     clean: (predicate) => {
       setRates((prev) => {
         const next: BcvRates = {};
-        for (const k of Object.keys(prev)) {
-          if (!predicate(k)) next[k] = prev[k];
+        for (const [k, v] of Object.entries(prev)) {
+          if (!predicate(k)) next[k] = v;
         }
         save(K_BCV, next);
         return next;
@@ -493,12 +504,12 @@ export function firmaTransaccion(t: {
 
 /** Devuelve la tasa BCV del día, o la más cercana anterior si no existe. */
 export function bcvRateFor(rates: BcvRates, isoDate: string): number | null {
-  if (rates[isoDate] != null) return rates[isoDate];
-  const keys = Object.keys(rates).sort();
+  const exacta = rates[isoDate];
+  if (exacta != null) return exacta;
   let best: number | null = null;
-  for (const k of keys) {
-    if (k <= isoDate) best = rates[k];
-    else break;
+  for (const k of Object.keys(rates).sort()) {
+    if (k > isoDate) break;
+    best = rates[k] ?? best;
   }
   return best;
 }
@@ -523,7 +534,7 @@ export function bcvRateNearest(
   if (previa != null) return { rate: previa, exacta: false };
 
   // No hay ninguna tasa anterior: tomar la primera posterior.
-  const keys = Object.keys(rates).sort();
-  if (!keys.length) return null;
-  return { rate: rates[keys[0]], exacta: false };
+  const primera = Object.keys(rates).sort()[0];
+  const rate = primera ? rates[primera] : undefined;
+  return rate == null ? null : { rate, exacta: false };
 }

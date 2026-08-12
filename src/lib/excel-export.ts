@@ -1,20 +1,19 @@
 import * as XLSX from "xlsx";
 import type { Transaction } from "./lists-store";
+import { hoyVenezuela, anioVenezuela } from "./formato";
 
 /** Lo que puede haber en una celda: un rótulo, un importe, o nada. */
 type CeldaHoja = string | number | null;
 
-function todayIso(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+const todayIso = hoyVenezuela;
 
 function fechaToIso(fecha: string): string | null {
   const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
   if (!m) return null;
-  const dd = m[1].padStart(2, "0");
-  const mm = m[2].padStart(2, "0");
-  let yy = m[3] ?? String(new Date().getFullYear());
+  const [, d = "", mo = "", a] = m;
+  const dd = d.padStart(2, "0");
+  const mm = mo.padStart(2, "0");
+  let yy = a ?? anioVenezuela();
   if (yy.length === 2) yy = "20" + yy;
   return `${yy}-${mm}-${dd}`;
 }
@@ -112,7 +111,12 @@ export function exportResumenExcel(
     });
   }
 
-  const maxRecords = Math.max(0, ...allCats.map((c) => catData[c].length));
+  // Una categoría sin movimientos no tiene entrada en catData. Antes se leía
+  // `catData[cat].length` a pelo y bastaba una categoría nueva sin usar para
+  // reventar la exportación entera.
+  const filas = (cat: string) => catData[cat] ?? [];
+
+  const maxRecords = Math.max(0, ...allCats.map((c) => filas(c).length));
 
   // Una hoja de cálculo es una rejilla de celdas sueltas: texto en las
   // cabeceras, números en los importes y null donde esa categoría no llega.
@@ -123,7 +127,7 @@ export function exportResumenExcel(
 
   // Filas de datos
   for (let r = 0; r < maxRecords; r++) {
-    rm.push(allCats.map((cat) => (r < catData[cat].length ? catData[cat][r].monto : null)));
+    rm.push(allCats.map((cat) => filas(cat)[r]?.monto ?? null));
   }
 
   // Fila de totales (valores null, se reemplazan por fórmula después)
@@ -134,7 +138,7 @@ export function exportResumenExcel(
 
   // Resumen: nombre de categoría + total
   for (const cat of allCats) {
-    const total = catData[cat].reduce((s, e) => s + e.monto, 0);
+    const total = filas(cat).reduce((s, e) => s + e.monto, 0);
     if (total !== 0) {
       rm.push([cat, null, null, null, total]);
     } else {
@@ -144,11 +148,11 @@ export function exportResumenExcel(
 
   // Gran total: ingresos en col E, egresos en col F
   const totalIngMes = ingresos.reduce((s, cat) => {
-    const t = catData[cat].reduce((s2, e) => s2 + e.monto, 0);
+    const t = filas(cat).reduce((s2, e) => s2 + e.monto, 0);
     return s + (t > 0 ? t : 0);
   }, 0);
   const totalGasMes = gastos.reduce((s, cat) => {
-    const t = catData[cat].reduce((s2, e) => s2 + e.monto, 0);
+    const t = filas(cat).reduce((s2, e) => s2 + e.monto, 0);
     return s + (t < 0 ? Math.abs(t) : 0);
   }, 0);
   rm.push([]);
@@ -160,7 +164,7 @@ export function exportResumenExcel(
 
   // Asignar fórmula SUM a la fila de totales
   for (let ci = 0; ci < allCats.length; ci++) {
-    if (catData[allCats[ci]].length === 0) continue;
+    if (filas(allCats[ci] ?? "").length === 0) continue;
     const colLetter = XLSX.utils.encode_col(ci);
     const addr = XLSX.utils.encode_cell({ c: ci, r: totalExcelRow - 1 });
     wsRm[addr] = { f: `SUM(${colLetter}2:${colLetter}${totalExcelRow - 1})` };
@@ -168,15 +172,16 @@ export function exportResumenExcel(
 
   // Añadir notas (comentarios) con fecha + descripción en cada celda de dato
   for (let c = 0; c < allCats.length; c++) {
-    const cat = allCats[c];
-    const entries = catData[cat];
+    const entries = filas(allCats[c] ?? "");
     for (let r = 0; r < entries.length; r++) {
+      const fila = entries[r];
+      if (!fila) continue;
       const addr = XLSX.utils.encode_cell({ c, r: r + 1 });
       const cell = wsRm[addr];
       if (cell) {
-        const lines = [entries[r].fecha];
-        if (entries[r].mes) lines.push(entries[r].mes);
-        if (entries[r].desc) lines.push(entries[r].desc);
+        const lines = [fila.fecha];
+        if (fila.mes) lines.push(fila.mes);
+        if (fila.desc) lines.push(fila.desc);
         // El indicador de oculto va en el ARRAY de comentarios, no dentro de
         // cada comentario. Puesto en el objeto —como estaba— SheetJS lo ignora
         // al escribir el archivo y Excel abre la hoja con todas las notas

@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev --port 8080",
-    "build": "vite build",
+    "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "eslint .",
+    "tipos:estricto": "tsc --noEmit -p tsconfig.strict.json",
     "format": "prettier --write ."
   },
   "dependencies": {

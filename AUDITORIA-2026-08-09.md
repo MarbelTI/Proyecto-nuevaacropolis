@@ -342,10 +342,15 @@ falta de verdad.
       tabla, no afinar la política por columnas.*
 
 - [x] **3.1 El rol `director` recibe cero alumnos**
-      *(hecho en la migración `20260810000004_vistas_director_y_barrier.sql`,
-      **falta ejecutarla en Supabase**. Se añade `or public.is_director()` al
-      WHERE de `students_finanzas`, conservando exactamente la misma lista de
-      columnas.)*
+      *(hecho y **ya aplicado en Supabase** el 10-ago-2026, migración
+      `20260810000004_vistas_director_y_barrier.sql`. Se añade
+      `or public.is_director()` al WHERE de `students_finanzas`.*
+
+      *La migración tuvo que pasar de `create or replace view` a `drop` +
+      `create`: la vista que había en la base **no coincidía en orden de
+      columnas** con la del repositorio, señal de que se editó a mano en algún
+      momento. Otro recordatorio de que el repositorio no describe la base —
+      ver la cabecera de este bloque.)*
       `supabase/migrations/20260806000006_vistas_no_pierden_celador.sql:40` vs
       `src/lib/api/students.functions.ts:153-157`. El código lo enruta a
       `students_finanzas`, cuya vista filtra por `is_finanzas() or is_super_admin()`.
@@ -374,7 +379,7 @@ falta de verdad.
       diferencia del resto— no exige `aprobado`.
 
 - [x] **3.5 Las vistas de alumnos puentean el RLS de `students`**
-      *(hecho en la misma migración `20260810000004`: `security_barrier = true`
+      *(hecho y aplicado, misma migración `20260810000004`: `security_barrier = true`
       en las dos vistas. NO se pasó a `security_invoker`, que habría roto a
       dirección —no tiene política propia sobre `students`—. De paso, el filtro
       del celador usa ahora `s.aulas && array[p.aula_nombre]` en vez de
@@ -516,12 +521,21 @@ falta de verdad.
       Solvencias y sin pagos en su ficha.
       **Arreglo:** `src/lib/personas.ts` y `src/lib/fechas.ts`, una sola versión
       de cada cosa.
-- [ ] **6.2** Zona horaria: `new Date()` en Vercel es UTC, el centro está en
+- [x] **6.2** Zona horaria: `new Date()` en Vercel es UTC, el centro está en
       UTC-4. El último día de mes, entre las 20:00 y medianoche, el servidor ya
       está en el mes siguiente → un mes de deuda de más y discrepancia de
       hidratación. `fees-logic.ts:117`, `excel-import.ts:11`, `excel-export.ts:17`,
-      `SolvenciasTab.tsx:115`. Hace falta una `hoyVenezuela()` con
-      `timeZone: "America/Caracas"`.
+      `SolvenciasTab.tsx:115`.
+      *(hecho: `hoyVenezuela()` y `anioVenezuela()` en `formato.ts`, con
+      `timeZone: "America/Caracas"`, usadas en los cinco sitios. Se fija por
+      nombre de zona y no restando 4 horas porque Venezuela estuvo en UTC-4:30
+      entre 2007 y 2016. Comprobado con el caso que fallaba: el 31-ago a las
+      21:00 hora de allá, el servidor decía 2026-09 y ahora dice 2026-08.*
+
+      *No se tocó la marca de tiempo del registro de WhatsApp
+      (`SolvenciasTab.tsx:421`): ahí UTC es lo correcto, es un sello temporal y
+      no una decisión de «qué día es hoy». De regalo, servidor y navegador ya
+      calculan el mismo mes, así que se acabó el aviso de hidratación.)*
 - [~] **6.3** El mapeo aula → categoría de cuota solo existe como texto dentro
       del prompt del OCR (`ocr.functions.ts:287-288`).
       *(parcheado lo urgente: la regla ya incluye **Krishna IV** y
@@ -573,9 +587,60 @@ falta de verdad.
 - [ ] **6.7** `ResumenTab.tsx:316, 413` mutan con `.sort()` los arrays que vienen
       por props (son estado de `useEditableList`): reordenan las categorías del
       usuario y lo persisten.
-- [ ] **6.8** `build` no ejecuta `tsc`: los errores de tipo llegan a producción.
-      Cambiar a `"build": "tsc --noEmit && vite build"`.
-- [ ] **6.9** Faltan `noUncheckedIndexedAccess` y `exactOptionalPropertyTypes` en
+- [x] **6.8** `build` no ejecutaba `tsc`: los errores de tipo llegaban a
+      producción. *(hecho: `"build": "tsc --noEmit && vite build"`. Comprobado,
+      el build pasa. A partir de ahora un error de tipos rompe el build en vez
+      de colarse.)*
+- [~] **6.9 EN CURSO — se hace por archivos, no de golpe.**
+      Encender los flags en `tsconfig.json` destaparía 219 errores ya
+      existentes y, como el build ejecuta `tsc` desde el 6.8, dejaría el
+      proyecto **sin poder desplegar** hasta arreglarlos todos.
+
+      Montado para poder avanzarlo sin bloquear nada:
+      **`tsconfig.strict.json`** lleva los dos flags y no lo usa el build.
+
+      ```bash
+      npm run tipos:estricto
+      ```
+
+      **Progreso: 219 → 139. `src/lib` ENTERO limpio** (11-ago-2026). Build y
+      `tsc` normal siguen pasando en cada paso.
+
+      Lo que destapó, que no era cosmético:
+      - `precioClase` y `nextYm` hacían `split("-")` sin comprobar que hubiera
+        dos partes: con una cadena mal formada daban `NaN`, y `NaN >= 202606`
+        es `false`, así que devolvían el precio viejo **en silencio**.
+      - `excel-export` leía `catData[cat].length` a pelo: una categoría sin
+        movimientos reventaba la exportación entera.
+      - `excel-import` y `attendance-store` pasaban una hoja inexistente al
+        lector de Excel; ahora se descarta con un mensaje claro.
+      - `bcvRateFor` podía devolver `undefined` donde el tipo prometía
+        `number | null`.
+
+      Un cambio con mucho efecto: el tipo `Student` declara ahora sus opcionales
+      como `?: T | undefined`. El código escribe `undefined` a propósito para
+      decir «no toques esto» (ver `celda()` en el importador), así que era
+      declarar lo que ya hacía. Se llevó 24 errores por delante.
+
+      **Lo que queda, todo en pantallas:**
+
+      | Archivo | Errores |
+      |---|---|
+      | `SolvenciasTab.tsx` | 46 |
+      | `asistencias-tab.tsx` | 28 |
+      | `TransactionsTab.tsx` | 18 |
+      | `AnalisisTab.tsx` | 14 |
+      | `ficha-participante.tsx` | 10 |
+      | `OcrTab.tsx` | 9 |
+      | resto de componentes | ~14 |
+
+      Son menos peligrosos que los de `src/lib`: en una pantalla un `undefined`
+      se ve; en el cálculo se convierte en dinero mal contado.
+
+      **Cuando llegue a 0:** mover los dos flags a `tsconfig.json`, borrar
+      `tsconfig.strict.json` y el script. Desde ese día el build los exige.
+
+      Faltan `noUncheckedIndexedAccess` y `exactOptionalPropertyTypes` en
       `tsconfig.json`; `no-unused-vars` está desactivado en `eslint.config.js:36`
       — por eso pasaron desapercibidos el campo `mes` muerto del 1.2 y varios
       imports sin usar.

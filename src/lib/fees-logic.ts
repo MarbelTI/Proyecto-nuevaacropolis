@@ -1,4 +1,5 @@
 import type { Student } from "./lists-store";
+import { hoyVenezuela } from "./formato";
 
 // ---------- Reglas de cuota mensual (USD) ----------
 //
@@ -19,7 +20,10 @@ import type { Student } from "./lists-store";
 
 /** Precio por clase para "ClasePorClase" según el mes (referencial, no genera deuda). */
 export function precioClase(yearMonth: string): number {
-  const [y, m] = yearMonth.split("-").map(Number);
+  // Con una cadena mal formada, `split` no devuelve las dos partes y esto daba
+  // NaN en silencio: NaN >= 202606 es false, así que salía el precio viejo sin
+  // que nada avisara.
+  const [y = 0, m = 0] = yearMonth.split("-").map(Number);
   const ym = y * 100 + m;
   if (ym >= 202606) return 10;
   return 5;
@@ -95,17 +99,18 @@ export function mensualidadAYm(texto: string | undefined | null): string | null 
   // "ene-26", "enero-2026", "01/2026", "1-26"
   const par = t.match(/^([a-záéíóú]{3,10}|\d{1,2})[-/\s]+(\d{2,4})$/);
   if (!par) return null;
-  const anio = par[2].length === 2 ? 2000 + Number(par[2]) : Number(par[2]);
+  const [, mesTexto = "", anioTexto = ""] = par;
+  const anio = anioTexto.length === 2 ? 2000 + Number(anioTexto) : Number(anioTexto);
   if (!isFinite(anio)) return null;
 
   let mes: number;
-  if (/^\d+$/.test(par[1])) {
-    mes = Number(par[1]);
+  if (/^\d+$/.test(mesTexto)) {
+    mes = Number(mesTexto);
   } else {
     // "septiembre" y "sep" caen los dos en el mismo sitio con los 3 primeros.
     // ̀-ͯ son las tildes sueltas que deja NFD: "septiembre" y
     // "setiembre" mal acentuado acaban igual.
-    const abr = par[1]
+    const abr = mesTexto
       .normalize("NFD")
       .replace(/[̀-ͯ]/g, "")
       .slice(0, 3);
@@ -135,7 +140,7 @@ export type PagosDelAlumno = {
    */
   ultimoMesSinDeclarar: string | null;
   /** Importe del último pago: referencia para quien no tiene cuota fija. */
-  ultimoMonto?: number;
+  ultimoMonto?: number | undefined;
 };
 
 /**
@@ -224,15 +229,15 @@ export function calcularCuotasDebidas(
 }
 
 function nextYm(ym: string): string {
-  const [y, m] = ym.split("-").map(Number);
+  const [y = 0, m = 0] = ym.split("-").map(Number);
   const nm = m === 12 ? 1 : m + 1;
   const ny = m === 12 ? y + 1 : y;
   return `${ny}-${String(nm).padStart(2, "0")}`;
 }
 
+/** El mes en curso EN VENEZUELA. Ver hoyVenezuela: el servidor va en UTC. */
 export function currentYm(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return hoyVenezuela().slice(0, 7);
 }
 
 /**

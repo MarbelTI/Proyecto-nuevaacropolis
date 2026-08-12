@@ -26,7 +26,7 @@ function esClaveSecreta(key: string): boolean {
   const partes = key.split(".");
   if (partes.length === 3) {
     try {
-      const payload = JSON.parse(atob(partes[1].replace(/-/g, "+").replace(/_/g, "/")));
+      const payload = JSON.parse(atob((partes[1] ?? "").replace(/-/g, "+").replace(/_/g, "/")));
       if (payload?.role === "service_role") return true;
     } catch {
       /* si no se puede leer, se deja pasar: no es motivo para bloquear */

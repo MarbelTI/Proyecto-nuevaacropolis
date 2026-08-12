@@ -13,7 +13,7 @@ import { armarMensaje, usePlantillas } from "@/lib/mensajes-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { usd, aNumero, CELDA_NUMERO } from "@/lib/formato";
+import { usd, aNumero, anioVenezuela, CELDA_NUMERO } from "@/lib/formato";
 import {
   Select,
   SelectContent,
@@ -122,7 +122,7 @@ function fechaToIso(fecha: string): string | null {
   if (!m) return null;
   const dd = m[1].padStart(2, "0");
   const mm = m[2].padStart(2, "0");
-  let yy = m[3] ?? String(new Date().getFullYear());
+  let yy = m[3] ?? anioVenezuela();
   if (yy.length === 2) yy = "20" + yy;
   return `${yy}-${mm}-${dd}`;
 }
@@ -1008,7 +1008,7 @@ export default function SolvenciasTab({
           actividad: "Activo",
           condicion: meta?.condicion === "Probacionista" ? "Probacionista" : "Miembro",
           celador: info.celador || undefined,
-          fechaIngreso: info.primera || `${meta?.year ?? new Date().getFullYear()}-01-01`,
+          fechaIngreso: info.primera || `${meta?.year ?? anioVenezuela()}-01-01`,
         });
         creados++;
       } else {

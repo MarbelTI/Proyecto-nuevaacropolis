@@ -152,6 +152,7 @@ export function importFromExcel(file: File): Promise<{
 
         for (const sheetName of aulaSheets) {
           const ws = wb.Sheets[sheetName];
+          if (!ws) continue;
           const data: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
 
           const nombre = (data[2]?.[1] || "").trim();
@@ -200,7 +201,9 @@ export function importFromExcel(file: File): Promise<{
           }
           const refPairs: [number, number][] = [];
           for (let i = 0; i + 1 < refCols.length; i += 2) {
-            refPairs.push([refCols[i], refCols[i + 1]]);
+            const a = refCols[i];
+            const b = refCols[i + 1];
+            if (a != null && b != null) refPairs.push([a, b]);
           }
 
           // Los temas viven en la fila de arriba del encabezado, pero dentro
@@ -254,15 +257,16 @@ export function importFromExcel(file: File): Promise<{
            */
           const fechaDeTema = (i: number): string => {
             if (!fechas.length) return "";
-            if (refPairs.length <= 1) return fechas[0];
+            if (refPairs.length <= 1) return fechas[0] ?? "";
             const paso = fechas.length / refPairs.length;
-            return fechas[Math.min(fechas.length - 1, Math.floor(i * paso))];
+            return fechas[Math.min(fechas.length - 1, Math.floor(i * paso))] ?? "";
           };
 
           const temas: Record<string, string> = {};
           for (let i = 0; i < refPairs.length; i++) {
             const fecha = fechaDeTema(i);
-            if (fecha && temaPorReflexion[i]) temas[fecha] = temaPorReflexion[i];
+            const tema = temaPorReflexion[i];
+            if (fecha && tema) temas[fecha] = tema;
           }
 
           aulas.push({ nombre, celador, diaSemana, condicion, year: 2026, temas });
@@ -286,6 +290,7 @@ export function importFromExcel(file: File): Promise<{
           // Los alumnos empiezan justo debajo del encabezado.
           for (let r = primeraFilaAlumno; r < data.length; r++) {
             const row = data[r];
+            if (!row) continue;
             const numCol = row[0]?.toString() ?? "";
             const alumno = String(row[1] ?? "").trim();
             if (!alumno || alumno === "#N/A" || !/^\d+$/.test(numCol)) continue;
@@ -312,6 +317,8 @@ export function importFromExcel(file: File): Promise<{
             // Attendance marks
             for (let i = 0; i < dateCols.length; i++) {
               const c = dateCols[i];
+              const fecha = fechas[i];
+              if (c == null || !fecha) continue;
               const mark = String(row[c] ?? "")
                 .trim()
                 .toUpperCase();
@@ -319,14 +326,16 @@ export function importFromExcel(file: File): Promise<{
               if (mark === "A") asistencia = "A";
               else if (mark === "I") asistencia = "I";
               else if (mark === "NC") asistencia = "NC";
-              records.push({ aula: nombre, alumno, fecha: fechas[i], asistencia, reflexion: "" });
+              records.push({ aula: nombre, alumno, fecha, asistencia, reflexion: "" });
             }
 
             // Entregas de reflexiones. Se recorren TODOS los temas: antes el
             // bucle se cortaba con Math.min(dateCols.length, …), que mezclaba
             // el número de clases con el de temas sin motivo.
             for (let i = 0; i < refPairs.length; i++) {
-              const [c1, c2] = refPairs[i];
+              const par = refPairs[i];
+              if (!par) continue;
+              const [c1, c2] = par;
               const v1 = String(row[c1] ?? "")
                 .trim()
                 .toUpperCase();
@@ -336,10 +345,12 @@ export function importFromExcel(file: File): Promise<{
               const entregada = v1 === "E" || v2 === "E";
               const noEntregada = v1 === "NE" || v2 === "NE";
               if (!entregada && !noEntregada) continue;
+              const reflexionId = reflexionIdPorIndice[i];
+              if (!reflexionId) continue;
               reflexionAsistencia.push({
                 aula: nombre,
                 alumno,
-                reflexionId: reflexionIdPorIndice[i],
+                reflexionId,
                 estado: entregada ? "E" : "NE",
               });
             }
@@ -357,7 +368,7 @@ export function importFromExcel(file: File): Promise<{
 }
 
 function isoToShort(iso: string) {
-  const [y, m, d] = iso.split("-");
+  const [, m = "", d = ""] = iso.split("-");
   return `${d}/${m.slice(2)}`;
 }
 

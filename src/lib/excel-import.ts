@@ -2,15 +2,16 @@ import * as XLSX from "xlsx";
 import { bcvRateNearest, type BcvRates, type Student, type Transaction } from "./lists-store";
 import { calcularMontoUsd, redondearTasa, TASA_PESOS_DEFAULT } from "./fees-logic";
 import type { Actividad, Condicion } from "./students-data";
-import { aNumeroAvisando } from "./formato";
+import { aNumeroAvisando, anioVenezuela } from "./formato";
 import { nuevoId } from "./utils";
 
 function txFechaToIso(fecha: string): string | null {
   const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
   if (!m) return null;
-  const dd = m[1].padStart(2, "0");
-  const mm = m[2].padStart(2, "0");
-  let yy = m[3] ?? String(new Date().getFullYear());
+  const [, d = "", mo = "", a] = m;
+  const dd = d.padStart(2, "0");
+  const mm = mo.padStart(2, "0");
+  let yy = a ?? anioVenezuela();
   if (yy.length === 2) yy = "20" + yy;
   return `${yy}-${mm}-${dd}`;
 }
@@ -83,7 +84,11 @@ export function parseExcelToTransactions(file: File): Promise<Transaction[]> {
       try {
         const buf = e.target?.result as ArrayBuffer;
         const wb = XLSX.read(buf, { type: "array" });
-        const ws = wb.Sheets[wb.SheetNames[0]];
+        // Un .xlsx sin hojas es raro pero posible, y antes se pasaba undefined
+        // al lector, que fallaba con un error incomprensible.
+        const primera = wb.SheetNames[0];
+        const ws = primera ? wb.Sheets[primera] : undefined;
+        if (!ws) throw new Error("El archivo no tiene ninguna hoja");
         const rows: Record<string, string>[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
         const mapped: Transaction[] = rows.map((r) => ({
           id: nuevoId(),
@@ -182,6 +187,7 @@ function findSheet(wb: XLSX.WorkBook, ...nameKeywords: string[]): string | null 
 
 function sheetRows(wb: XLSX.WorkBook, sheetName: string): unknown[][] {
   const ws = wb.Sheets[sheetName];
+  if (!ws) return [];
   return XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
 }
 
