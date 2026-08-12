@@ -74,7 +74,7 @@ export function AnalisisTab({
   }
   yearsSet.add(new Date().getFullYear());
   const years = Array.from(yearsSet).sort((a, b) => b - a);
-  const [year, setYear] = useState<number>(years[0]);
+  const [year, setYear] = useState<number>(years[0] ?? new Date().getFullYear());
   const [capitalInicial, setCapitalInicial] = useState<string>("0");
 
   const build = (cats: string[], tipo: "Ingreso" | "Gasto") => {
@@ -86,8 +86,8 @@ export function AnalisisTab({
       if (!iso || Number(iso.slice(0, 4)) !== year) continue;
       const mi = Number(iso.slice(5, 7)) - 1;
       const cat = t.categoria || "(sin categoría)";
-      if (!m[cat]) m[cat] = Array(12).fill(0);
-      m[cat][mi] += Number(t.montoUsd) || 0;
+      const fila = (m[cat] ??= Array(12).fill(0) as number[]);
+      fila[mi] = (fila[mi] ?? 0) + (Number(t.montoUsd) || 0);
     }
     return m;
   };
@@ -124,7 +124,7 @@ export function AnalisisTab({
   const renderBlock = (title: string, mat: Record<string, number[]>, colorClass: string) => {
     const cats = Object.keys(mat).sort();
     const totales = Array(12).fill(0);
-    cats.forEach((c) => mat[c].forEach((v, i) => (totales[i] += v)));
+    cats.forEach((c) => (mat[c] ?? []).forEach((v, i) => (totales[i] += v)));
     return (
       <>
         <tr className={`${colorClass} font-semibold`}>
@@ -133,13 +133,15 @@ export function AnalisisTab({
           </td>
         </tr>
         {cats.map((c) => {
-          const row = mat[c];
+          const row = mat[c] ?? [];
           const total = row.reduce((s, v) => s + v, 0);
           const meses = row.filter((v) => v > 0).length || 1;
           const promedio = total / meses;
+          const mesActual = row[lastMonthIdx] ?? 0;
+          const mesAnterior = row[lastMonthIdx - 1] ?? 0;
           const varPct =
-            lastMonthIdx > 0 && row[lastMonthIdx - 1] > 0
-              ? ((row[lastMonthIdx] - row[lastMonthIdx - 1]) / row[lastMonthIdx - 1]) * 100
+            lastMonthIdx > 0 && mesAnterior > 0
+              ? ((mesActual - mesAnterior) / mesAnterior) * 100
               : null;
           return (
             <tr key={c} className="border-b">

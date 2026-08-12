@@ -53,9 +53,10 @@ function mismaPersona(a: string, b: string): boolean {
 function fechaToIso(fecha: string): string {
   const m = (fecha || "").trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
   if (!m) return "";
-  let yy = m[3] ?? String(new Date().getFullYear());
+  const [, d = "", mo = "", a] = m;
+  let yy = a ?? String(new Date().getFullYear());
   if (yy.length === 2) yy = "20" + yy;
-  return `${yy}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  return `${yy}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
 }
 
 /**
@@ -82,7 +83,7 @@ function Barra({ valor, total, color }: { valor: number; total: number; color: s
   );
 }
 
-function Dato({ etiqueta, valor }: { etiqueta: string; valor?: string }) {
+function Dato({ etiqueta, valor }: { etiqueta: string; valor?: string | undefined }) {
   return (
     <div>
       <div className="text-[11px] text-muted-foreground">{etiqueta}</div>

@@ -79,7 +79,7 @@ export function SupabaseSync({
         // Los alumnos que se agregaron localmente (Solvencias, import Excel)
         // pueden no tener id todavía — se les asigna uno estable antes de subir.
         const withIds = students.list.map((s) => (s.id ? s : { ...s, id: newId() }));
-        if (withIds.some((s, i) => s.id !== students.list[i].id)) {
+        if (withIds.some((s, i) => s.id !== students.list[i]?.id)) {
           students.setAll(withIds);
         }
         const stuResult = await syncStu({

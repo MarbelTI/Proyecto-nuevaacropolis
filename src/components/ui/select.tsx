@@ -6,7 +6,31 @@ import { Check, ChevronDown, ChevronUp } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-const Select = SelectPrimitive.Root;
+// Radix declara `value?: string`. Con exactOptionalPropertyTypes eso significa
+// "o pones un texto, o no pasas la prop", y pasarle `string | undefined` es
+// error — pero es justo lo que se hace en toda la aplicación con un campo que
+// puede estar vacío (`value={draft.moneda}` con moneda opcional).
+//
+// Se envuelve para admitirlo, en vez de retocar las treinta llamadas. Radix ya
+// trata undefined como "sin seleccionar", así que el comportamiento no cambia.
+type SelectProps = Omit<
+  React.ComponentProps<typeof SelectPrimitive.Root>,
+  "value" | "defaultValue"
+> & {
+  value?: string | undefined;
+  defaultValue?: string | undefined;
+};
+
+const Select = ({ value, defaultValue, ...props }: SelectProps) => (
+  // Las props que valen undefined no se pasan: Radix distingue "sin prop" de
+  // "prop con undefined", y con la segunda avisa de un componente que pasa de
+  // no controlado a controlado.
+  <SelectPrimitive.Root
+    {...props}
+    {...(value !== undefined ? { value } : {})}
+    {...(defaultValue !== undefined ? { defaultValue } : {})}
+  />
+);
 
 const SelectGroup = SelectPrimitive.Group;
 

@@ -25,8 +25,8 @@ import { Save } from "lucide-react";
 function fechaToIso(fecha: string): string | null {
   const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
   if (!m) return null;
-  const dd = m[1].padStart(2, "0");
-  const mm = m[2].padStart(2, "0");
+  const dd = (m[1] ?? "").padStart(2, "0");
+  const mm = (m[2] ?? "").padStart(2, "0");
   let yy = m[3] ?? String(new Date().getFullYear());
   if (yy.length === 2) yy = "20" + yy;
   return `${yy}-${mm}-${dd}`;

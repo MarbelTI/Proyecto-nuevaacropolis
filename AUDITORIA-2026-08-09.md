@@ -622,17 +622,28 @@ falta de verdad.
       decir «no toques esto» (ver `celda()` en el importador), así que era
       declarar lo que ya hacía. Se llevó 24 errores por delante.
 
-      **Lo que queda, todo en pantallas:**
+      **219 → 89.** Además de `src/lib` entero, quedaron limpios
+      `AnalisisTab`, `OcrTab`, `ficha-participante`, `PrestamosTab`,
+      `ReporteEjecutivo`, `TasasBcvTab`, `SupabaseSync`,
+      `TransactionEditDialog` y los dos de `ui/`.
+
+      Dos arreglos de tipo se llevaron ~30 de golpe:
+      - **`ui/select.tsx`** y **`ui/dropdown-menu.tsx`** ahora omiten la prop
+        cuando vale `undefined`, en vez de pasarla en undefined. Radix
+        distingue las dos cosas: con la segunda avisa de un componente que pasa
+        de no controlado a controlado. Arreglado una vez, sirve para las
+        ~30 llamadas de toda la aplicación.
+      - El tipo `Student` con `?: T | undefined` (arriba).
+
+      **Lo que queda — tres pantallas:**
 
       | Archivo | Errores |
       |---|---|
-      | `SolvenciasTab.tsx` | 46 |
+      | `SolvenciasTab.tsx` | 35 |
       | `asistencias-tab.tsx` | 28 |
-      | `TransactionsTab.tsx` | 18 |
-      | `AnalisisTab.tsx` | 14 |
-      | `ficha-participante.tsx` | 10 |
-      | `OcrTab.tsx` | 9 |
-      | resto de componentes | ~14 |
+      | `TransactionsTab.tsx` | 14 |
+      | `ResumenTab.tsx` | 6 |
+      | `DashboardTab.tsx` | 6 |
 
       Son menos peligrosos que los de `src/lib`: en una pantalla un `undefined`
       se ve; en el cálculo se convierte en dinero mal contado.

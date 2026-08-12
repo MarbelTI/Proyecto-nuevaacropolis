@@ -36,9 +36,10 @@ const CAT_PRESTAMO = ["PRESTAMO", "PRÉSTAMOS, PROFESOR"];
 function fechaToIso(fecha: string): string {
   const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
   if (!m) return "";
-  const dd = m[1].padStart(2, "0");
-  const mm = m[2].padStart(2, "0");
-  let yy = m[3] ?? String(new Date().getFullYear());
+  const [, d = "", mo = "", a] = m;
+  const dd = d.padStart(2, "0");
+  const mm = mo.padStart(2, "0");
+  let yy = a ?? String(new Date().getFullYear());
   if (yy.length === 2) yy = "20" + yy;
   return `${yy}-${mm}-${dd}`;
 }
@@ -187,7 +188,7 @@ function AccionesMovimiento({
   onDescartar,
 }: {
   mov: Movimiento;
-  onEditar?: (id: string) => void;
+  onEditar?: ((id: string) => void) | undefined;
   onDescartar?: (id: string) => void;
 }) {
   return (
@@ -232,7 +233,7 @@ export function PrestamosTab({
   tx: Transaction[];
   students: Student[];
   /** Abre la transacción en el formulario de edición. */
-  onEditar?: (id: string) => void;
+  onEditar?: ((id: string) => void) | undefined;
 }) {
   const [busqueda, setBusqueda] = useState("");
   const [abierta, setAbierta] = useState<string | null>(null);

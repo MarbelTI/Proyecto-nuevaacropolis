@@ -67,6 +67,7 @@ export function TasasBcvTab({ bcv }: { bcv: ReturnType<typeof useBcvRates> }) {
         if (!m) continue;
         const iso = `${m[3]}-${m[2]}-${m[1]}`;
         const ws = wb.Sheets[sheetName];
+        if (!ws) continue;
         const cell = ws["G15"];
         const rate = typeof cell?.v === "number" ? cell.v : Number(cell?.v);
         if (rate && rate > 1) encontradas[iso] = rate;

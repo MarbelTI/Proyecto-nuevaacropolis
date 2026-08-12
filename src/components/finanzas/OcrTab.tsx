@@ -23,9 +23,10 @@ import { toast } from "sonner";
 function fechaToIso(fecha: string): string | null {
   const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
   if (!m) return null;
-  const dd = m[1].padStart(2, "0");
-  const mm = m[2].padStart(2, "0");
-  let yy = m[3] ?? String(new Date().getFullYear());
+  const [, d = "", mo = "", a] = m;
+  const dd = d.padStart(2, "0");
+  const mm = mo.padStart(2, "0");
+  let yy = a ?? String(new Date().getFullYear());
   if (yy.length === 2) yy = "20" + yy;
   return `${yy}-${mm}-${dd}`;
 }
@@ -354,10 +355,12 @@ export function OcrTab({
       for (let i = 0; i < files.length; i++) {
         if (cancelado.current) break;
         const f = files[i];
+        const item = newItems[i];
+        if (!f || !item) continue;
         const idx = startIndex + i;
         setPreviews((p) => p.map((x, j) => (j === idx ? { ...x, status: "processing" } : x)));
         try {
-          const base64 = newItems[i].url.split(",")[1];
+          const base64 = item.url.split(",")[1];
           if (!base64) throw new Error("No se pudo leer la imagen");
           let accessToken: string | undefined;
           try {
@@ -520,8 +523,10 @@ export function OcrTab({
   const addRow = () => setEntries((e) => [...e, emptyEntry()]);
   const duplicateRow = (i: number) =>
     setEntries((e) => {
+      const orig = e[i];
+      if (!orig) return e;
       const c = [...e];
-      c.splice(i + 1, 0, { ...e[i] });
+      c.splice(i + 1, 0, { ...orig });
       return c;
     });
   const removeRow = (i: number) => setEntries((e) => e.filter((_, idx) => idx !== i));
