@@ -602,32 +602,49 @@ export default function AsistenciasTab({
     [selectedAula, enLinea],
   );
 
+  /**
+   * Índices (alumno, fecha) → registro, del aula que se está viendo.
+   *
+   * Antes cada celda hacía un `records.find()`, que recorre el array entero.
+   * Una rejilla de 30 alumnos × 50 fechas son 1.500 celdas y dos búsquedas cada
+   * una: ~3.000 barridos completos en cada render, y el celador dispara un
+   * render en cada clic. Con el índice, el barrido se hace una vez por cambio.
+   *
+   * El separador es un carácter nulo (`\u0000`) y no `|` porque un nombre puede llevar cualquier
+   * signo de puntuación, pero nunca un carácter nulo: así dos claves distintas
+   * no pueden colisionar en una sola.
+   *
+   * `if (!mapa.has(k))` reproduce a propósito el comportamiento de `.find()`,
+   * que devuelve la PRIMERA coincidencia. Un `set` a secas se quedaría con la
+   * última y cambiaría lo que se ve en pantalla cuando hay registros duplicados
+   * — que los hay: la deduplicación por (aula, alumno, fecha) es justamente el
+   * pendiente 1.8.
+   */
+  const { asistenciaPorCelda, reflexionPorCelda } = useMemo(() => {
+    const asistencias = new Map<string, "" | "A" | "I" | "NC">();
+    const reflexiones = new Map<string, "" | "E" | "NE" | "SE">();
+    for (const rec of records) {
+      if (rec.aula !== selectedAula) continue;
+      const k = `${rec.alumno}\u0000${rec.fecha}`;
+      if (rec.reflexion === "") {
+        if (!asistencias.has(k)) asistencias.set(k, rec.asistencia || "");
+      } else {
+        if (!reflexiones.has(k)) reflexiones.set(k, rec.reflexion || "");
+      }
+    }
+    return { asistenciaPorCelda: asistencias, reflexionPorCelda: reflexiones };
+  }, [records, selectedAula]);
+
   const getAsistencia = useCallback(
-    (alumno: string, fecha: string): "" | "A" | "I" | "NC" => {
-      const r = records.find(
-        (rec) =>
-          rec.aula === selectedAula &&
-          rec.alumno === alumno &&
-          rec.fecha === fecha &&
-          rec.reflexion === "",
-      );
-      return r?.asistencia || "";
-    },
-    [records, selectedAula],
+    (alumno: string, fecha: string): "" | "A" | "I" | "NC" =>
+      asistenciaPorCelda.get(`${alumno}\u0000${fecha}`) || "",
+    [asistenciaPorCelda],
   );
 
   const getReflexion = useCallback(
-    (alumno: string, fecha: string): "" | "E" | "NE" | "SE" => {
-      const r = records.find(
-        (rec) =>
-          rec.aula === selectedAula &&
-          rec.alumno === alumno &&
-          rec.fecha === fecha &&
-          rec.reflexion !== "",
-      );
-      return r?.reflexion || "";
-    },
-    [records, selectedAula],
+    (alumno: string, fecha: string): "" | "E" | "NE" | "SE" =>
+      reflexionPorCelda.get(`${alumno}\u0000${fecha}`) || "",
+    [reflexionPorCelda],
   );
 
   function nextRefEstado(current: "" | "E" | "NE"): "" | "E" | "NE" {

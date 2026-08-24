@@ -70,12 +70,14 @@ export function ResumenTab({
   gastos,
   bancos,
   bcvRates,
+  bcvRatesEuro,
 }: {
   tx: ReturnType<typeof useTransactions>;
   ingresos: string[];
   gastos: string[];
   bancos: string[];
   bcvRates: Record<string, number>;
+  bcvRatesEuro: Record<string, number>;
 }) {
   const tx = txObj.list;
   const [ym, setYm] = useState<string>(currentYm());
@@ -313,7 +315,10 @@ export function ResumenTab({
           </button>
         </div>
         <div className="mb-4 flex flex-wrap gap-x-1.5 gap-y-0.5">
-          {ingresos.sort().map((c) => (
+          {/* Copia antes de ordenar: `ingresos` es el estado de useEditableList
+              que llega por props, y .sort() ordena EN EL SITIO — reordenaba las
+              categorías del usuario y lo dejaba guardado. */}
+          {[...ingresos].sort().map((c) => (
             <button
               key={c}
               onClick={() => toggleIngCat(c)}
@@ -410,7 +415,8 @@ export function ResumenTab({
           </button>
         </div>
         <div className="mb-4 flex flex-wrap gap-x-1.5 gap-y-0.5">
-          {gastos.sort().map((c) => (
+          {/* Misma razón que en ingresos: copiar antes de ordenar. */}
+          {[...gastos].sort().map((c) => (
             <button
               key={c}
               onClick={() => toggleGasCat(c)}
@@ -683,6 +689,7 @@ export function ResumenTab({
         gastos={gastos}
         bancos={bancos}
         bcvRates={bcvRates}
+        bcvRatesEuro={bcvRatesEuro}
         bcvSources={{}}
       />
     </div>

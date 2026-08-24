@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import { bcvRateNearest, type BcvRates, type Student, type Transaction } from "./lists-store";
+import { bcvRateNearest, type Student, type Transaction } from "./lists-store";
 import { calcularMontoUsd, redondearTasa, TASA_PESOS_DEFAULT } from "./fees-logic";
 import type { Actividad, Condicion } from "./students-data";
 import { aNumeroAvisando, anioVenezuela } from "./formato";
@@ -35,7 +35,10 @@ export type RellenoTasas = {
  *   - Pesos     → tasa por defecto.
  * No toca los movimientos que ya traen tasa: lo cargado a mano manda.
  */
-export function rellenarTasasFaltantes(rows: Transaction[], bcvRates: BcvRates): RellenoTasas {
+export function rellenarTasasFaltantes(
+  rows: Transaction[],
+  bcvRates: Record<string, number>,
+): RellenoTasas {
   let bsExactas = 0,
     bsAproximadas = 0,
     bsSinTasa = 0,

@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import type { Transaction } from "./lists-store";
+import type { Student, Transaction } from "./lists-store";
 import { hoyVenezuela, anioVenezuela } from "./formato";
 
 /** Lo que puede haber en una celda: un rótulo, un importe, o nada. */
@@ -57,6 +57,126 @@ export function exportTransactionsExcel(transactions: Transaction[]): void {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Transacciones");
   XLSX.writeFile(wb, `TRANSACCIONES_${todayIso()}.xlsx`);
+}
+
+/**
+ * Exporta el padrón completo, en el MISMO formato que lee "Importar Excel".
+ *
+ * Esto último no es un detalle: el importador (`parseExcelToStudents`) no mira
+ * las columnas de una hoja cualquiera, busca hojas llamadas **BD_Temporal** y
+ * **Ficha** — los nombres del Excel de asistencia del que salió el padrón. Una
+ * exportación con la hoja llamada de otra forma no da error al importarla:
+ * simplemente no entra ningún alumno. Por eso se replican esos dos nombres y
+ * las cabeceras exactas que busca, y por eso conviene no "ordenar" este archivo
+ * renombrando hojas o columnas sin mirar antes el importador.
+ *
+ * Tres cosas del resultado que no son fallos:
+ *
+ * - Si quien exporta tiene rol `finanzas` o `celador`, las columnas de la Ficha
+ *   (cédula, correo, dirección, ocupación…) saldrán VACÍAS. No es que falten los
+ *   datos: es que el servidor no se los envía a esos roles. Sale completo con
+ *   `celador_estudios` o `super_admin`.
+ * - La hoja **Cuotas** es solo para leer: el importador no la mira. Tampoco la
+ *   pisa, así que las cuotas especiales sobreviven a un reimporte — pero si
+ *   editas ahí un importe, no entrará. Eso se toca en "Cuotas especiales".
+ * - `BD_Temporal` escribe UNA aula por persona, porque es una columna y así la
+ *   lee el importador. Quien esté en dos aulas conserva la primera; el resto se
+ *   deja escrito en la hoja Cuotas para que al menos no se pierda de vista.
+ */
+export function exportStudentsExcel(students: Student[]): void {
+  if (!students.length) return;
+  const wb = XLSX.utils.book_new();
+
+  // --- Hoja 1: BD_Temporal (nombre, aula, condición, actividad, teléfono) ---
+  const bd = XLSX.utils.json_to_sheet(
+    students.map((s) => ({
+      "Nombre del Alumno": s.nombre,
+      Aula: s.aulas[0] ?? "",
+      Celador: s.celadorNombre ?? "",
+      Condicion: s.condicion ?? "",
+      Actividad: s.actividad ?? "",
+      Telefono: s.telefono ?? "",
+    })),
+  );
+  bd["!cols"] = [{ wch: 28 }, { wch: 16 }, { wch: 20 }, { wch: 15 }, { wch: 10 }, { wch: 14 }];
+  bd["!freeze"] = { xSplit: 0, ySplit: 1 };
+  XLSX.utils.book_append_sheet(wb, bd, "BD_Temporal");
+
+  // --- Hoja 2: Ficha (datos personales) ---
+  // Las cabeceras van con el texto largo del formulario original porque el
+  // importador las busca por subcadena: "ingreso al probacionismo",
+  // "hizo miembro", "recibio de ffvv"… Acortarlas las rompe en silencio.
+  const ficha = XLSX.utils.json_to_sheet(
+    students.map((s) => ({
+      "Nombre y Apellido :": s.nombre,
+      "Indique su Documento de Identificación:": s.cedula ?? "",
+      "Teléfono:": s.telefono ?? "",
+      "Ocupación u oficio:": s.ocupacion ?? "",
+      "Habilidades:": s.habilidades ?? "",
+      "Correo electrónico:": s.correo ?? "",
+      "Dirección:": s.direccion ?? "",
+      "Redes sociales:": s.redesSociales ?? "",
+      "Fecha de ingreso al probacionismo:": s.fechaIngreso ?? "",
+      "Fecha en que se hizo miembro:": s.fechaMiembro ?? "",
+      "Grado de participación:": s.gradoParticipacion ?? "",
+      "Fecha en que se recibió de FFVV:": s.fechaFfvv ?? "",
+      "Sede en la que participa:": s.sede ?? "",
+      "Nombre del curso:": s.aulas[0] ?? "",
+      "Instructor:": s.instructor ?? "",
+      "Celador:": s.celadorNombre ?? "",
+      "Horario:": s.horario ?? "",
+      "Materias en curso:": s.materias ?? "",
+      "Condicion dentro de la escuela": s.condicion ?? "",
+      Estatus: s.actividad ?? "",
+    })),
+  );
+  ficha["!cols"] = [
+    { wch: 28 },
+    { wch: 22 },
+    { wch: 14 },
+    { wch: 22 },
+    { wch: 24 },
+    { wch: 28 },
+    { wch: 30 },
+    { wch: 18 },
+    { wch: 20 },
+    { wch: 20 },
+    { wch: 18 },
+    { wch: 20 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 12 },
+    { wch: 24 },
+    { wch: 22 },
+    { wch: 12 },
+  ];
+  ficha["!freeze"] = { xSplit: 0, ySplit: 1 };
+  XLSX.utils.book_append_sheet(wb, ficha, "Ficha");
+
+  // --- Hoja 3: Cuotas (referencia; el importador no la lee) ---
+  const cuotas = XLSX.utils.json_to_sheet(
+    students.map((s) => ({
+      Nombre: s.nombre,
+      "Todas las aulas": s.aulas.join(", "),
+      // "" y no 0 cuando no hay override: un 0 aquí significaría "esta persona
+      // está becada", que es muy distinto de "paga lo que le toca por su aula".
+      "Cuota fija USD": s.cuotaOverride ?? "",
+      "Cuotas temporales": (s.cuotaOverridesTemporales ?? [])
+        .map(
+          (c) =>
+            `${c.cuotaUsd} USD ${c.desde}${c.hasta ? `..${c.hasta}` : " en adelante"}${c.nota ? ` (${c.nota})` : ""}`,
+        )
+        .join(" · "),
+      Id: s.id ?? "",
+    })),
+  );
+  cuotas["!cols"] = [{ wch: 28 }, { wch: 24 }, { wch: 14 }, { wch: 40 }, { wch: 38 }];
+  cuotas["!freeze"] = { xSplit: 0, ySplit: 1 };
+  XLSX.utils.book_append_sheet(wb, cuotas, "Cuotas");
+
+  XLSX.writeFile(wb, `ALUMNOS_${todayIso()}.xlsx`);
 }
 
 export function exportResumenExcel(

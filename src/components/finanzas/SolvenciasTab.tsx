@@ -42,8 +42,10 @@ import {
   Settings2,
   Eye,
   EyeOff,
+  Download,
 } from "lucide-react";
 import { parseExcelToStudents } from "@/lib/excel-import";
+import { exportStudentsExcel } from "@/lib/excel-export";
 import { toast } from "sonner";
 
 // ------------------------- Constants -------------------------
@@ -1370,6 +1372,24 @@ export default function SolvenciasTab({
               onClick={() => document.getElementById("importStudentsExcel")?.click()}
             >
               <Upload className="mr-2 h-4 w-4" /> Importar Excel
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!students.length}
+              onClick={() => {
+                exportStudentsExcel(students);
+                // Se avisa de que el archivo lleva datos personales. No es un
+                // trámite: sale del control de la aplicación —donde el RLS
+                // decide quién ve qué— y pasa a ser un archivo suelto que se
+                // puede reenviar sin querer.
+                toast.success(`${students.length} alumnos exportados`, {
+                  description:
+                    "El archivo lleva cédulas, teléfonos y direcciones. Guárdalo donde corresponda.",
+                  duration: 8000,
+                });
+              }}
+            >
+              <Download className="mr-2 h-4 w-4" /> Exportar alumnos
             </Button>
             {(previaAsistencias.nuevos.length > 0 || previaAsistencias.unir.length > 0) && (
               <Button variant="outline" onClick={() => setAsistOpen(true)}>

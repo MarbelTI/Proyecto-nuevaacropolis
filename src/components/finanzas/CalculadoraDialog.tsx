@@ -32,6 +32,10 @@ function todayIso(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+function isoToFecha(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return y && m && d ? `${d}/${m}/${y}` : iso;
+}
 
 /**
  * Cifra para meter en un campo editable: sin separador de miles a propósito.
@@ -79,27 +83,24 @@ function Campo({ label, children }: { label: string; children: React.ReactNode }
 // ------------------------- Calculadora -------------------------
 
 /**
- * Calculadora de conversión, aparte del registro de movimientos.
+ * Todo el estado y los cálculos de la calculadora, aparte de dónde se
+ * renderiza.
  *
- * Existe porque no todo el mundo paga a la tasa del BCV: cuando alguien paga en
- * bolívares a otra tasa hay que sacar a mano cuántos dólares son, o al revés,
- * cuántos bolívares hay que cobrar por una cuota. No guarda nada ni toca las
- * transacciones: es una servilleta, no un formulario.
- *
- * OJO con dónde vive el estado: está en este componente y no dentro del
- * `DialogContent`, que Radix desmonta al cerrar. Así, cerrar el diálogo para
- * mirar un dato de la tabla y volver a abrirlo no borra lo que ya se había
- * escrito.
+ * OJO con quién llama a este hook: el componente que lo llama es el que
+ * mantiene vivo el estado. `CalculadoraPanel` es puramente de presentación
+ * (no llama al hook) justamente para poder vivir dentro de un `DialogContent`
+ * de Radix, que desmonta sus hijos al cerrarse — si el estado viviera ahí
+ * adentro, cerrar y reabrir la calculadora borraría lo que ya se había
+ * escrito. Por eso cada quien que use `CalculadoraPanel` (el propio
+ * `CalculadoraDialog`, o el diálogo de editar una transacción) llama a este
+ * hook desde un componente que sigue montado aunque la calculadora se
+ * cierre.
  */
-export function CalculadoraDialog({
-  open,
-  onOpenChange,
-  bcvRates,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  bcvRates: Record<string, number>;
-}) {
+function useCalculadoraState(
+  bcvRates: Record<string, number>,
+  bcvRatesEuro: Record<string, number>,
+  fechaReferencia?: string,
+) {
   const [pestana, setPestana] = useState("convertir");
 
   // --- Pestaña "Convertir" ---
@@ -117,7 +118,10 @@ export function CalculadoraDialog({
   const [tasaMontoStr, setTasaMontoStr] = useState("");
   const [tasaUsdStr, setTasaUsdStr] = useState("");
 
-  const bcvHoy = bcvRateFor(bcvRates, todayIso());
+  const fechaRef = fechaReferencia || todayIso();
+  const esHoy = fechaRef === todayIso();
+  const bcvHoy = bcvRateFor(bcvRates, fechaRef);
+  const bcvRefEuro = bcvRateFor(bcvRatesEuro, fechaRef);
 
   // La tasa se redondea aquí, igual que al guardar un movimiento, para que la
   // calculadora y la tabla no den dos resultados distintos con la misma cifra.
@@ -140,7 +144,12 @@ export function CalculadoraDialog({
   // referencia es el BCV; los pesos usan la tasa fija con la que ya trabaja el
   // resto del sistema.
   const tasaSugerida = moneda === "Pesos" ? TASA_PESOS_DEFAULT : bcvHoy;
-  const etiquetaSugerida = moneda === "Pesos" ? "Tasa habitual" : "Tasa BCV de hoy";
+  const etiquetaSugerida =
+    moneda === "Pesos"
+      ? "Tasa habitual"
+      : esHoy
+        ? "Tasa BCV de hoy"
+        : `Tasa BCV del ${isoToFecha(fechaRef)}`;
 
   const tasaDeducidaCruda = (() => {
     const monto = aNumero(tasaMontoStr);
@@ -166,6 +175,296 @@ export function CalculadoraDialog({
     setTasaUsdStr("");
   };
 
+  return {
+    pestana,
+    setPestana,
+    moneda,
+    setMoneda,
+    tasaStr,
+    setTasaStr,
+    ladoActivo,
+    tasaMoneda,
+    setTasaMoneda,
+    tasaMontoStr,
+    setTasaMontoStr,
+    tasaUsdStr,
+    setTasaUsdStr,
+    fechaRef,
+    esHoy,
+    bcvHoy,
+    bcvRefEuro,
+    tasa,
+    esUsd,
+    montoLocal,
+    usdEscrito,
+    usdCalculado,
+    localCalculado,
+    valorLocal,
+    valorUsd,
+    resultado,
+    tasaSugerida,
+    etiquetaSugerida,
+    tasaDeducida,
+    difVsBcv,
+    limpiar,
+    setMontoStr,
+    setUsdStr,
+    setLadoActivo,
+  };
+}
+
+type CalculadoraState = ReturnType<typeof useCalculadoraState>;
+
+/**
+ * Cuerpo de la calculadora de conversión, sin el Dialog alrededor y sin
+ * estado propio — así se puede meter tanto en su propio diálogo suelto
+ * (`CalculadoraDialog`) como incrustada al lado de otro formulario (edición
+ * de una transacción), donde un segundo Dialog modal la taparía.
+ *
+ * Existe porque no todo el mundo paga a la tasa del BCV: cuando alguien paga en
+ * bolívares a otra tasa hay que sacar a mano cuántos dólares son, o al revés,
+ * cuántos bolívares hay que cobrar por una cuota. No guarda nada ni toca las
+ * transacciones: es una servilleta, no un formulario.
+ */
+export function CalculadoraPanel({ state }: { state: CalculadoraState }) {
+  const s = state;
+
+  return (
+    <div>
+      {/* Tasas del día de referencia (el de la transacción que se está
+          editando, o hoy si se abrió suelta), para tenerlas a la vista sin
+          salir a la pestaña de Tasas BCV. */}
+      <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
+        <span className="text-muted-foreground">
+          {s.esHoy ? "Tasas de hoy" : `Tasas del ${isoToFecha(s.fechaRef)}`}:
+        </span>{" "}
+        <span className="tabular-nums font-medium">
+          Bs/$ {s.bcvHoy != null ? formatTasa(s.bcvHoy) : "—"}
+        </span>
+        <span className="text-muted-foreground"> · </span>
+        <span className="tabular-nums font-medium">
+          Bs/€ {s.bcvRefEuro != null ? formatTasa(s.bcvRefEuro) : "—"}
+        </span>
+      </div>
+
+      <Tabs value={s.pestana} onValueChange={s.setPestana} className="mt-4">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="convertir">Convertir</TabsTrigger>
+          <TabsTrigger value="tasa">¿Qué tasa fue?</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="convertir" className="mt-4 space-y-3">
+          <Campo label="Moneda">
+            <Select value={s.moneda} onValueChange={(v) => s.setMoneda(v as MonedaOrigen)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Bolívares">Bolívares</SelectItem>
+                <SelectItem value="Pesos">Pesos</SelectItem>
+                <SelectItem value="USD">USD</SelectItem>
+              </SelectContent>
+            </Select>
+          </Campo>
+
+          {!s.esUsd && (
+            <Campo label={`Tasa (${s.moneda} por 1 USD)`}>
+              <div className="flex gap-2">
+                <Input
+                  value={s.tasaStr}
+                  inputMode="decimal"
+                  placeholder="Ej: 90.50"
+                  onChange={(e) => s.setTasaStr(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="shrink-0"
+                  disabled={s.tasaSugerida == null}
+                  title={
+                    s.tasaSugerida != null
+                      ? `Rellena ${formatTasa(s.tasaSugerida)} para empezar. Puedes escribir otra encima.`
+                      : "No hay tasa BCV cargada para esa fecha"
+                  }
+                  onClick={() =>
+                    s.tasaSugerida != null && s.setTasaStr(String(redondearTasa(s.tasaSugerida)))
+                  }
+                >
+                  {s.etiquetaSugerida}
+                </Button>
+              </div>
+              <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                {s.tasaSugerida != null ? (
+                  <>
+                    El botón trae {formatTasa(s.tasaSugerida)} como punto de partida.{" "}
+                    <strong className="font-medium text-foreground">
+                      Escribe encima la tasa a la que se pagó de verdad
+                    </strong>{" "}
+                    si fue otra.
+                  </>
+                ) : (
+                  "No hay tasa BCV cargada para esa fecha; escríbela a mano."
+                )}
+              </p>
+            </Campo>
+          )}
+
+          <Campo label={s.esUsd ? "Monto en USD" : `Monto en ${s.moneda}`}>
+            <div className="flex gap-1">
+              <Input
+                value={s.valorLocal}
+                inputMode="decimal"
+                placeholder="0.00"
+                className="tabular-nums"
+                onChange={(e) => {
+                  s.setMontoStr(e.target.value);
+                  s.setLadoActivo("local");
+                }}
+              />
+              <BotonCopiar
+                valor={s.ladoActivo === "usd" ? mostrar(s.localCalculado) : ""}
+                titulo={`Copiar el monto en ${s.moneda}`}
+              />
+            </div>
+          </Campo>
+
+          <Campo label="Equivale en USD">
+            <div className="flex gap-1">
+              <Input
+                value={s.valorUsd}
+                inputMode="decimal"
+                placeholder="0.00"
+                className="tabular-nums"
+                onChange={(e) => {
+                  s.setUsdStr(e.target.value);
+                  s.setLadoActivo("usd");
+                }}
+              />
+              <BotonCopiar
+                valor={s.ladoActivo === "local" ? mostrar(s.usdCalculado) : ""}
+                titulo="Copiar el monto en USD"
+              />
+            </div>
+          </Campo>
+
+          {/* Se dice explícitamente porque un campo que se rellena solo
+              parece de solo lectura y nadie intenta escribir en él. */}
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            Escribe en cualquiera de los dos: el otro se calcula solo.
+            {!s.esUsd && (!s.tasa || s.tasa <= 0) && (
+              <span className="text-amber-600 dark:text-amber-500">
+                {" "}
+                Falta la tasa para poder convertir.
+              </span>
+            )}
+          </p>
+
+          {s.resultado > 0 && (
+            <div className="rounded-md border bg-muted/40 p-3 text-sm">
+              <span className="tabular-nums">
+                {s.esUsd
+                  ? `$${$(s.resultado)}`
+                  : s.ladoActivo === "local"
+                    ? `${$(s.montoLocal)} ${s.moneda} = $${$(s.usdCalculado)}`
+                    : `$${$(s.usdEscrito)} = ${$(s.localCalculado)} ${s.moneda}`}
+              </span>
+              {!s.esUsd && s.tasa != null && (
+                <span className="text-muted-foreground"> · a {formatTasa(s.tasa)}</span>
+              )}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="tasa" className="mt-4 space-y-3">
+          <p className="text-xs leading-snug text-muted-foreground">
+            Si sabes cuánto se pagó y a cuántos dólares equivalía, aquí sale la tasa que se
+            aplicó.
+          </p>
+
+          <Campo label="Moneda">
+            <Select value={s.tasaMoneda} onValueChange={(v) => s.setTasaMoneda(v as MonedaLocal)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Bolívares">Bolívares</SelectItem>
+                <SelectItem value="Pesos">Pesos</SelectItem>
+              </SelectContent>
+            </Select>
+          </Campo>
+
+          <Campo label={`Monto pagado en ${s.tasaMoneda}`}>
+            <Input
+              value={s.tasaMontoStr}
+              inputMode="decimal"
+              placeholder="0.00"
+              className="tabular-nums"
+              onChange={(e) => s.setTasaMontoStr(e.target.value)}
+            />
+          </Campo>
+
+          <Campo label="Equivalente en USD">
+            <Input
+              value={s.tasaUsdStr}
+              inputMode="decimal"
+              placeholder="0.00"
+              className="tabular-nums"
+              onChange={(e) => s.setTasaUsdStr(e.target.value)}
+            />
+          </Campo>
+
+          <div className="rounded-md border bg-muted/40 p-3">
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <p className="text-xs text-muted-foreground">Tasa aplicada</p>
+                <p className="text-lg font-semibold tabular-nums">{formatTasa(s.tasaDeducida)}</p>
+              </div>
+              <BotonCopiar
+                valor={s.tasaDeducida != null ? String(s.tasaDeducida) : ""}
+                titulo="Copiar la tasa"
+              />
+            </div>
+            {s.difVsBcv != null && (
+              <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                {Math.abs(s.difVsBcv) < 0.05
+                  ? `Es la misma tasa BCV de esa fecha (${formatTasa(s.bcvHoy)}).`
+                  : `${$(Math.abs(s.difVsBcv))}% ${s.difVsBcv > 0 ? "por encima" : "por debajo"} de la tasa BCV de esa fecha (${formatTasa(s.bcvHoy)}).`}
+              </p>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      <div className="mt-4 flex justify-end">
+        <Button type="button" variant="ghost" size="sm" onClick={s.limpiar}>
+          <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Limpiar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Calculadora suelta en su propio diálogo modal — el botón flotante de la
+ * pestaña Transacciones. Para la que se abre al lado de un formulario de
+ * edición sin taparlo, usar `CalculadoraPanel` + `useCalculadoraState`
+ * directamente (ver `TransactionEditDialog`).
+ */
+export function CalculadoraDialog({
+  open,
+  onOpenChange,
+  bcvRates,
+  bcvRatesEuro = {},
+  fechaReferencia,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  bcvRates: Record<string, number>;
+  bcvRatesEuro?: Record<string, number>;
+  fechaReferencia?: string;
+}) {
+  const state = useCalculadoraState(bcvRates, bcvRatesEuro, fechaReferencia);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
@@ -177,203 +476,11 @@ export function CalculadoraDialog({
             Para cuentas sueltas de conversión. No guarda nada ni modifica los movimientos.
           </DialogDescription>
         </DialogHeader>
-
-        {/* Controlada desde fuera del DialogContent por lo mismo que el resto
-            del estado: al reabrir se vuelve a la pestaña donde se estaba. */}
-        <Tabs value={pestana} onValueChange={setPestana}>
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="convertir">Convertir</TabsTrigger>
-            <TabsTrigger value="tasa">¿Qué tasa fue?</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="convertir" className="mt-4 space-y-3">
-            <Campo label="Moneda">
-              <Select value={moneda} onValueChange={(v) => setMoneda(v as MonedaOrigen)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Bolívares">Bolívares</SelectItem>
-                  <SelectItem value="Pesos">Pesos</SelectItem>
-                  <SelectItem value="USD">USD</SelectItem>
-                </SelectContent>
-              </Select>
-            </Campo>
-
-            {!esUsd && (
-              <Campo label={`Tasa (${moneda} por 1 USD)`}>
-                <div className="flex gap-2">
-                  <Input
-                    value={tasaStr}
-                    inputMode="decimal"
-                    placeholder="Ej: 90.50"
-                    onChange={(e) => setTasaStr(e.target.value)}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="shrink-0"
-                    disabled={tasaSugerida == null}
-                    title={
-                      tasaSugerida != null
-                        ? `Rellena ${formatTasa(tasaSugerida)} para empezar. Puedes escribir otra encima.`
-                        : "No hay tasa BCV cargada para hoy"
-                    }
-                    onClick={() =>
-                      tasaSugerida != null && setTasaStr(String(redondearTasa(tasaSugerida)))
-                    }
-                  >
-                    {etiquetaSugerida}
-                  </Button>
-                </div>
-                <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                  {tasaSugerida != null ? (
-                    <>
-                      El botón trae {formatTasa(tasaSugerida)} como punto de partida.{" "}
-                      <strong className="font-medium text-foreground">
-                        Escribe encima la tasa a la que se pagó de verdad
-                      </strong>{" "}
-                      si fue otra.
-                    </>
-                  ) : (
-                    "No hay tasa BCV cargada para hoy; escríbela a mano."
-                  )}
-                </p>
-              </Campo>
-            )}
-
-            <Campo label={esUsd ? "Monto en USD" : `Monto en ${moneda}`}>
-              <div className="flex gap-1">
-                <Input
-                  value={valorLocal}
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  className="tabular-nums"
-                  onChange={(e) => {
-                    setMontoStr(e.target.value);
-                    setLadoActivo("local");
-                  }}
-                />
-                <BotonCopiar
-                  valor={ladoActivo === "usd" ? mostrar(localCalculado) : ""}
-                  titulo={`Copiar el monto en ${moneda}`}
-                />
-              </div>
-            </Campo>
-
-            <Campo label="Equivale en USD">
-              <div className="flex gap-1">
-                <Input
-                  value={valorUsd}
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  className="tabular-nums"
-                  onChange={(e) => {
-                    setUsdStr(e.target.value);
-                    setLadoActivo("usd");
-                  }}
-                />
-                <BotonCopiar
-                  valor={ladoActivo === "local" ? mostrar(usdCalculado) : ""}
-                  titulo="Copiar el monto en USD"
-                />
-              </div>
-            </Campo>
-
-            {/* Se dice explícitamente porque un campo que se rellena solo
-                parece de solo lectura y nadie intenta escribir en él. */}
-            <p className="text-[11px] leading-snug text-muted-foreground">
-              Escribe en cualquiera de los dos: el otro se calcula solo.
-              {!esUsd && (!tasa || tasa <= 0) && (
-                <span className="text-amber-600 dark:text-amber-500">
-                  {" "}
-                  Falta la tasa para poder convertir.
-                </span>
-              )}
-            </p>
-
-            {resultado > 0 && (
-              <div className="rounded-md border bg-muted/40 p-3 text-sm">
-                <span className="tabular-nums">
-                  {esUsd
-                    ? `$${$(resultado)}`
-                    : ladoActivo === "local"
-                      ? `${$(montoLocal)} ${moneda} = $${$(usdCalculado)}`
-                      : `$${$(usdEscrito)} = ${$(localCalculado)} ${moneda}`}
-                </span>
-                {!esUsd && tasa != null && (
-                  <span className="text-muted-foreground"> · a {formatTasa(tasa)}</span>
-                )}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="tasa" className="mt-4 space-y-3">
-            <p className="text-xs leading-snug text-muted-foreground">
-              Si sabes cuánto se pagó y a cuántos dólares equivalía, aquí sale la tasa que se
-              aplicó.
-            </p>
-
-            <Campo label="Moneda">
-              <Select value={tasaMoneda} onValueChange={(v) => setTasaMoneda(v as MonedaLocal)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Bolívares">Bolívares</SelectItem>
-                  <SelectItem value="Pesos">Pesos</SelectItem>
-                </SelectContent>
-              </Select>
-            </Campo>
-
-            <Campo label={`Monto pagado en ${tasaMoneda}`}>
-              <Input
-                value={tasaMontoStr}
-                inputMode="decimal"
-                placeholder="0.00"
-                className="tabular-nums"
-                onChange={(e) => setTasaMontoStr(e.target.value)}
-              />
-            </Campo>
-
-            <Campo label="Equivalente en USD">
-              <Input
-                value={tasaUsdStr}
-                inputMode="decimal"
-                placeholder="0.00"
-                className="tabular-nums"
-                onChange={(e) => setTasaUsdStr(e.target.value)}
-              />
-            </Campo>
-
-            <div className="rounded-md border bg-muted/40 p-3">
-              <div className="flex items-center gap-2">
-                <div className="flex-1">
-                  <p className="text-xs text-muted-foreground">Tasa aplicada</p>
-                  <p className="text-lg font-semibold tabular-nums">{formatTasa(tasaDeducida)}</p>
-                </div>
-                <BotonCopiar
-                  valor={tasaDeducida != null ? String(tasaDeducida) : ""}
-                  titulo="Copiar la tasa"
-                />
-              </div>
-              {difVsBcv != null && (
-                <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                  {Math.abs(difVsBcv) < 0.05
-                    ? `Es la misma tasa del BCV de hoy (${formatTasa(bcvHoy)}).`
-                    : `${$(Math.abs(difVsBcv))}% ${difVsBcv > 0 ? "por encima" : "por debajo"} de la tasa BCV de hoy (${formatTasa(bcvHoy)}).`}
-                </p>
-              )}
-            </div>
-          </TabsContent>
-        </Tabs>
-
-        <div className="flex justify-end">
-          <Button type="button" variant="ghost" size="sm" onClick={limpiar}>
-            <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Limpiar
-          </Button>
-        </div>
+        <CalculadoraPanel state={state} />
       </DialogContent>
     </Dialog>
   );
 }
+
+export { useCalculadoraState };
+export type { CalculadoraState };

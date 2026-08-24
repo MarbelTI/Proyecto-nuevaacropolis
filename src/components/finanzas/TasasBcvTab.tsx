@@ -1,14 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { fetchBcvQuarter } from "@/lib/bcv.functions";
 import { getAccessToken } from "@/lib/supabase";
-import { useBcvRates, type BcvRates } from "@/lib/lists-store";
+import { useBcvRates, type BcvRates, type BcvRateEntry } from "@/lib/lists-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Loader2, Upload, Plus, RefreshCw } from "lucide-react";
+import { Loader2, Upload, Plus, RefreshCw, Pencil, X } from "lucide-react";
 import { formatTasa } from "@/lib/fees-logic";
-import { CELDA_NUMERO } from "@/lib/formato";
 import { toast } from "sonner";
 
 function todayIso(): string {
@@ -25,7 +24,12 @@ export function TasasBcvTab({ bcv }: { bcv: ReturnType<typeof useBcvRates> }) {
   const [loadingAuto, setLoadingAuto] = useState(false);
   const [loadingImport, setLoadingImport] = useState(false);
   const [nuevaFecha, setNuevaFecha] = useState<string>(todayIso());
-  const [nuevaTasa, setNuevaTasa] = useState<string>("");
+  const [nuevaTasaDolar, setNuevaTasaDolar] = useState<string>("");
+  const [nuevaTasaEuro, setNuevaTasaEuro] = useState<string>("");
+  /** Fecha que se está corrigiendo desde el lápiz de la tabla, o null si el
+   * formulario de arriba está en modo "cargar tasa nueva". */
+  const [editandoIso, setEditandoIso] = useState<string | null>(null);
+  const formRef = useRef<HTMLDivElement>(null);
 
   const cargarTrimestres = async () => {
     setLoadingAuto(true);
@@ -36,9 +40,17 @@ export function TasasBcvTab({ bcv }: { bcv: ReturnType<typeof useBcvRates> }) {
       try {
         const res = await fetchQuarter({ data: { year: y, quarter: q, accessToken } });
         if (!res || !res.rows.length) continue;
-        const nuevas: Record<string, number> = {};
+        // Solo se completa lo que falte por fecha: si ya hay tasa dólar
+        // guardada para ese día no se pisa, y lo mismo para la tasa euro por
+        // separado — así una fecha puede tener el dólar cargado a mano y
+        // recibir aquí solo el euro que faltaba.
+        const nuevas: BcvRates = {};
         for (const r of res.rows) {
-          if (!bcv.rates[r.isoDate]) nuevas[r.isoDate] = r.rate;
+          const existente = bcv.rates[r.isoDate];
+          const entry: BcvRateEntry = {};
+          if (existente?.dolar == null && r.dolar != null) entry.dolar = r.dolar;
+          if (existente?.euro == null && r.euro != null) entry.euro = r.euro;
+          if (entry.dolar != null || entry.euro != null) nuevas[r.isoDate] = entry;
         }
         const c = Object.keys(nuevas).length;
         if (c) {
@@ -61,23 +73,28 @@ export function TasasBcvTab({ bcv }: { bcv: ReturnType<typeof useBcvRates> }) {
       const buf = await file.arrayBuffer();
       const XLSX = await import("xlsx");
       const wb = XLSX.read(buf, { type: "array" });
-      const encontradas: Record<string, number> = {};
+      const encontradas: BcvRates = {};
       for (const sheetName of wb.SheetNames) {
         const m = sheetName.match(/^(\d{2})(\d{2})(\d{4})$/);
         if (!m) continue;
         const iso = `${m[3]}-${m[2]}-${m[1]}`;
         const ws = wb.Sheets[sheetName];
         if (!ws) continue;
-        const cell = ws["G15"];
-        const rate = typeof cell?.v === "number" ? cell.v : Number(cell?.v);
-        if (rate && rate > 1) encontradas[iso] = rate;
+        const cellUsd = ws["G15"];
+        const dolar = typeof cellUsd?.v === "number" ? cellUsd.v : Number(cellUsd?.v);
+        const cellEur = ws["G11"];
+        const euro = typeof cellEur?.v === "number" ? cellEur.v : Number(cellEur?.v);
+        const entry: BcvRateEntry = {};
+        if (dolar && dolar > 1) entry.dolar = dolar;
+        if (euro && euro > 1) entry.euro = euro;
+        if (entry.dolar != null || entry.euro != null) encontradas[iso] = entry;
       }
       const cant = Object.keys(encontradas).length;
       if (cant) {
         bcv.merge(encontradas);
         toast.success(`${cant} tasas importadas desde ${file.name}`);
       } else {
-        toast.error("No se encontraron tasas en G15. ¿Es el XLS del BCV?");
+        toast.error("No se encontraron tasas en G11/G15. ¿Es el XLS del BCV?");
       }
     } catch (err) {
       toast.error(`Error al leer XLS: ${(err as Error).message}`);
@@ -86,15 +103,38 @@ export function TasasBcvTab({ bcv }: { bcv: ReturnType<typeof useBcvRates> }) {
     }
   };
 
+  const limpiarFormulario = () => {
+    setEditandoIso(null);
+    setNuevaFecha(todayIso());
+    setNuevaTasaDolar("");
+    setNuevaTasaEuro("");
+  };
+
+  const editarFila = (iso: string, entry: BcvRateEntry) => {
+    setEditandoIso(iso);
+    setNuevaFecha(iso);
+    setNuevaTasaDolar(entry.dolar != null ? String(entry.dolar) : "");
+    setNuevaTasaEuro(entry.euro != null ? String(entry.euro) : "");
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
   const agregarManual = () => {
-    const r = Number(nuevaTasa);
-    if (!r || r <= 0) {
+    const d = nuevaTasaDolar.trim() ? Number(nuevaTasaDolar) : undefined;
+    const e = nuevaTasaEuro.trim() ? Number(nuevaTasaEuro) : undefined;
+    if (d == null && e == null) {
+      toast.error("Cargá al menos una tasa (dólar o euro)");
+      return;
+    }
+    if ((d != null && (!d || d <= 0)) || (e != null && (!e || e <= 0))) {
       toast.error("Tasa inválida");
       return;
     }
-    bcv.set(nuevaFecha, r);
-    setNuevaTasa("");
-    toast.success("Tasa guardada");
+    const partial: { dolar?: number; euro?: number } = {};
+    if (d != null) partial.dolar = d;
+    if (e != null) partial.euro = e;
+    bcv.set(nuevaFecha, partial);
+    toast.success(editandoIso ? "Tasa corregida" : "Tasa guardada");
+    limpiarFormulario();
   };
 
   const rows = Object.entries(bcv.rates).sort((a, b) => b[0].localeCompare(a[0]));
@@ -115,7 +155,7 @@ export function TasasBcvTab({ bcv }: { bcv: ReturnType<typeof useBcvRates> }) {
     <Card className="p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Tasas BCV (bolívares por dólar)</h2>
+          <h2 className="text-lg font-semibold">Tasas BCV (bolívares por dólar y por euro)</h2>
           <p className="text-xs text-muted-foreground">{rows.length} días cargados.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -154,52 +194,90 @@ export function TasasBcvTab({ bcv }: { bcv: ReturnType<typeof useBcvRates> }) {
         </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border bg-muted/30 p-3">
-        <div>
-          <label className="text-xs text-muted-foreground">Fecha</label>
-          <input
-            type="date"
-            value={nuevaFecha}
-            onChange={(e) => setNuevaFecha(e.target.value)}
-            className="block rounded border bg-background px-2 py-1 text-sm"
-          />
+      <div ref={formRef} className="mb-4 rounded-lg border bg-muted/30 p-3">
+        {editandoIso && (
+          <div className="mb-2 flex items-center gap-2 text-xs">
+            <span className="rounded bg-amber-500/20 px-2 py-1 font-medium text-amber-700 dark:text-amber-400">
+              Editando tasa del {isoToFecha(editandoIso)}
+            </span>
+            <button
+              type="button"
+              onClick={limpiarFormulario}
+              className="flex items-center gap-1 text-muted-foreground underline hover:text-foreground"
+            >
+              <X className="h-3 w-3" /> Cancelar
+            </button>
+          </div>
+        )}
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label className="text-xs text-muted-foreground">Fecha</label>
+            <input
+              type="date"
+              value={nuevaFecha}
+              onChange={(e) => setNuevaFecha(e.target.value)}
+              className="block rounded border bg-background px-2 py-1 text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Tasa Bs/$</label>
+            <Input
+              value={nuevaTasaDolar}
+              onChange={(e) => setNuevaTasaDolar(e.target.value)}
+              className="w-32"
+              placeholder="212.34"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Tasa Bs/€</label>
+            <Input
+              value={nuevaTasaEuro}
+              onChange={(e) => setNuevaTasaEuro(e.target.value)}
+              className="w-32"
+              placeholder="230.50"
+            />
+          </div>
+          <Button onClick={agregarManual}>
+            <Plus className="mr-2 h-4 w-4" /> {editandoIso ? "Actualizar tasa" : "Guardar tasa"}
+          </Button>
         </div>
-        <div>
-          <label className="text-xs text-muted-foreground">Tasa Bs/$</label>
-          <Input
-            value={nuevaTasa}
-            onChange={(e) => setNuevaTasa(e.target.value)}
-            className="w-32"
-            placeholder="212.34"
-          />
-        </div>
-        <Button onClick={agregarManual}>
-          <Plus className="mr-2 h-4 w-4" /> Guardar tasa
-        </Button>
       </div>
 
       <div className="max-h-[60vh] overflow-y-auto">
-        <table className="w-full text-sm">
+        <table className="mx-auto w-full max-w-lg text-sm">
           <thead className="sticky top-0 bg-card">
-            <tr className="border-b text-left text-muted-foreground">
+            <tr className="border-b text-center text-muted-foreground">
               <th className="p-2 font-medium">Fecha</th>
-              <th className="p-2 font-medium text-right">Tasa Bs/$</th>
+              <th className="p-2 font-medium">Tasa Bs/$</th>
+              <th className="p-2 font-medium">Tasa Bs/€</th>
+              <th className="p-2 font-medium" aria-label="Editar" />
             </tr>
           </thead>
           <tbody>
             {rows.map(([iso, r]) => (
-              <tr key={iso} className="border-b last:border-0">
+              <tr key={iso} className="border-b text-center last:border-0">
                 <td className="p-2">{isoToFecha(iso)}</td>
                 {/* Dos decimales, los mismos con los que se guarda la tasa.
                     Mostrar cuatro daba la impresión de una precisión que el
                     cálculo no usa: el monto en dólares sale de la tasa
                     redondeada. */}
-                <td className={`p-2 ${CELDA_NUMERO}`}>{formatTasa(r)}</td>
+                <td className="p-2 tabular-nums">{r.dolar != null ? formatTasa(r.dolar) : "—"}</td>
+                <td className="p-2 tabular-nums">{r.euro != null ? formatTasa(r.euro) : "—"}</td>
+                <td className="p-2">
+                  <button
+                    type="button"
+                    onClick={() => editarFila(iso, r)}
+                    title={`Corregir la tasa del ${isoToFecha(iso)}`}
+                    className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                </td>
               </tr>
             ))}
             {!rows.length && (
               <tr>
-                <td colSpan={2} className="py-8 text-center text-muted-foreground">
+                <td colSpan={4} className="py-8 text-center text-muted-foreground">
                   Sin tasas
                 </td>
               </tr>

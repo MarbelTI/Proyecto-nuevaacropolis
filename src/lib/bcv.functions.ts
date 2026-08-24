@@ -27,7 +27,7 @@ const TIMEOUT_POR_URL = 6000;
 /** Tope de toda la operación, pruebe las URL que pruebe. */
 const DEADLINE_GLOBAL = 12000;
 
-export type BcvRow = { isoDate: string; rate: number };
+export type BcvRow = { isoDate: string; dolar: number; euro?: number };
 
 // URLs candidatas del XLS trimestral del BCV. El patrón real es:
 //   https://www.bcv.org.ve/sites/default/files/EstadisticasGeneral/2_1_2{LETRA}{YY}_smc.xls
@@ -142,10 +142,14 @@ async function readXlsRates(buf: Uint8Array): Promise<BcvRow[]> {
     if (!iso) continue;
     const ws = wb.Sheets[sheetName];
     if (!ws) continue;
-    // La tasa Venta USD está en G15 según el formato del BCV.
-    const cell = ws["G15"];
-    const rate = typeof cell?.v === "number" ? cell.v : Number(cell?.v);
-    if (rate && rate > 1) rows.push({ isoDate: iso, rate });
+    // La tasa Venta USD está en G15 y la tasa Euro en G11, según el formato del BCV.
+    const cellUsd = ws["G15"];
+    const dolar = typeof cellUsd?.v === "number" ? cellUsd.v : Number(cellUsd?.v);
+    if (!(dolar && dolar > 1)) continue;
+    const cellEur = ws["G11"];
+    const euroRaw = typeof cellEur?.v === "number" ? cellEur.v : Number(cellEur?.v);
+    const euro = euroRaw && euroRaw > 1 ? euroRaw : undefined;
+    rows.push(euro !== undefined ? { isoDate: iso, dolar, euro } : { isoDate: iso, dolar });
   }
   return rows.sort((a, b) => a.isoDate.localeCompare(b.isoDate));
 }
@@ -259,7 +263,8 @@ export const fetchBcvForDate = createServerFn({ method: "POST" })
         const j = (await alt.json()) as { fechaActualizacion?: string; promedio?: number };
         if (j.promedio) {
           const iso = (j.fechaActualizacion ?? new Date().toISOString()).slice(0, 10);
-          return { rows: [{ isoDate: iso, rate: j.promedio }], source: "dolarapi.com" };
+          // dolarapi.com solo trae la tasa dólar, no hay euro en este respaldo.
+          return { rows: [{ isoDate: iso, dolar: j.promedio }], source: "dolarapi.com" };
         }
       }
     } catch {
@@ -282,7 +287,7 @@ export const fetchTodayBcv = createServerFn({ method: "GET" }).handler(
     const res = await fetchQuarterRows(y, q);
     if (res && res.rows.length) {
       const last = res.rows[res.rows.length - 1];
-      if (last) return { isoDate: last.isoDate, rate: last.rate };
+      if (last) return { isoDate: last.isoDate, rate: last.dolar };
     }
     try {
       const alt = await fetch("https://ve.dolarapi.com/v1/dolares/oficial");

@@ -21,6 +21,7 @@ const TransactionSchema = z.object({
 const BcvRateSchema = z.object({
   isoDate: z.string(),
   rate: z.number(),
+  rateEuro: z.number().optional(),
   source: z.string().optional(),
 });
 
@@ -105,6 +106,7 @@ export const syncBcvRatesToSupabase = createServerFn({ method: "POST" })
     const mapped = data.rates.map((r) => ({
       iso_date: r.isoDate,
       rate: r.rate,
+      rate_euro: r.rateEuro ?? null,
       source: r.source ?? "",
     }));
 
@@ -190,7 +192,7 @@ export const loadBcvRatesFromSupabase = createServerFn({ method: "POST" })
     // y bcvRateFor acabaría convirtiendo bolívares con la tasa de hace años.
     // Son ~365 filas al año, así que el problema aparece solo con el tiempo.
     const PAGINA = 1000;
-    const rates: Record<string, number> = {};
+    const rates: Record<string, { dolar?: number; euro?: number }> = {};
     for (let desde = 0; ; desde += PAGINA) {
       const { data: rows, error } = await supabase
         .from("bcv_rates")
@@ -199,7 +201,12 @@ export const loadBcvRatesFromSupabase = createServerFn({ method: "POST" })
         .range(desde, desde + PAGINA - 1);
 
       if (error) return { ok: false, error: error.message, data: {} };
-      for (const r of rows ?? []) rates[r.iso_date] = r.rate;
+      for (const r of rows ?? []) {
+        const entry: { dolar?: number; euro?: number } = {};
+        if (r.rate != null) entry.dolar = r.rate;
+        if (r.rate_euro != null) entry.euro = r.rate_euro;
+        rates[r.iso_date] = entry;
+      }
       if (!rows || rows.length < PAGINA) break;
     }
     return { ok: true, data: rates };

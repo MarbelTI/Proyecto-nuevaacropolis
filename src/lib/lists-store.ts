@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AULAS_DEFAULT,
   CATEGORIAS_GASTO,
@@ -101,8 +101,30 @@ function parseMoneyOrNull(s: unknown): number | null {
   return parseMoney(s);
 }
 
-/** Mapa fecha ISO (YYYY-MM-DD) -> tasa bolívares/USD */
-export type BcvRates = Record<string, number>;
+/**
+ * Tasas BCV de una fecha: bolívares por dólar y/o por euro. Ambas son
+ * opcionales por separado — una fecha puede tener solo una de las dos (ej.
+ * carga manual de solo la tasa euro para una fecha que aún no tiene dólar).
+ */
+export type BcvRateEntry = { dolar?: number; euro?: number };
+/** Mapa fecha ISO (YYYY-MM-DD) -> tasas BCV de esa fecha. */
+export type BcvRates = Record<string, BcvRateEntry>;
+
+// Antes de este cambio cada fecha guardaba directamente el número de la tasa
+// dólar (`Record<string, number>`). Los datos guardados en localStorage antes
+// de este cambio siguen en ese formato viejo: se envuelven como `{ dolar }`
+// al leerlos, en vez de migrar el localStorage en caliente.
+function normalizeBcvRates(raw: Record<string, unknown>): BcvRates {
+  const out: BcvRates = {};
+  for (const [iso, v] of Object.entries(raw)) {
+    if (typeof v === "number") out[iso] = { dolar: v };
+    else if (v && typeof v === "object") {
+      const entry = v as BcvRateEntry;
+      if (typeof entry.dolar === "number" || typeof entry.euro === "number") out[iso] = entry;
+    }
+  }
+  return out;
+}
 
 function load<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -411,25 +433,61 @@ export function useTransactions(): {
 
 export function useBcvRates(): {
   rates: BcvRates;
+  /**
+   * Vista derivada de solo la tasa dólar, en el formato de antes de este
+   * cambio (`Record<string, number>`). Existe para que las pantallas que
+   * todavía solo convierten con el dólar (Dashboard, Resumen, Calculadora,
+   * la carga masiva desde Excel) sigan funcionando sin tocar su código.
+   */
+  ratesDolar: Record<string, number>;
+  /**
+   * Igual que `ratesDolar` pero para la tasa euro. La usan las pantallas que
+   * sugieren tasa por transacción (edición manual, OCR) para Bolívares desde
+   * el 24/06/2026 en adelante en filas de Ingreso.
+   */
+  ratesEuro: Record<string, number>;
   merge: (next: BcvRates) => void;
-  set: (isoDate: string, rate: number) => void;
+  set: (isoDate: string, partial: { dolar?: number; euro?: number }) => void;
   clean: (predicate: (isoDate: string) => boolean) => void;
 } {
   const [rates, setRates] = useState<BcvRates>(() =>
-    typeof window !== "undefined" ? load<BcvRates>(K_BCV, {}) : {},
+    typeof window !== "undefined"
+      ? normalizeBcvRates(load<Record<string, unknown>>(K_BCV, {}))
+      : {},
   );
+  const ratesDolar = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [iso, entry] of Object.entries(rates)) {
+      if (entry.dolar != null) out[iso] = entry.dolar;
+    }
+    return out;
+  }, [rates]);
+  const ratesEuro = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [iso, entry] of Object.entries(rates)) {
+      if (entry.euro != null) out[iso] = entry.euro;
+    }
+    return out;
+  }, [rates]);
   return {
     rates,
+    ratesDolar,
+    ratesEuro,
+    // Merge por fecha: si `next` trae solo `euro` para una fecha que ya tenía
+    // `dolar` guardado (o viceversa), se combinan en vez de pisarse.
     merge: (next) => {
       setRates((prev) => {
-        const merged = { ...prev, ...next };
+        const merged: BcvRates = { ...prev };
+        for (const [iso, entry] of Object.entries(next)) {
+          merged[iso] = { ...merged[iso], ...entry };
+        }
         save(K_BCV, merged);
         return merged;
       });
     },
-    set: (iso, r) => {
+    set: (iso, partial) => {
       setRates((prev) => {
-        const merged = { ...prev, [iso]: r };
+        const merged: BcvRates = { ...prev, [iso]: { ...prev[iso], ...partial } };
         save(K_BCV, merged);
         return merged;
       });
@@ -502,8 +560,16 @@ export function firmaTransaccion(t: {
   ].join("|");
 }
 
-/** Devuelve la tasa BCV del día, o la más cercana anterior si no existe. */
-export function bcvRateFor(rates: BcvRates, isoDate: string): number | null {
+/**
+ * Devuelve la tasa BCV del día, o la más cercana anterior si no existe.
+ *
+ * Opera sobre un mapa fecha->tasa dólar ya reducido a un solo número (ej.
+ * `useBcvRates().ratesDolar`), no sobre el mapa completo de dos tasas — el
+ * resto de la app (Dashboard, Resumen, Calculadora, OCR, Transacciones)
+ * sigue convirtiendo solo con la tasa dólar, sin cambios (ver design.md de
+ * add-euro-bcv-rate, Non-Goals).
+ */
+export function bcvRateFor(rates: Record<string, number>, isoDate: string): number | null {
   const exacta = rates[isoDate];
   if (exacta != null) return exacta;
   let best: number | null = null;
@@ -524,7 +590,7 @@ export function bcvRateFor(rates: BcvRates, isoDate: string): number | null {
  * Devuelve también de dónde salió, para poder avisar cuando es aproximada.
  */
 export function bcvRateNearest(
-  rates: BcvRates,
+  rates: Record<string, number>,
   isoDate: string,
 ): { rate: number; exacta: boolean } | null {
   const exact = rates[isoDate];
@@ -537,4 +603,42 @@ export function bcvRateNearest(
   const primera = Object.keys(rates).sort()[0];
   const rate = primera ? rates[primera] : undefined;
   return rate == null ? null : { rate, exacta: false };
+}
+
+/**
+ * Desde esta fecha los bolívares se reciben a la tasa "Binance" en la
+ * práctica — sin fuente oficial ni histórico fijo, así que se usa la tasa
+ * Euro del BCV como aproximación (suele ser parecida, a veces incluso más
+ * alta). Antes de esta fecha esa práctica no existía: todo se convertía con
+ * la tasa dólar.
+ */
+export const CORTE_TASA_BINANCE_ISO = "2026-06-24";
+
+/**
+ * Sugiere la tasa a usar para una transacción en Bolívares, según el tipo:
+ * Ingreso -> Euro (aproximación a Binance), Gasto -> dólar BCV. Solo aplica
+ * desde `CORTE_TASA_BINANCE_ISO`; antes de esa fecha siempre sugiere la tasa
+ * dólar, sin importar el tipo (antes de esa fecha no existía la práctica de
+ * recibir a tasa Binance/Euro).
+ *
+ * Es una SUGERENCIA para precargar el campo, no una regla obligatoria: quien
+ * carga la transacción puede cambiarla a mano (hay casos, como pagos
+ * puntuales a la tasa del banco, que no siguen el patrón general).
+ *
+ * Si la tasa "preferida" para el caso no está disponible para esa fecha (ej.
+ * falta la tasa euro ese día), cae a la tasa dólar como respaldo en vez de
+ * dejar el campo vacío.
+ */
+export function bcvRateSugerida(
+  tipo: string,
+  isoDate: string,
+  ratesDolar: Record<string, number>,
+  ratesEuro: Record<string, number>,
+): number | null {
+  const usarEuro = tipo === "Ingreso" && isoDate >= CORTE_TASA_BINANCE_ISO;
+  if (usarEuro) {
+    const euro = bcvRateFor(ratesEuro, isoDate);
+    if (euro != null) return euro;
+  }
+  return bcvRateFor(ratesDolar, isoDate);
 }

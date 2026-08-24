@@ -1,0 +1,53 @@
+schema: spec-driven
+
+context: |
+  SISFIA — sistema de gestión (finanzas, asistencias, alumnos) del centro
+  "Filosofía Café" (Nueva Acrópolis), en español, para dos usuarias no técnicas
+  (Nancy, la administradora; una celadora). Stack: TypeScript, TanStack Start
+  (React + Vite + Nitro), Supabase (Postgres + auth + RLS), desplegado en Vercel.
+
+  El lector OCR (`src/lib/ocr.functions.ts`) transcribe fotos del libro diario
+  manuscrito con un modelo de IA multimodal (Vercel AI SDK, paquete `ai`) y ya
+  tiene codificadas todas las reglas del dominio en el prompt: corrección de
+  nombres contra el padrón de alumnos, la regla aula→categoría (Arjuna=PROBAS,
+  Krishna=MIEMBROS), el formato exacto de descripción para préstamos
+  ("Nombre Apellido: resto del concepto"), una fila por moneda, y la distinción
+  entre `mes` (contable) y `mensualidad` (el mes que el alumno paga). Esas reglas
+  NO se tocan al cambiar de proveedor de IA — se reutiliza el mismo prompt.
+
+  Proveedores de IA hoy: `proveedoresDisponibles()` en ocr.functions.ts arma una
+  lista ordenada por preferencia y hace fallback al siguiente si uno falla. Hoy
+  solo hay uno (Gemini vía `GOOGLE_API_KEY`, capa gratuita) — el proyecto no
+  tiene presupuesto, así que ese proveedor único se agota (cuota diaria) y no
+  hay a dónde más ir ese día.
+
+  Sin presupuesto real: cualquier proveedor de pago que se agregue debe ser
+  barato y solo se llama bajo demanda (un click de Nancy sube una foto), no en
+  background ni en bucle — el volumen es de unas pocas fotos por semana.
+
+  Prohibido: no tocar el padrón de alumnos (vive en localStorage del navegador
+  de Nancy, fuera del repo, dato personal — ver `students-data.ts`). No commitear
+  claves de API. No reescribir el prompt existente del OCR salvo que la tarea lo
+  pida explícitamente.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing

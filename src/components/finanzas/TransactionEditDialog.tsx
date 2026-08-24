@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { bcvRateFor, type Transaction } from "@/lib/lists-store";
+import { bcvRateSugerida, type Transaction } from "@/lib/lists-store";
 import { aNumero } from "@/lib/formato";
 import { calcularMontoUsd, redondearTasa, TASA_PESOS_DEFAULT } from "@/lib/fees-logic";
+import { CalculadoraPanel, useCalculadoraState } from "@/components/finanzas/CalculadoraDialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -18,7 +19,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Save } from "lucide-react";
+import { Save, Calculator } from "lucide-react";
 
 // ------------------------- Utilidades -------------------------
 
@@ -32,7 +33,11 @@ function fechaToIso(fecha: string): string | null {
   return `${yy}-${mm}-${dd}`;
 }
 
-function normalizeTransactionMoney(tx: Transaction, bcvRates: Record<string, number>): Transaction {
+function normalizeTransactionMoney(
+  tx: Transaction,
+  bcvRatesDolar: Record<string, number>,
+  bcvRatesEuro: Record<string, number>,
+): Transaction {
   const next = { ...tx };
   if (next.moneda === "Pesos" && (next.tasa == null || next.tasa === 0)) {
     next.tasa = TASA_PESOS_DEFAULT;
@@ -40,7 +45,7 @@ function normalizeTransactionMoney(tx: Transaction, bcvRates: Record<string, num
   if (next.moneda === "Bolívares" && (next.tasa == null || next.tasa === 0)) {
     const iso = fechaToIso(next.fecha);
     if (iso) {
-      const r = bcvRateFor(bcvRates, iso);
+      const r = bcvRateSugerida(next.tipo, iso, bcvRatesDolar, bcvRatesEuro);
       if (r != null) next.tasa = r;
     }
   }
@@ -149,6 +154,7 @@ function TransactionEditDialog({
   gastos,
   bancos,
   bcvRates,
+  bcvRatesEuro,
   bcvSources,
   students = [],
 }: {
@@ -159,6 +165,7 @@ function TransactionEditDialog({
   gastos: string[];
   bancos: string[];
   bcvRates: Record<string, number>;
+  bcvRatesEuro: Record<string, number>;
   bcvSources: Record<string, string>;
   /** Para sugerir el nombre en las categorías de cuota y evitar erratas. */
   students?: { nombre: string }[];
@@ -166,6 +173,15 @@ function TransactionEditDialog({
   const [draft, setDraft] = useState<Transaction | null>(null);
   /** Evita que un doble clic en Guardar cree el movimiento dos veces. */
   const guardando = useRef(false);
+  const [calcOpen, setCalcOpen] = useState(false);
+  // El estado de la calculadora vive aquí (componente que nunca se
+  // desmonta) y no dentro del panel, para que mostrar/ocultarla no borre lo
+  // que ya se había escrito. La fecha de referencia sigue a la del borrador.
+  const calc = useCalculadoraState(
+    bcvRates,
+    bcvRatesEuro,
+    draft ? (fechaToIso(draft.fecha) ?? undefined) : undefined,
+  );
 
   // Los campos de dinero se editan como TEXTO y solo se interpretan como
   // número al escribirlos en el borrador.
@@ -227,8 +243,8 @@ function TransactionEditDialog({
         }
       }
 
-      if (k === "moneda" || k === "monto" || k === "tasa" || k === "fecha") {
-        return normalizeTransactionMoney(next, bcvRates);
+      if (k === "moneda" || k === "monto" || k === "tasa" || k === "fecha" || k === "tipo") {
+        return normalizeTransactionMoney(next, bcvRates, bcvRatesEuro);
       }
       return next;
     });
@@ -249,14 +265,49 @@ function TransactionEditDialog({
     <Dialog open={!!editing} onOpenChange={(v) => !v && onClose()}>
       {/* Un clic fuera ya no cierra: son once campos y se perdían enteros sin
           preguntar. Esc sigue funcionando, que es el gesto deliberado. */}
-      <DialogContent className="max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
+      <DialogContent
+        className={calcOpen ? "max-w-3xl" : "max-w-lg"}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           {/* Título neutro a propósito: este diálogo se abre desde Transacciones
               y desde Resumen, y debe verse igual venga de donde venga. */}
-          <DialogTitle>Transacciones</DialogTitle>
+          <div className="flex items-center justify-between gap-2 pr-6">
+            <DialogTitle>Transacciones</DialogTitle>
+            <Button
+              type="button"
+              variant={calcOpen ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => {
+                // Al abrirla (no al cerrarla) se manda directo a "¿Qué tasa
+                // fue?" con el monto de este movimiento ya puesto — es el uso
+                // más común al revisar una transacción, y así quien no
+                // conoce del tema no tiene que volver a escribir el número
+                // ni saber que existe la otra pestaña. Si ya se había escrito
+                // algo ahí (de una vuelta anterior) no se pisa.
+                if (!calcOpen) {
+                  calc.setPestana("tasa");
+                  if (
+                    (draft.moneda === "Bolívares" || draft.moneda === "Pesos") &&
+                    !calc.tasaMontoStr
+                  ) {
+                    calc.setTasaMoneda(draft.moneda);
+                    calc.setTasaMontoStr(draft.monto > 0 ? String(draft.monto) : "");
+                  }
+                }
+                setCalcOpen((v) => !v);
+              }}
+            >
+              <Calculator className="mr-1.5 h-3.5 w-3.5" /> Calculadora
+            </Button>
+          </div>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-3">
-          {/* Calendario de verdad en vez de escribir dd/mm/aaaa: registrar algo
+        {/* Con la calculadora abierta, van una al lado de la otra: si se
+            apilaran (un segundo diálogo modal encima) taparían el movimiento
+            que se está editando, que es justo lo que se quiere consultar. */}
+        <div className={calcOpen ? "grid grid-cols-[1fr_260px] items-start gap-4" : ""}>
+          <div className="grid grid-cols-2 gap-3">
+            {/* Calendario de verdad en vez de escribir dd/mm/aaaa: registrar algo
               de la semana pasada era teclear la fecha entera sin equivocarse. */}
           <Field label="Fecha">
             <Input
@@ -436,7 +487,18 @@ function TransactionEditDialog({
               }}
             />
           </Field>
+          </div>
+
+          {/* Panel de calculadora, al lado del formulario (no encima): así se
+              sigue viendo el movimiento que se está editando mientras se
+              revisa una conversión o qué tasa se aplicó. */}
+          {calcOpen && (
+            <div className="rounded-md border bg-muted/20 p-3">
+              <CalculadoraPanel state={calc} />
+            </div>
+          )}
         </div>
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancelar

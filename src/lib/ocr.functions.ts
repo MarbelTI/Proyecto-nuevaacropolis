@@ -2,7 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { generateText } from "ai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { z } from "zod";
-import { CATEGORIAS_GASTO, CATEGORIAS_INGRESO } from "./students-data";
+import { AULAS_DEFAULT, CATEGORIAS_GASTO, CATEGORIAS_INGRESO } from "./students-data";
+import { corregirCategoriaConPadron, reglasDeCategoriaParaPrompt } from "./categorias";
 import { getSessionUser, canManageFinanzas } from "./api/auth-guard";
 
 // ~8MB en base64 (≈6MB de imagen real) — suficiente para una foto de celular,
@@ -30,6 +31,13 @@ export type Entry = {
   monto: string;
   tasa: string;
   montoUsd: string;
+  /**
+   * Presente solo cuando la categoría que devolvió el modelo se corrigió contra
+   * el padrón. Lo pinta la pestaña del lector para que la corrección sea
+   * visible: una categoría cambiada en silencio es indistinguible de una que el
+   * modelo acertó.
+   */
+  avisoCategoria?: string;
 };
 
 function coerceEntries(raw: unknown): Entry[] {
@@ -184,20 +192,43 @@ function extractJson(text: string): unknown {
   return null;
 }
 
+type ProveedorIA = {
+  proveedor: string;
+  modelId: string;
+  provider: ReturnType<typeof createOpenAICompatible>;
+};
+
 /**
- * Elige el proveedor de IA según la clave disponible.
+ * Los proveedores de IA con clave configurada, EN ORDEN DE PREFERENCIA.
  *
- * - GOOGLE_API_KEY   → Gemini directo (aistudio.google.com, tiene capa gratuita).
- * - OPENROUTER_API_KEY → OpenRouter (de pago, sirve de alternativa).
+ * - GOOGLE_API_KEY → Gemini directo (aistudio.google.com), con capa gratuita.
  *
- * Antes se hacía `OPENROUTER_API_KEY || ANTHROPIC_API_KEY` pero ambos se
- * mandaban al endpoint de OpenRouter, así que una clave de Anthropic siempre
- * fallaba con un 401 confuso. Ahora cada clave va a su propio endpoint.
+ * **Hoy la lista tiene un solo proveedor, y es a propósito.** La escuela lleva
+ * este sistema sin presupuesto, así que solo entran servicios con nivel
+ * gratuito. Hubo un respaldo por OpenRouter y se retiró el 13-ago-2026 al
+ * confirmarse que es de pago: la clave estaba revocada, cada intento devolvía un
+ * 401 y lo único que aportaba era un segundo mensaje de error detrás del de
+ * Google.
+ *
+ * Se mantiene como LISTA, y no como un único proveedor, porque el precio de
+ * conservarla es un `for` y el de deshacerla sería reescribir el bucle de
+ * llamada. Cuando aparezca otro servicio con capa gratuita, se añade aquí y el
+ * respaldo funciona solo.
+ *
+ * Consecuencia que conviene tener presente: sin segundo proveedor, un día que
+ * Gemini esté saturado o se agote la cuota diaria, el lector no tiene a dónde ir.
+ * Toca esperar. La alternativa costaba dinero.
+ *
+ * Nota histórica: antes se hacía `OPENROUTER_API_KEY || ANTHROPIC_API_KEY` pero
+ * ambas se mandaban al endpoint de OpenRouter, así que una clave de Anthropic
+ * siempre fallaba con un 401 confuso. Cada clave iba a su propio endpoint.
  */
-function elegirProveedor() {
+function proveedoresDisponibles(): ProveedorIA[] {
+  const disponibles: ProveedorIA[] = [];
+
   const googleKey = process.env.GOOGLE_API_KEY?.trim();
   if (googleKey) {
-    return {
+    disponibles.push({
       proveedor: "Google AI Studio",
       // "gemini-flash-latest" (alias al Flash vigente) en vez de fijar
       // "gemini-2.0-flash": las versiones numeradas tienen la cuota gratuita
@@ -211,31 +242,18 @@ function elegirProveedor() {
         baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
         headers: { Authorization: `Bearer ${googleKey}` },
       }),
-    };
+    });
   }
 
-  const orKey = process.env.OPENROUTER_API_KEY?.trim();
-  if (orKey) {
-    return {
-      proveedor: "OpenRouter",
-      modelId: "google/gemini-2.0-flash-001",
-      provider: createOpenAICompatible({
-        name: "openrouter",
-        baseURL: "https://openrouter.ai/api/v1",
-        headers: {
-          Authorization: `Bearer ${orKey}`,
-          "HTTP-Referer": "https://nueva-acropolis-sc.vercel.app",
-          "X-Title": "SISFIA",
-        },
-      }),
-    };
+  if (!disponibles.length) {
+    throw new Error(
+      "No hay clave de IA configurada. Consigue una gratis en aistudio.google.com/app/apikey " +
+        "y guárdala como GOOGLE_API_KEY (en el archivo .env para desarrollo local, " +
+        "o en Vercel → Settings → Environment Variables para producción).",
+    );
   }
 
-  throw new Error(
-    "No hay clave de IA configurada. Consigue una gratis en aistudio.google.com/app/apikey " +
-      "y guárdala como GOOGLE_API_KEY (en el archivo .env para desarrollo local, " +
-      "o en Vercel → Settings → Environment Variables para producción).",
-  );
+  return disponibles;
 }
 
 /** Traduce los errores del proveedor a algo accionable para quien usa la app. */
@@ -253,7 +271,20 @@ function mensajeDeError(err: unknown, proveedor: string): string {
         `Cambia de modelo (variable GEMINI_MODEL) o habilita facturación en el proyecto.`
       );
     }
-    return `Se alcanzó el límite de peticiones de ${proveedor}. Espera un minuto y reintenta; si procesas varias fotos, súbelas de a pocas.`;
+    // Google dice en la respuesta CUÁL de sus límites se topó: el `quotaId` trae
+    // "PerDay" o "PerMinute". Distinguirlos es lo único que separa "espera medio
+    // minuto" de "vuelve mañana", y confundirlos sale caro en tiempo: reintentar
+    // contra la cuota diaria son dos minutos de espera para acabar fallando igual.
+    if (/perday|per day|daily/i.test(raw)) {
+      return (
+        `Se agotó la cuota DIARIA de ${proveedor}. No se arregla esperando un rato: ` +
+        `se renueva al día siguiente. Deja la carga para mañana.`
+      );
+    }
+    return (
+      `Se alcanzó el límite de peticiones POR MINUTO de ${proveedor}. ` +
+      `Se reintenta solo en unos segundos.`
+    );
   }
   if (/402|payment|credit|insufficient/i.test(raw)) {
     return `La cuenta de ${proveedor} no tiene crédito suficiente.`;
@@ -275,7 +306,7 @@ export const analyzeJournalImage = createServerFn({ method: "POST" })
       throw new Error("Tipo de imagen no soportado");
     }
 
-    const { provider, modelId, proveedor } = elegirProveedor();
+    const proveedores = proveedoresDisponibles();
 
     const ingresos = data.ingresos?.length ? data.ingresos : [...CATEGORIAS_INGRESO];
     const gastos = data.gastos?.length ? data.gastos : [...CATEGORIAS_GASTO];
@@ -284,6 +315,16 @@ export const analyzeJournalImage = createServerFn({ method: "POST" })
     // el encabezado y un hueco en blanco, así que el modelo actuaba como si la
     // lista existiera y devolvía nombres inventados con total seguridad. Si no
     // hay lista, se le dice, y se le pide que copie literalmente.
+    // La regla aula → categoría se redacta desde `categorias.ts`, que es la
+    // misma función que después valida la respuesta. Escrita a mano aquí se
+    // quedó desactualizada dos veces (faltaban "Krishna IV" y "Arjuna II 2026",
+    // y los pagos de esas aulas volvían mal clasificados). Las aulas salen del
+    // padrón que se está usando; si no hay padrón, de la lista por defecto.
+    const aulasEnUso = [...new Set((data.students ?? []).flatMap((s) => s.aulas))].sort();
+    const reglasDeCategoria = reglasDeCategoriaParaPrompt(
+      aulasEnUso.length ? aulasEnUso : [...AULAS_DEFAULT],
+    );
+
     const hayLista = !!data.students?.length;
     const bloqueAlumnos = hayLista
       ? `LISTA OFICIAL DE ALUMNOS (úsala para corregir nombres mal escritos):
@@ -298,8 +339,7 @@ leer y no lo completes de tu cuenta.`;
 ${bloqueAlumnos}
 
 REGLAS DE CATEGORÍA:
-- Alumnos de aulas "Arjuna I", "Arjuna II" o "Arjuna II 2026" → categoría "PROBAS"
-- Alumnos de aulas "Krishna I/II/III/IV/V/VI" → categoría "MIEMBROS"
+${reglasDeCategoria}
 - Otras categorías de INGRESO posibles: ${ingresos.join(", ")}
 - Categorías de GASTO típicas: ${gastos.join(", ")}
 
@@ -363,19 +403,12 @@ CAMPOS A DEVOLVER POR ENTRADA:
 
 Devuelve SOLO JSON válido.`;
 
-    let text: string;
-    try {
-      ({ text } = await generateText({
-        model: provider(modelId),
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text:
-                  systemPrompt +
-                  `\n\nAnaliza esta hoja del libro diario manuscrito y devuelve SOLO JSON con esta forma EXACTA:
+    const contenido = [
+      {
+        type: "text" as const,
+        text:
+          systemPrompt +
+          `\n\nAnaliza esta hoja del libro diario manuscrito y devuelve SOLO JSON con esta forma EXACTA:
 {"entries":[{"fecha":"","mes":"","tipo":"","categoria":"","descripcion":"","mensualidad":"","moneda":"","monto":"","tasa":"","monto_usd":""}]}
 
 Recuerda: una fila con dos monedas → DOS entradas. Corrige nombres usando la lista oficial.
@@ -385,19 +418,54 @@ en la hoja — "Ricardo García abono 10%" se devuelve como "Ricardo García: ab
 como "Ricardo García" ni como "Ricardo García: abono". Si la hoja no dice de quién es el
 préstamo, va sin dos puntos.
 SOLO JSON.`,
-              },
-              {
-                type: "image",
-                image: `data:${data.mimeType};base64,${data.imageBase64}`,
-              },
-            ],
-          },
-        ],
-      }));
-    } catch (err) {
-      // El error crudo del proveedor ("User not found", "401", etc.) no le dice
-      // nada a quien usa la app: se traduce a algo accionable.
-      throw new Error(mensajeDeError(err, proveedor));
+      },
+      {
+        type: "image" as const,
+        image: `data:${data.mimeType};base64,${data.imageBase64}`,
+      },
+    ];
+
+    /**
+     * Se baja por la lista de proveedores hasta que uno responda.
+     *
+     * `generateText` ya reintenta 3 veces por su cuenta, pero siempre contra el
+     * MISMO servicio: con Google devolviendo 503, los tres intentos chocan
+     * contra la misma puerta cerrada y el mensaje que llegaba era "Failed after
+     * 3 attempts", con OpenRouter configurado y sin tocar. Los reintentos del
+     * SDK cubren un tropiezo puntual; esto cubre que el proveedor esté caído,
+     * que es otro problema.
+     */
+    let text: string | undefined;
+    let proveedorUsado = "";
+    const fallos: string[] = [];
+    for (const { provider, modelId, proveedor } of proveedores) {
+      try {
+        ({ text } = await generateText({
+          model: provider(modelId),
+          messages: [{ role: "user", content: contenido }],
+        }));
+        proveedorUsado = proveedor;
+        break;
+      } catch (err) {
+        // El error crudo del proveedor ("User not found", "401", etc.) no le
+        // dice nada a quien usa la app: se traduce a algo accionable.
+        fallos.push(mensajeDeError(err, proveedor));
+        // Al registro va solo el nombre del proveedor. El error crudo puede
+        // arrastrar fragmentos de la petición, y la petición es una foto del
+        // libro contable.
+        console.error(`OCR: falló ${proveedor}; se intenta el siguiente proveedor si lo hay`);
+      }
+    }
+
+    if (text === undefined) {
+      // Con un solo proveedor configurado, su mensaje tal cual: ya es accionable.
+      // Con varios, se dicen todos — si no, quien lo lee cambia la clave de uno
+      // sin saber que el otro también está fallando.
+      throw new Error(
+        fallos.length === 1
+          ? fallos[0]!
+          : `Fallaron los ${fallos.length} proveedores de IA. ${fallos.join(" — ")}`,
+      );
     }
 
     const parsed = extractJson(text);
@@ -412,11 +480,28 @@ SOLO JSON.`,
     // Los nombres salen de la misma lista que ya vio el modelo, así que la
     // corrección de aquí y la que hizo él apuntan siempre a la misma persona.
     const nombresAlumnos = (data.students ?? []).map((s) => s.nombre.trim()).filter(Boolean);
-    const entries = coerceEntries(parsed).map((e) =>
-      esCategoriaPrestamo(e.categoria)
+    const padron = data.students ?? [];
+    const entries = coerceEntries(parsed).map((e) => {
+      const conDescripcion = esCategoriaPrestamo(e.categoria)
         ? { ...e, descripcion: normalizarDescripcionPrestamo(e.descripcion, nombresAlumnos) }
-        : e,
-    );
+        : e;
+      // El prompt pide la regla aula → categoría, pero pedirla no es
+      // garantizarla: el modelo puede leer bien el nombre y devolver igualmente
+      // la cuota que no toca. Aquí se contrasta contra el padrón, que es un dato
+      // que escribió una persona. El aviso viaja con la fila para que la
+      // corrección se vea en pantalla y no ocurra a espaldas de quien revisa.
+      const { categoria, corregido } = corregirCategoriaConPadron(
+        conDescripcion.categoria,
+        conDescripcion.descripcion,
+        padron,
+      );
+      return corregido
+        ? { ...conDescripcion, categoria, avisoCategoria: corregido }
+        : conDescripcion;
+    });
 
-    return { entries, raw: text };
+    // `proveedor` viaja de vuelta para poder avisar en pantalla cuando la
+    // lectura NO la hizo el proveedor preferido: los modelos no son idénticos y
+    // conviene revisar con más cuidado lo que salga del de respaldo.
+    return { entries, raw: text, proveedor: proveedorUsado };
   });

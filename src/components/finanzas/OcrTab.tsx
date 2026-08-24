@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { analyzeJournalImage, type Entry } from "@/lib/ocr.functions";
 import { aNumero, aDosDecimales, CELDA_NUMERO } from "@/lib/formato";
-import { bcvRateFor, firmaTransaccion, useTransactions, type Student } from "@/lib/lists-store";
+import { bcvRateSugerida, firmaTransaccion, useTransactions, type Student } from "@/lib/lists-store";
 import { calcularMontoUsd, redondearTasa, TASA_PESOS_DEFAULT } from "@/lib/fees-logic";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,8 +58,15 @@ function fileToDataUrl(file: File): Promise<string> {
 
 /** Aplica reglas: pesos → tasa 4000 por defecto; bolívares → tasa BCV del día; recalcula USD. */
 function normalizeMoneyRow<
-  T extends { fecha: string; moneda: string; monto: string; tasa: string; montoUsd: string },
->(row: T, bcvRates: Record<string, number>): T {
+  T extends {
+    fecha: string;
+    tipo: string;
+    moneda: string;
+    monto: string;
+    tasa: string;
+    montoUsd: string;
+  },
+>(row: T, bcvRates: Record<string, number>, bcvRatesEuro: Record<string, number>): T {
   // Las cifras de esta tabla viajan como TEXTO: es lo que devuelve el modelo y
   // es lo que se escribe a mano encima. Se leen siempre con aNumero, nunca con
   // Number(): Number("1.234,56") es NaN y acababa entrando como 0 sin avisar,
@@ -71,7 +78,7 @@ function normalizeMoneyRow<
   if (next.moneda === "Bolívares" && aNumero(next.tasa) === 0) {
     const iso = fechaToIso(next.fecha);
     if (iso) {
-      const r = bcvRateFor(bcvRates, iso);
+      const r = bcvRateSugerida(next.tipo, iso, bcvRates, bcvRatesEuro);
       if (r != null) next.tasa = r.toFixed(2);
     }
   }
@@ -296,10 +303,74 @@ function EntriesTable({
   );
 }
 
+/**
+ * Pausa entre una foto y la siguiente.
+ *
+ * La capa gratuita de Gemini limita las peticiones POR MINUTO. El bucle las
+ * lanzaba una detrás de otra sin esperar nada, así que las primeras dos o tres
+ * pasaban y el resto rebotaba con un 429: el síntoma era "unas fotos cargan y
+ * otras no", que parece un problema de las fotos y no lo es.
+ *
+ * 4 segundos deja el ritmo en unas 15 peticiones por minuto, que es el límite
+ * habitual del nivel gratuito de Flash. Subirlo hace la carga más lenta sin
+ * ganar nada; bajarlo devuelve los 429.
+ */
+const PAUSA_ENTRE_FOTOS_MS = 4000;
+
+/** Esperas tras topar el límite POR MINUTO. Se agotan antes de rendirse. */
+const ESPERAS_TRAS_LIMITE_MS = [20000, 40000];
+
+/**
+ * ¿Merece la pena reintentar esta foto, o esperar no va a cambiar nada?
+ *
+ * La distinción importa mucho más de lo que parece. Google tiene dos límites
+ * distintos y el mismo código 429 para ambos:
+ *
+ * - **Por minuto**: se abre solo en segundos. Reintentar funciona.
+ * - **Por día**: no se abre hasta mañana. Reintentar son dos minutos de espera
+ *   para acabar fallando igual — que es exactamente lo que pasó la primera vez
+ *   que se montó esto.
+ *
+ * El servidor ya los separa al traducir el error, así que aquí basta con mirar
+ * si el mensaje habla del límite por minuto. Cualquier otro fallo —cuota diaria,
+ * clave inválida, modelo sin capa gratuita— se da por definitivo y no se
+ * reintenta.
+ */
+function mereceReintento(mensaje: string): boolean {
+  return /por minuto/i.test(mensaje);
+}
+
+/**
+ * ¿Este fallo condena también a las fotos que vienen detrás?
+ *
+ * Si se agotó la cuota del día o la clave no sirve, insistir con las cinco fotos
+ * restantes solo alarga la espera y llena la pantalla de avisos idénticos. Se
+ * corta el lote y se dice por qué.
+ */
+function condenaAlLoteEntero(mensaje: string): boolean {
+  return /cuota diaria|no es válida|no tiene cuota gratuita/i.test(mensaje);
+}
+
+/**
+ * Espera troceada para que «Cancelar» siga respondiendo.
+ *
+ * Un `setTimeout` de 60 segundos dejaría el botón muerto todo ese rato: el
+ * usuario pulsa, no pasa nada, y vuelve a pulsar. Se despierta cada medio
+ * segundo a mirar si lo cancelaron.
+ */
+async function esperar(ms: number, cancelado: React.RefObject<boolean>): Promise<void> {
+  const fin = Date.now() + ms;
+  while (Date.now() < fin) {
+    if (cancelado.current) return;
+    await new Promise((r) => setTimeout(r, Math.min(500, Math.max(0, fin - Date.now()))));
+  }
+}
+
 export function OcrTab({
   ingresos,
   gastos,
   bcvRates,
+  bcvRatesEuro,
   students,
   transactions,
   entries,
@@ -310,6 +381,7 @@ export function OcrTab({
   ingresos: string[];
   gastos: string[];
   bcvRates: Record<string, number>;
+  bcvRatesEuro: Record<string, number>;
   students: Student[];
   transactions: ReturnType<typeof useTransactions>;
   /**
@@ -362,6 +434,12 @@ export function OcrTab({
         const item = newItems[i];
         if (!f || !item) continue;
         const idx = startIndex + i;
+        // Se espacian las peticiones. Antes de la PRIMERA no hace falta esperar:
+        // la pausa es para no atropellar a la anterior.
+        if (i > 0) {
+          await esperar(PAUSA_ENTRE_FOTOS_MS, cancelado);
+          if (cancelado.current) break;
+        }
         setPreviews((p) => p.map((x, j) => (j === idx ? { ...x, status: "processing" } : x)));
         try {
           const base64 = item.url.split(",")[1];
@@ -373,7 +451,7 @@ export function OcrTab({
           } catch {
             /* sesión no disponible */
           }
-          const result = await analyze({
+          const peticion = {
             data: {
               imageBase64: base64,
               mimeType: f.type || "image/jpeg",
@@ -384,8 +462,32 @@ export function OcrTab({
               students: students.map((s) => ({ nombre: s.nombre, aulas: s.aulas })),
               accessToken,
             },
-          });
-          const normalized = (result.entries ?? []).map((e) => normalizeMoneyRow(e, bcvRates));
+          };
+
+          // Un 429 no significa que la foto sea mala: significa "ahora no".
+          // Antes se daba por perdida y había que volver a subirla a mano. Se
+          // reintenta esperando a que se abra la ventana del minuto.
+          let result: Awaited<ReturnType<typeof analyze>> | undefined;
+          for (let intento = 0; ; intento++) {
+            try {
+              result = await analyze(peticion);
+              break;
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              const espera = ESPERAS_TRAS_LIMITE_MS[intento];
+              if (espera === undefined || !mereceReintento(msg)) throw err;
+              toast.info(
+                `Foto ${idx + 1}: límite de peticiones. Reintento en ${Math.round(espera / 1000)} s…`,
+                { duration: espera },
+              );
+              await esperar(espera, cancelado);
+              if (cancelado.current) throw err;
+            }
+          }
+          if (!result) throw new Error("No se obtuvo respuesta del lector");
+          const normalized = (result.entries ?? []).map((e) =>
+            normalizeMoneyRow(e, bcvRates, bcvRatesEuro),
+          );
           setEntries((prev) => [...prev, ...normalized]);
           setPreviews((p) =>
             p.map((x, j) => (j === idx ? { ...x, status: "ok", count: normalized.length } : x)),
@@ -405,6 +507,20 @@ export function OcrTab({
           toast.error(`Foto ${idx + 1} (${f.name}): ${msg}`, { duration: 8000 });
           setPreviews((p) => p.map((x, j) => (j === idx ? { ...x, status: "error" } : x)));
           errCount++;
+          // No tiene sentido gastar el resto del lote contra la misma pared: si
+          // se acabó la cuota del día, las fotos que quedan van a fallar igual y
+          // cada una se lleva su espera por delante.
+          if (condenaAlLoteEntero(msg)) {
+            const quedan = files.length - i - 1;
+            if (quedan > 0) {
+              toast.warning(
+                `Se detiene la carga: quedaron ${quedan} foto${quedan === 1 ? "" : "s"} sin procesar.`,
+                { duration: 10000 },
+              );
+            }
+            setProgress({ done: i + 1, total: files.length });
+            break;
+          }
         }
         setProgress({ done: i + 1, total: files.length });
       }
@@ -469,7 +585,7 @@ export function OcrTab({
           if (next.categoria && !valid.includes(next.categoria)) next.categoria = "";
         }
         if (field === "moneda" || field === "monto" || field === "tasa" || field === "fecha") {
-          return normalizeMoneyRow(next, bcvRates);
+          return normalizeMoneyRow(next, bcvRates, bcvRatesEuro);
         }
         return next;
       }),

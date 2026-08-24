@@ -42,8 +42,14 @@ El despliegue en Vercel es automático en cada push a `main`.
 | `VITE_SUPABASE_ANON_KEY`   | Clave pública de Supabase                         |
 | `GOOGLE_API_KEY`           | Gemini, para el OCR del libro diario              |
 | `GEMINI_MODEL`             | Opcional: fijar otra versión del modelo           |
-| `OPENROUTER_API_KEY`       | Proveedor de IA de reserva                        |
+| `SUPABASE_SERVICE_ROLE_KEY`| Clave de servicio; **solo servidor**, nunca al navegador |
 | `SISFIA_DEV_BYPASS_AUTH=1` | SOLO en local: entra sin pedir sesión             |
+
+**Gemini es el único proveedor de IA.** Hubo un respaldo por OpenRouter y se
+retiró el 13-ago-2026: es de pago, y este sistema se sostiene sin presupuesto,
+así que solo se usan servicios con capa gratuita. El precio de esa decisión es
+que un día en que Gemini esté saturado o se agote la cuota diaria, el lector no
+tiene alternativa y hay que esperar.
 
 Las que llevan `VITE_` viajan al navegador de cualquiera que abra la página:
 **ahí nunca va una clave secreta**. La aplicación comprueba al arrancar que la

@@ -665,6 +665,7 @@ export function TransactionsTab({
   gastos,
   bancos,
   bcvRates,
+  bcvRatesEuro,
   bcvSources,
   students,
   aulas,
@@ -681,6 +682,7 @@ export function TransactionsTab({
   setGastos: (n: string[]) => void;
   setBancos: (n: string[]) => void;
   bcvRates: Record<string, number>;
+  bcvRatesEuro: Record<string, number>;
   bcvSources: Record<string, string>;
   students: Student[];
   aulas: string[];
@@ -1646,6 +1648,7 @@ export function TransactionsTab({
         gastos={gastos}
         bancos={bancos}
         bcvRates={bcvRates}
+        bcvRatesEuro={bcvRatesEuro}
         bcvSources={bcvSources}
         students={students}
         onSave={(next) => {

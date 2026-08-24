@@ -10,6 +10,7 @@ import {
   useEditableList,
   useEditableStudents,
   useTransactions,
+  type BcvRates,
 } from "@/lib/lists-store";
 import { useAulasMeta, useAttendance } from "@/lib/attendance-store";
 import { NOMBRE_APP, SUBTITULO, TITULO_PAGINA, DESCRIPCION } from "@/lib/branding";
@@ -191,7 +192,7 @@ function Index() {
       };
 
   useEffect(() => {
-    if (bcvRateFor(bcv.rates, headerDate) != null) return;
+    if (bcvRateFor(bcv.ratesDolar, headerDate) != null) return;
     let cancelled = false;
     setHeaderLoading(true);
     setHeaderFetchFailed(false);
@@ -204,10 +205,10 @@ function Index() {
           toast.warning("No se pudo obtener la tasa BCV automáticamente — ingrésala manualmente");
           return;
         }
-        const map: Record<string, number> = {};
+        const map: BcvRates = {};
         const smap: Record<string, string> = {};
         for (const r of res.rows) {
-          map[r.isoDate] = r.rate;
+          map[r.isoDate] = r.euro != null ? { dolar: r.dolar, euro: r.euro } : { dolar: r.dolar };
           smap[r.isoDate] = res.source;
         }
         bcv.merge(map);
@@ -225,7 +226,8 @@ function Index() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [headerDate]);
 
-  const headerRate = bcvRateFor(bcv.rates, headerDate);
+  const headerRate = bcvRateFor(bcv.ratesDolar, headerDate);
+  const headerRateEuro = bcvRateFor(bcv.ratesEuro, headerDate);
 
   return (
     <div className="min-h-screen bg-background">
@@ -264,7 +266,7 @@ function Index() {
             </div>
 
             <div className="flex items-center gap-2 rounded-lg bg-primary-foreground/10 px-3 py-2">
-              <label className="text-xs opacity-90">Tasa BCV</label>
+              <label className="text-xs opacity-90">Tasas BCV</label>
               <input
                 type="date"
                 value={headerDate}
@@ -276,6 +278,15 @@ function Index() {
                   <Loader2 className="inline h-3 w-3 animate-spin" />
                 ) : headerRate != null ? (
                   `${$(headerRate)} Bs/$`
+                ) : (
+                  "—"
+                )}
+              </span>
+              <span className="rounded bg-accent px-2 py-1 text-sm font-semibold text-accent-foreground min-w-[80px] text-center">
+                {headerLoading ? (
+                  <Loader2 className="inline h-3 w-3 animate-spin" />
+                ) : headerRateEuro != null ? (
+                  `${$(headerRateEuro)} Bs/€`
                 ) : (
                   "—"
                 )}
@@ -499,7 +510,8 @@ function Index() {
                 <OcrTab
                   ingresos={ingresos}
                   gastos={gastos}
-                  bcvRates={bcv.rates}
+                  bcvRates={bcv.ratesDolar}
+                  bcvRatesEuro={bcv.ratesEuro}
                   students={students}
                   transactions={transactions}
                   entries={ocrEntries}
@@ -518,7 +530,8 @@ function Index() {
                   setIngresos={setIngresos}
                   setGastos={setGastos}
                   setBancos={setBancos}
-                  bcvRates={bcv.rates}
+                  bcvRates={bcv.ratesDolar}
+                  bcvRatesEuro={bcv.ratesEuro}
                   bcvSources={bcvSources}
                   students={students}
                   aulas={aulas}
@@ -532,7 +545,8 @@ function Index() {
                   ingresos={ingresos}
                   gastos={gastos}
                   bancos={bancos}
-                  bcvRates={bcv.rates}
+                  bcvRates={bcv.ratesDolar}
+                  bcvRatesEuro={bcv.ratesEuro}
                 />
               </TabsContent>
 
@@ -541,7 +555,7 @@ function Index() {
                   tx={transactions.list}
                   ingresos={ingresos}
                   gastos={gastos}
-                  bcvRates={bcv.rates}
+                  bcvRates={bcv.ratesDolar}
                   students={students}
                 />
               </TabsContent>
@@ -551,7 +565,7 @@ function Index() {
                   tx={transactions.list}
                   ingresos={ingresos}
                   gastos={gastos}
-                  bcvRates={bcv.rates}
+                  bcvRates={bcv.ratesDolar}
                 />
               </TabsContent>
 
@@ -569,7 +583,8 @@ function Index() {
                   ingresos={ingresos}
                   gastos={gastos}
                   bancos={bancos}
-                  bcvRates={bcv.rates}
+                  bcvRates={bcv.ratesDolar}
+                  bcvRatesEuro={bcv.ratesEuro}
                   bcvSources={bcvSources}
                   students={students}
                   onSave={(next) => {

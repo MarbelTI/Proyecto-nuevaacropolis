@@ -587,13 +587,31 @@ falta de verdad.
       (`SolvenciasTab.tsx:421`): ahí UTC es lo correcto, es un sello temporal y
       no una decisión de «qué día es hoy». De regalo, servidor y navegador ya
       calculan el mismo mes, así que se acabó el aviso de hidratación.)*
-- [~] **6.3** El mapeo aula → categoría de cuota solo existe como texto dentro
+- [x] **6.3** El mapeo aula → categoría de cuota solo existía como texto dentro
       del prompt del OCR (`ocr.functions.ts:287-288`).
-      *(parcheado lo urgente: la regla ya incluye **Krishna IV** y
-      **Arjuna II 2026**, que faltaban y hacían que esos pagos volvieran con la
-      categoría equivocada. Sigue pendiente lo de fondo: sacarlo a una función
-      `categoriaDeAula(aula)` en `categorias.ts` que además VALIDE lo que
-      devuelve el modelo, en vez de fiarse de que respetó el prompt.)*
+      *(hecho el 13-ago-2026, las dos mitades.*
+
+      *`categoriaDeAula()` vive ahora en `categorias.ts`, y el prompt se REDACTA
+      desde ella (`reglasDeCategoriaParaPrompt`) con las aulas del padrón que se
+      esté usando. Regla y prompt ya no pueden discrepar, que era la causa de que
+      faltaran Krishna IV y Arjuna II 2026.*
+
+      *Empareja por la FAMILIA del aula (`\barjuna\b` / `\bkrishna\b`), no por el
+      nombre completo ni por una tabla aula por aula. Dos ventajas: un "Krishna
+      VII" queda cubierto sin tocar el archivo, y el fallo 1.6 no puede volver —
+      aquel venía de que "Arjuna II" contiene la subcadena "Arjuna I", y
+      buscando la palabra suelta no hay orden de evaluación que romper.*
+
+      *Y la validación que faltaba: `corregirCategoriaConPadron()` contrasta la
+      cuota que devolvió el modelo contra el aula real de esa persona y la
+      corrige. Solo actúa en el caso seguro —la categoría es de cuota y la
+      persona está en el padrón con una familia de aula clara—; si no la
+      encuentra, respeta lo que dijo el modelo en vez de inventar. La corrección
+      viaja en `avisoCategoria` para que se VEA en pantalla: una categoría
+      cambiada en silencio es indistinguible de una que el modelo acertó.*
+
+      *Táriba devuelve "" a propósito: es otra sede, no un aula de San
+      Cristóbal.)*
 
 - [x] **6.3b Sin padrón cargado, el OCR inventaba nombres en silencio**
       El prompt lleva un bloque «LISTA OFICIAL DE ALUMNOS (úsala para corregir
@@ -628,16 +646,31 @@ falta de verdad.
       SIEMPRE dos decimales y va alineado a la derecha»).
       *(hecho: los tres campos usan `CELDA_NUMERO`, `inputMode="decimal"` y se
       formatean a dos decimales al salir del campo.)*
-- [ ] **6.5** La rejilla de asistencias hace ~3.000 búsquedas lineales por render
-      (`asistencias-tab.tsx:605`); cada clic del celador repite el barrido.
-      Indexar en un `Map` con `useMemo`.
+- [x] **6.5** La rejilla de asistencias hacía ~3.000 búsquedas lineales por
+      render (`asistencias-tab.tsx:605`); cada clic del celador repetía el
+      barrido.
+      *(hecho: dos `Map` `(alumno, fecha) → registro` construidos con `useMemo`,
+      uno de asistencias y otro de reflexiones. `getAsistencia` y `getReflexion`
+      pasan de recorrer el array entero a una consulta directa.*
+
+      *Un detalle que NO es cosmético: el índice se construye con
+      `if (!mapa.has(k))`, no con un `set` a secas. `.find()` devolvía la PRIMERA
+      coincidencia y un `set` se quedaría con la última — con registros
+      duplicados en la base cambiaría lo que ve el celador en pantalla. Y
+      duplicados hay: deduplicar por (aula, alumno, fecha) es el pendiente 1.8.*
+
+      *Cuidado al tocarlo: la clave usa ` ` como separador, escrito con la
+      SECUENCIA DE ESCAPE. Un carácter nulo literal compila igual, pero convierte
+      el archivo en binario para `grep` y `git diff`.)*
 - [ ] **6.6** `xlsx` + `recharts` van en el paquete inicial (~700 KB) para todos,
       incluido un celador que solo pasa lista. `TasasBcvTab.tsx:60` ya usa
       `await import("xlsx")` — copiar ese patrón, más `React.lazy` en
       Dashboard/Análisis.
-- [ ] **6.7** `ResumenTab.tsx:316, 413` mutan con `.sort()` los arrays que vienen
-      por props (son estado de `useEditableList`): reordenan las categorías del
-      usuario y lo persisten.
+- [x] **6.7** `ResumenTab.tsx:316, 413` mutaban con `.sort()` los arrays que
+      vienen por props (son estado de `useEditableList`): reordenaban las
+      categorías del usuario y lo persistían.
+      *(hecho: `[...ingresos].sort()` y `[...gastos].sort()`. Copiar antes de
+      ordenar, que es de lo que `.sort()` no avisa: ordena en el sitio.)*
 - [x] **6.8** `build` no ejecutaba `tsc`: los errores de tipo llegaban a
       producción. *(hecho: `"build": "tsc --noEmit && vite build"`. Comprobado,
       el build pasa. A partir de ahora un error de tipos rompe el build en vez
@@ -718,8 +751,11 @@ falta de verdad.
 - [ ] **6.11** Accesibilidad: 40 etiquetas y solo 2 asociadas (`htmlFor`), cero
       `aria-label` en todo el proyecto, casillas de asistencia que son `<button>`
       vacíos, botones de acción de 24 px (mínimo táctil: 44).
-- [ ] **6.12** `src/routes/__root.tsx:108` declara `<html lang="en">` y la pantalla
-      de error está en inglés, en una app íntegramente en español.
+- [x] **6.12** `src/routes/__root.tsx:108` declaraba `<html lang="en">` y las
+      pantallas de error estaban en inglés, en una app íntegramente en español.
+      *(hecho: `lang="es"` y traducidas las dos pantallas — la 404 y la de error
+      de carga, con sus botones. El `lang` no es cosmético: es lo que usan el
+      lector de pantalla para elegir voz y el navegador para ofrecer traducción.)*
 
 ---
 

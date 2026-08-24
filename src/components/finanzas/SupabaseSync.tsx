@@ -11,7 +11,7 @@ import {
   loadBcvRatesFromSupabase,
 } from "@/lib/api/transactions.functions";
 import { syncStudentsToSupabase, loadStudentsFromSupabase } from "@/lib/api/students.functions";
-import type { Student, Transaction } from "@/lib/lists-store";
+import type { BcvRates, Student, Transaction } from "@/lib/lists-store";
 import { supabase } from "@/lib/supabase";
 import { useEstaEnLinea } from "@/lib/conexion";
 
@@ -38,7 +38,7 @@ export function SupabaseSync({
     // dos operaciones no reemplaza nada (ver el comentario en handleLoad).
     replaceAll: (rows: Transaction[]) => void;
   };
-  bcvRates: { rates: Record<string, number>; merge: (next: Record<string, number>) => void };
+  bcvRates: { rates: BcvRates; merge: (next: BcvRates) => void };
   students?: { list: Student[]; setAll: (next: Student[]) => void };
   onLoadFromCloud?: () => void;
 }) {
@@ -64,10 +64,16 @@ export function SupabaseSync({
         return;
       }
 
-      const ratesArray = Object.entries(bcvRates.rates).map(([isoDate, rate]) => ({
-        isoDate,
-        rate,
-      }));
+      // La columna `rate` (dólar) es NOT NULL en Supabase: una fecha cargada
+      // a mano con SOLO tasa euro (sin dólar) no tiene cómo subirse todavía,
+      // así que se deja fuera de esta sincronización hasta que tenga dólar.
+      const ratesArray = Object.entries(bcvRates.rates)
+        .filter(([, r]) => r.dolar != null)
+        .map(([isoDate, r]) => ({
+          isoDate,
+          rate: r.dolar as number,
+          rateEuro: r.euro,
+        }));
       const bcvResult = await syncBcv({ data: { rates: ratesArray, accessToken } });
       if (!bcvResult.ok) {
         toast.error(`Error syncing BCV rates: ${bcvResult.error}`);
