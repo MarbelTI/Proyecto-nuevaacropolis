@@ -5,6 +5,25 @@ import type { Actividad, Condicion } from "./students-data";
 import { aNumeroAvisando, anioVenezuela } from "./formato";
 import { nuevoId } from "./utils";
 
+/**
+ * "Bolivares" (sin tilde, como lo escriben los exports que se arman fuera de
+ * la app) y "Bolívares" (como lo espera el resto del sistema) deben leerse
+ * igual. Antes se comparaba contra el texto exacto "Bolívares": cualquier
+ * variante sin tilde caía silenciosamente a USD, y un Excel entero de
+ * movimientos en bolívares se importaba como si fuera en dólares.
+ */
+function normalizeMonedaImport(raw: string): "USD" | "Bolívares" | "Pesos" {
+  const norm = raw
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+  if (norm.startsWith("bolivar") || norm === "bs" || norm === "ves") return "Bolívares";
+  if (norm.startsWith("peso") || norm === "cop") return "Pesos";
+  return "USD";
+}
+
 function txFechaToIso(fecha: string): string | null {
   const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
   if (!m) return null;
@@ -102,11 +121,7 @@ export function parseExcelToTransactions(file: File): Promise<Transaction[]> {
           categoria: String(r.Categoria || r.Categoría || r.categoria || ""),
           descripcion: String(r.Descripcion || r.Descripción || r.descripcion || ""),
           mensualidad: String(r.Mensualidad || r.mensualidad || ""),
-          moneda: (String(r.Moneda || r.moneda || "USD") === "Bolívares"
-            ? "Bolívares"
-            : String(r.Moneda || r.moneda || "USD") === "Pesos"
-              ? "Pesos"
-              : "USD") as "USD" | "Bolívares" | "Pesos",
+          moneda: normalizeMonedaImport(String(r.Moneda || r.moneda || "USD")),
           // Las cifras se leen con aNumero, no con Number().
           //
           // Number("1.234,56") es NaN, y el `|| 0` que había aquí lo convertía
