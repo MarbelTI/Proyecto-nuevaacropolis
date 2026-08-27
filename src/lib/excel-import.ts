@@ -112,16 +112,8 @@ export function parseExcelToTransactions(file: File): Promise<Transaction[]> {
         const ws = primera ? wb.Sheets[primera] : undefined;
         if (!ws) throw new Error("El archivo no tiene ninguna hoja");
         const rows: Record<string, string>[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
-        const mapped: Transaction[] = rows.map((r) => ({
-          id: nuevoId(),
-          fecha: String(r.Fecha || r.fecha || ""),
-          mes: String(r.Mes || r.mes || ""),
-          tipo: (String(r.Tipo || r.tipo || "Ingreso") === "Gasto" ? "Gasto" : "Ingreso") as
-            "Ingreso" | "Gasto",
-          categoria: String(r.Categoria || r.Categoría || r.categoria || ""),
-          descripcion: String(r.Descripcion || r.Descripción || r.descripcion || ""),
-          mensualidad: String(r.Mensualidad || r.mensualidad || ""),
-          moneda: normalizeMonedaImport(String(r.Moneda || r.moneda || "USD")),
+        const mapped: Transaction[] = rows.map((r) => {
+          const moneda = normalizeMonedaImport(String(r.Moneda || r.moneda || "USD"));
           // Las cifras se leen con aNumero, no con Number().
           //
           // Number("1.234,56") es NaN, y el `|| 0` que había aquí lo convertía
@@ -130,18 +122,38 @@ export function parseExcelToTransactions(file: File): Promise<Transaction[]> {
           // avisara. aNumero entiende "1.234,56", "1,234.56", "$ 900" y "20,00",
           // y la variante avisando deja rastro en la consola cuando de verdad
           // no puede leer algo.
-          monto: aNumeroAvisando(String(r.Monto || r.monto || ""), "Excel: Monto"),
-          tasa: (() => {
+          const monto = aNumeroAvisando(String(r.Monto || r.monto || ""), "Excel: Monto");
+          const tasa = (() => {
             const v = r["Tasa cambio"] || r["Tasa"] || r.tasa;
             const n = aNumeroAvisando(String(v ?? ""), "Excel: Tasa");
             return n > 0 ? n : null;
-          })(),
-          montoUsd: aNumeroAvisando(
+          })();
+          const montoUsdDelExcel = aNumeroAvisando(
             String(r["Monto USD"] || r["USD"] || r.montoUsd || ""),
             "Excel: Monto USD",
-          ),
-          banco: String(r.Banco || r.banco || ""),
-        }));
+          );
+          // Si el Excel no trae el total en USD (columna vacía), se calcula con
+          // la moneda/monto/tasa de la misma fila en vez de dejarlo en 0 — antes
+          // un hueco en esa sola columna hacía que el total quedara en $0.00
+          // aunque el resto de la fila estuviera completo.
+          const montoUsd =
+            montoUsdDelExcel > 0 ? montoUsdDelExcel : calcularMontoUsd(moneda, monto, tasa);
+          return {
+            id: nuevoId(),
+            fecha: String(r.Fecha || r.fecha || ""),
+            mes: String(r.Mes || r.mes || ""),
+            tipo: (String(r.Tipo || r.tipo || "Ingreso") === "Gasto" ? "Gasto" : "Ingreso") as
+              "Ingreso" | "Gasto",
+            categoria: String(r.Categoria || r.Categoría || r.categoria || ""),
+            descripcion: String(r.Descripcion || r.Descripción || r.descripcion || ""),
+            mensualidad: String(r.Mensualidad || r.mensualidad || ""),
+            moneda,
+            monto,
+            tasa,
+            montoUsd,
+            banco: String(r.Banco || r.banco || ""),
+          };
+        });
         resolve(mapped);
       } catch (err) {
         reject(err);
