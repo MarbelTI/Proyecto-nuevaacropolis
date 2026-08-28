@@ -457,11 +457,41 @@ function copyAndLog(msg: string, alumno: string) {
  */
 const CATEGORIAS_CUOTA = ["MIEMBROS", "PROBAS", "CLASE"];
 
+function tokensDeNombre(s: string): string[] {
+  return normalizeName(s)
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/**
+ * ¿La descripción de una transacción corresponde a esta persona?
+ *
+ * Antes se exigía el nombre COMPLETO tal cual, o —en el cálculo de deuda—
+ * su primera Y su última palabra. Eso fallaba con el caso real: la ficha
+ * de alguien es "Margeli Santos Rondón" pero en el día a día el pago se
+ * anota como "Margeli Santos Cuota Social de Julio" — sin el segundo
+ * apellido, que nadie escribe en una transacción. La última palabra
+ * registrada ("Rondón") nunca aparece, así que ese pago no se contaba.
+ *
+ * Ahora basta con la primera palabra del nombre MÁS cualquier otra palabra
+ * del nombre (da igual si es el segundo nombre o cualquiera de los
+ * apellidos) — así "Margeli Santos" sigue reconociendo a "Margeli Santos
+ * Rondón" aunque la transacción traiga además una referencia, la moneda o
+ * cualquier otro texto de más.
+ */
+function nombreEnDescripcion(desc: string, nombreCompleto: string): boolean {
+  const nombre = tokensDeNombre(nombreCompleto);
+  if (!nombre.length) return false;
+  const palabrasDesc = new Set(tokensDeNombre(desc));
+  if (!palabrasDesc.has(nombre[0])) return false;
+  if (nombre.length === 1) return true;
+  return nombre.slice(1).some((t) => palabrasDesc.has(t));
+}
+
 function findStudentInDesc(desc: string, students: Student[]): Student | null {
-  const n = normalizeName(desc);
   for (const s of students) {
-    const sn = normalizeName(s.nombre);
-    if (n.includes(sn)) return s;
+    if (nombreEnDescripcion(desc, s.nombre)) return s;
   }
   return null;
 }
@@ -1063,22 +1093,21 @@ export default function SolvenciasTab({
       if (!CATEGORIAS_CUOTA.includes(t.categoria)) continue;
       const iso = fechaToIso(t.fecha);
       if (!iso) continue;
-      const desc = normalizeName(t.descripcion);
-      for (const s of students) {
-        const nn = normalizeName(s.nombre);
-        const first = nn.split(" ")[0];
-        const last = nn.split(" ").slice(-1)[0];
-        if (first && last && desc.includes(first) && desc.includes(last)) {
-          const arr = map.get(s.nombre) ?? [];
-          arr.push({
-            iso,
-            fecha: t.fecha,
-            mensualidad: t.mensualidad ?? "",
-            monto: Number(t.montoUsd) || 0,
-          });
-          map.set(s.nombre, arr);
-        }
-      }
+      // Si la descripción encaja con más de un integrante a la vez (dos
+      // personas que comparten nombre y apellido, por ejemplo), no se le
+      // abona a ninguno: mismo criterio que con el celador del aula, es
+      // preferible un pago sin cuadrar que atribuido a la persona equivocada.
+      const candidatos = students.filter((s) => nombreEnDescripcion(t.descripcion, s.nombre));
+      if (candidatos.length !== 1) continue;
+      const s = candidatos[0];
+      const arr = map.get(s.nombre) ?? [];
+      arr.push({
+        iso,
+        fecha: t.fecha,
+        mensualidad: t.mensualidad ?? "",
+        monto: Number(t.montoUsd) || 0,
+      });
+      map.set(s.nombre, arr);
     }
     return map;
   }, [tx, students]);
