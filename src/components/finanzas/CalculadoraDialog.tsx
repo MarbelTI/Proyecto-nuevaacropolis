@@ -286,11 +286,16 @@ export function CalculadoraPanel({ state }: { state: CalculadoraState }) {
 
           {!s.esUsd && (
             <Campo label={`Tasa (${s.moneda} por 1 USD)`}>
-              <div className="flex gap-2">
+              {/* flex-wrap: la etiqueta del botón puede ser larga ("Tasa
+                  Euro del 28/08/2026") y en un celular no cabe al lado del
+                  input sin apretarlo — mejor que el botón baje a su propia
+                  línea a que corte el texto o desborde la pantalla. */}
+              <div className="flex flex-wrap gap-2">
                 <Input
                   value={s.tasaStr}
                   inputMode="decimal"
                   placeholder="Ej: 90.50"
+                  className="min-w-[140px] flex-1"
                   onChange={(e) => s.setTasaStr(e.target.value)}
                 />
                 <Button

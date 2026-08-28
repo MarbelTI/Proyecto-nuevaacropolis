@@ -251,21 +251,68 @@ function Index() {
       )}
       <div className="mx-auto max-w-[1920px] px-4 py-6">
         <header className="mb-4 rounded-2xl bg-primary p-4 text-primary-foreground shadow-lg">
-          <div className="flex flex-wrap items-center gap-4">
-            <img
-              src="/logo.jpg"
-              alt="Nueva Acrópolis Venezuela"
-              className="h-14 w-14 rounded-full ring-2 ring-accent"
-            />
-            <div className="flex-1 min-w-[220px]">
-              <h1 className="text-xl font-bold leading-tight">{NOMBRE_APP}</h1>
-              <p className="text-xs opacity-90">
-                <ScanText className="mr-1 inline h-3 w-3" />
-                {SUBTITULO}
-              </p>
+          {/* Dos filas en vez de una sola: con todo en una fila, el widget de
+              Tasas BCV competía por espacio con el logo/título y el acceso a
+              sesión, y en un celular (~360-390px) el segundo perdía y quedaba
+              cortado fuera de pantalla. Cada fila envuelve por su cuenta. */}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-4">
+                <img
+                  src="/logo.jpg"
+                  alt="Nueva Acrópolis Venezuela"
+                  className="h-14 w-14 shrink-0 rounded-full ring-2 ring-accent"
+                />
+                <div className="min-w-0">
+                  <h1 className="text-xl font-bold leading-tight">{NOMBRE_APP}</h1>
+                  <p className="text-xs opacity-90">
+                    <ScanText className="mr-1 inline h-3 w-3" />
+                    {SUBTITULO}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setWaLogOpen(true)}
+                  className="rounded-lg bg-primary-foreground/10 px-2.5 py-1.5 text-xs hover:bg-primary-foreground/20"
+                  title="Historial de mensajes WhatsApp"
+                >
+                  <MessageCircle className="mr-1 inline h-3.5 w-3.5" />
+                  Log
+                </button>
+                {auth.role === "super_admin" && <CuentasPendientes />}
+                <button
+                  onClick={() => setAuthDialogOpen(true)}
+                  className="rounded-lg bg-primary-foreground/10 px-2.5 py-1.5 text-left text-xs hover:bg-primary-foreground/20"
+                  title="Cambiar de usuario"
+                >
+                  {auth.profile ? (
+                    <>
+                      <span className="block font-medium leading-tight">
+                        {auth.profile.full_name}
+                      </span>
+                      <span className="block text-[10px] uppercase tracking-wide opacity-80">
+                        {ETIQUETA_ROL[auth.role] ?? auth.role}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="font-medium">Iniciar sesión</span>
+                  )}
+                </button>
+                {auth.profile && (
+                  <button
+                    onClick={logout}
+                    className="rounded-lg bg-primary-foreground/10 p-1.5 text-xs hover:bg-primary-foreground/20"
+                    title="Cerrar sesión"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 rounded-lg bg-primary-foreground/10 px-3 py-2">
+            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-primary-foreground/10 px-3 py-2">
               <label className="text-xs opacity-90">Tasas BCV</label>
               <input
                 type="date"
@@ -273,7 +320,7 @@ function Index() {
                 onChange={(e) => setHeaderDate(e.target.value)}
                 className="rounded bg-primary-foreground/20 px-2 py-1 text-xs"
               />
-              <span className="rounded bg-accent px-2 py-1 text-sm font-semibold text-accent-foreground min-w-[80px] text-center">
+              <span className="rounded bg-accent px-2 py-1 text-sm font-semibold text-accent-foreground text-center">
                 {headerLoading ? (
                   <Loader2 className="inline h-3 w-3 animate-spin" />
                 ) : headerRate != null ? (
@@ -282,7 +329,7 @@ function Index() {
                   "—"
                 )}
               </span>
-              <span className="rounded bg-accent px-2 py-1 text-sm font-semibold text-accent-foreground min-w-[80px] text-center">
+              <span className="rounded bg-accent px-2 py-1 text-sm font-semibold text-accent-foreground text-center">
                 {headerLoading ? (
                   <Loader2 className="inline h-3 w-3 animate-spin" />
                 ) : headerRateEuro != null ? (
@@ -313,44 +360,6 @@ function Index() {
                   );
                 return null;
               })()}
-            </div>
-            <button
-              onClick={() => setWaLogOpen(true)}
-              className="rounded-lg bg-primary-foreground/10 px-2.5 py-1.5 text-xs hover:bg-primary-foreground/20"
-              title="Historial de mensajes WhatsApp"
-            >
-              <MessageCircle className="mr-1 inline h-3.5 w-3.5" />
-              Log
-            </button>
-            <div className="flex items-center gap-2">
-              {auth.role === "super_admin" && <CuentasPendientes />}
-              <button
-                onClick={() => setAuthDialogOpen(true)}
-                className="rounded-lg bg-primary-foreground/10 px-2.5 py-1.5 text-left text-xs hover:bg-primary-foreground/20"
-                title="Cambiar de usuario"
-              >
-                {auth.profile ? (
-                  <>
-                    <span className="block font-medium leading-tight">
-                      {auth.profile.full_name}
-                    </span>
-                    <span className="block text-[10px] uppercase tracking-wide opacity-80">
-                      {ETIQUETA_ROL[auth.role] ?? auth.role}
-                    </span>
-                  </>
-                ) : (
-                  <span className="font-medium">Iniciar sesión</span>
-                )}
-              </button>
-              {auth.profile && (
-                <button
-                  onClick={logout}
-                  className="rounded-lg bg-primary-foreground/10 p-1.5 text-xs hover:bg-primary-foreground/20"
-                  title="Cerrar sesión"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                </button>
-              )}
             </div>
           </div>
         </header>

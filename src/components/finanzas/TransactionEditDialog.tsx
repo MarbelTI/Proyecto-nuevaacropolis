@@ -303,10 +303,13 @@ function TransactionEditDialog({
             </Button>
           </div>
         </DialogHeader>
-        {/* Con la calculadora abierta, van una al lado de la otra: si se
-            apilaran (un segundo diálogo modal encima) taparían el movimiento
-            que se está editando, que es justo lo que se quiere consultar. */}
-        <div className={calcOpen ? "grid grid-cols-[1fr_260px] items-start gap-4" : ""}>
+        {/* Con la calculadora abierta, van una al lado de la otra a partir de
+            `sm:` — si se apilaran en un segundo diálogo modal encima,
+            taparían el movimiento que se está editando, que es justo lo que
+            se quiere consultar. En un celular (`sm:` para abajo) esa columna
+            fija de 260px no cabe junto al formulario, así que ahí va debajo
+            en vez de al lado. */}
+        <div className={calcOpen ? "grid grid-cols-1 items-start gap-4 sm:grid-cols-[1fr_260px]" : ""}>
           <div className="grid grid-cols-2 gap-3">
             {/* Calendario de verdad en vez de escribir dd/mm/aaaa: registrar algo
               de la semana pasada era teclear la fecha entera sin equivocarse. */}

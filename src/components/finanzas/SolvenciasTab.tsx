@@ -269,8 +269,8 @@ function CuotasEspecialesDialog({
           </Button>
         </div>
 
-        <div className="max-h-[50vh] overflow-y-auto rounded-lg border">
-          <table className="w-full text-sm">
+        <div className="max-h-[50vh] overflow-auto rounded-lg border">
+          <table className="w-full min-w-[420px] text-sm">
             <thead className="sticky top-0 bg-card">
               <tr className="border-b text-left text-xs text-muted-foreground">
                 <th className="px-2 py-1.5 font-medium">Integrante</th>
@@ -512,8 +512,10 @@ function StudentTxDialog({
             </button>
           ))}
         </div>
-        <div className="max-h-80 overflow-y-auto">
-          <table className="w-full text-sm">
+        {/* overflow-x-auto: 6 columnas no caben en un celular sin scroll
+            propio; sin esto se desbordaba el diálogo entero. */}
+        <div className="max-h-80 overflow-auto">
+          <table className="w-full min-w-[480px] text-sm">
             <thead>
               <tr className="border-b text-left text-muted-foreground text-xs">
                 <th className="p-1">Fecha</th>
@@ -1814,7 +1816,7 @@ export default function SolvenciasTab({
                 <div className="rounded-md border">
                   {previaAsistencias.nuevos.map((n) => (
                     <div key={n.clave} className="border-b px-2 py-1 text-xs last:border-0">
-                      <div className="flex items-baseline justify-between gap-2">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
                         <span>{n.nombre}</span>
                         <span className="shrink-0 text-[11px] text-muted-foreground">
                           {n.aulas.join(", ")}
@@ -1840,7 +1842,7 @@ export default function SolvenciasTab({
                   {previaAsistencias.unir.map((u, i) => (
                     <div
                       key={i}
-                      className="flex items-baseline justify-between gap-2 border-b px-2 py-1 text-xs last:border-0"
+                      className="flex flex-wrap items-baseline justify-between gap-2 border-b px-2 py-1 text-xs last:border-0"
                     >
                       <span>
                         {u.nombre}
@@ -1888,7 +1890,7 @@ export default function SolvenciasTab({
           </p>
           <div className="max-h-[50vh] space-y-2 overflow-y-auto">
             {detectados.map((d, i) => (
-              <div key={i} className="flex items-center gap-2 rounded border p-2">
+              <div key={i} className="flex flex-wrap items-center gap-2 rounded border p-2">
                 <Input
                   value={d.nombre}
                   onChange={(e) =>
@@ -1896,7 +1898,7 @@ export default function SolvenciasTab({
                       prev.map((x, j) => (j === i ? { ...x, nombre: e.target.value } : x)),
                     )
                   }
-                  className="h-8 flex-1"
+                  className="h-8 min-w-[140px] flex-1"
                 />
                 <span
                   className="shrink-0 text-[11px] text-muted-foreground"

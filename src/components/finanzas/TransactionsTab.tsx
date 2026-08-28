@@ -1305,33 +1305,37 @@ export function TransactionsTab({
                     ${$(Number(r.montoUsd) || 0)}
                   </td>
                   <td className="px-1 py-0.5">
-                    <div className="flex gap-0.5">
+                    {/* h-6/w-6 (24px) es cómodo con mouse pero muy chico para
+                        el dedo; en celular (por debajo de `sm:`) sube a 36px
+                        con más separación entre botones, y en escritorio
+                        queda igual de compacto que antes. */}
+                    <div className="flex gap-1 sm:gap-0.5">
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6"
+                        className="h-9 w-9 sm:h-6 sm:w-6"
                         onClick={() => tx.duplicateAfter(r.id)}
                         title="Duplicar fila debajo"
                       >
-                        <Plus className="h-3.5 w-3.5" />
+                        <Plus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6"
+                        className="h-9 w-9 sm:h-6 sm:w-6"
                         onClick={() => setEditing(r)}
                         title="Modificar"
                       >
-                        <Pencil className="h-3.5 w-3.5" />
+                        <Pencil className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6"
+                        className="h-9 w-9 sm:h-6 sm:w-6"
                         onClick={() => tx.remove(r.id)}
                         title="Eliminar"
                       >
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        <Trash2 className="h-4 w-4 text-destructive sm:h-3.5 sm:w-3.5" />
                       </Button>
                     </div>
                   </td>
