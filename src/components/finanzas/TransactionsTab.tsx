@@ -859,6 +859,11 @@ export function TransactionsTab({
   const [batchDialog, setBatchDialog] = useState(false);
   const [batchField, setBatchField] = useState<string>("");
   const [batchValue, setBatchValue] = useState<string>("");
+  // "Dónde iba": un clic fuera del modo de selección marca esa fila como
+  // referencia visual (no selecciona nada, no sirve para editar en lote) —
+  // solo para no perderse al volver a subir después de revisar otra parte
+  // de la tabla. Un solo clic más la vuelve a apagar.
+  const [focusedId, setFocusedId] = useState<string | null>(null);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -1265,21 +1270,24 @@ export function TransactionsTab({
           <tbody>
             {filtered.map((r) => {
               const isSelected = selectMode && selectedIds.has(r.id);
+              const isFocused = !selectMode && focusedId === r.id;
               const esDup = idsDuplicados.has(r.id);
               return (
                 <tr
                   key={r.id}
-                  className={`border-b last:border-0 cursor-default ${
-                    isSelected
-                      ? "bg-primary/10 ring-1 ring-inset ring-primary"
+                  className={`border-b last:border-0 cursor-pointer ${
+                    isSelected || isFocused
+                      ? "bg-green-100 ring-2 ring-inset ring-amber-400 dark:bg-green-950/30"
                       : esDup
                         ? "bg-pink-100 dark:bg-pink-950/40"
-                        : selectMode
-                          ? "hover:bg-accent/40"
-                          : ""
+                        : "hover:bg-accent/40"
                   }`}
                   title={esDup ? "Repetida: hay otro movimiento con los mismos datos" : undefined}
-                  onClick={() => selectMode && toggleSelect(r.id)}
+                  onClick={() =>
+                    selectMode
+                      ? toggleSelect(r.id)
+                      : setFocusedId((prev) => (prev === r.id ? null : r.id))
+                  }
                 >
                   <td className="px-2 py-0.5">{r.fecha}</td>
                   <td className="px-2 py-0.5">{r.tipo}</td>
