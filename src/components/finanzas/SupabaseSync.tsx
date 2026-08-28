@@ -143,6 +143,11 @@ export function SupabaseSync({
           tasa: r.tasa ? Number(r.tasa) : null,
           montoUsd: Number(r.monto_usd),
           banco: r.banco,
+          // `r.revisar` no existe todavía en Supabase (la migración está
+          // creada pero sin correr) — el `?? ""` hace que esto siga
+          // funcionando ahora y empiece a traer el valor real en cuanto se
+          // corra, sin tocar este archivo otra vez.
+          revisar: r.revisar ?? "",
         }));
         mapped.sort((a: Transaction, b: Transaction) => {
           const [ad, am, ay] = a.fecha.split("/");

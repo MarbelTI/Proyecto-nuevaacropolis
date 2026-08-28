@@ -39,6 +39,7 @@ export function exportTransactionsExcel(transactions: Transaction[]): void {
       Monto: r.monto,
       "Tasa cambio": r.tasa,
       "Monto USD": r.montoUsd,
+      Revisar: r.revisar,
     })),
   );
   ws["!cols"] = [
@@ -53,6 +54,7 @@ export function exportTransactionsExcel(transactions: Transaction[]): void {
     { wch: 12 },
     { wch: 12 },
     { wch: 14 },
+    { wch: 40 },
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Transacciones");

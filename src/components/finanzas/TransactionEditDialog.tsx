@@ -491,6 +491,13 @@ function TransactionEditDialog({
               }}
             />
           </Field>
+          <Field label="Revisar / Nota" full>
+            <Input
+              value={draft.revisar}
+              onChange={(e) => update("revisar", e.target.value)}
+              placeholder="Vacío = no hace falta revisar nada"
+            />
+          </Field>
           </div>
 
           {/* Panel de calculadora, al lado del formulario (no encima): así se

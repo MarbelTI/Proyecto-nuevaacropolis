@@ -72,6 +72,8 @@ export type Transaction = {
   tasa: number | null;
   montoUsd: number;
   banco: string;
+  /** Nota de revisión pendiente; vacío = sin marcar. */
+  revisar: string;
 };
 
 function parseMoney(s: unknown): number {

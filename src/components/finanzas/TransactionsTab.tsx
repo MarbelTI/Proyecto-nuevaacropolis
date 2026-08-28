@@ -67,6 +67,7 @@ import {
   Lock,
   RotateCcw,
   Calculator,
+  Flag,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -703,6 +704,7 @@ export function TransactionsTab({
   const [filterDescripcion, setFilterDescripcion] = useState<string>("");
   const [filterBanco, setFilterBanco] = useState<string>("");
   const [filterMes, setFilterMes] = useState<string>("");
+  const [filterRevisar, setFilterRevisar] = useState(false);
   const [calcOpen, setCalcOpen] = useState(false);
   const [plantillas, setPlantillas] = usePlantillas();
   const enLinea = useEstaEnLinea();
@@ -738,6 +740,9 @@ export function TransactionsTab({
     for (const n of porFirma.values()) if (n > 1) sobran += n - 1;
     return sobran;
   }, [tx.list]);
+
+  /** Movimientos marcados con una nota de revisión pendiente. */
+  const revisarCount = useMemo(() => tx.list.filter((t) => !!t.revisar).length, [tx.list]);
 
   /** Movimientos en Bs/Pesos que aún no tienen tasa de cambio asignada. */
   const sinTasaCount = useMemo(
@@ -777,6 +782,7 @@ export function TransactionsTab({
         r.banco !== filterBanco
       )
         return false;
+      if (filterRevisar && !r.revisar) return false;
       return true;
     });
 
@@ -805,6 +811,7 @@ export function TransactionsTab({
     catBuscada,
     descBuscada,
     filterMes,
+    filterRevisar,
   ]);
 
   const anyFilterActive = !!(
@@ -815,7 +822,8 @@ export function TransactionsTab({
     catBuscada ||
     descBuscada ||
     filterBanco ||
-    filterMes
+    filterMes ||
+    filterRevisar
   );
 
   const limpiarFiltros = () => {
@@ -825,6 +833,7 @@ export function TransactionsTab({
     setFilterMoneda("");
     setFilterCategoria("");
     setFilterDescripcion("");
+    setFilterRevisar(false);
     setFilterBanco("");
     setFilterMes("");
   };
@@ -985,6 +994,7 @@ export function TransactionsTab({
                 tasa: null,
                 montoUsd: 0,
                 banco: bancos.includes("Efectivo Bs") ? "Efectivo Bs" : "",
+                revisar: "",
               };
               setEditing(empty);
             }}
@@ -1116,6 +1126,17 @@ export function TransactionsTab({
             onChange={(e) => setTo(e.target.value)}
             className="rounded border bg-background px-2 py-1 text-sm"
           />
+          {revisarCount > 0 && (
+            <Button
+              variant={filterRevisar ? "default" : "outline"}
+              size="sm"
+              onClick={() => setFilterRevisar((v) => !v)}
+              title="Mostrar solo las transacciones marcadas para revisar"
+            >
+              <Flag className="mr-1.5 h-3.5 w-3.5" />
+              Por revisar ({revisarCount})
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={limpiarFiltros} disabled={!anyFilterActive}>
             Limpiar filtros
           </Button>
@@ -1272,17 +1293,30 @@ export function TransactionsTab({
               const isSelected = selectMode && selectedIds.has(r.id);
               const isFocused = !selectMode && focusedId === r.id;
               const esDup = idsDuplicados.has(r.id);
+              const tieneRevisar = !!r.revisar;
+              // Prioridad cuando coinciden varios estados: el foco/selección
+              // manda porque la persona lo activó a propósito en este
+              // momento; "por revisar" pesa más que "repetida" porque
+              // persiste entre sesiones. Ninguno queda invisible del todo: la
+              // bandera se ve en la fila igual, y el título junta todos los
+              // que apliquen.
+              const rowClass =
+                isSelected || isFocused
+                  ? "bg-green-100 ring-2 ring-inset ring-amber-400 dark:bg-green-950/30"
+                  : tieneRevisar
+                    ? "bg-blue-50 dark:bg-blue-950/30"
+                    : esDup
+                      ? "bg-pink-100 dark:bg-pink-950/40"
+                      : "hover:bg-accent/40";
+              const titulos = [
+                tieneRevisar ? `Por revisar: ${r.revisar}` : "",
+                esDup ? "Repetida: hay otro movimiento con los mismos datos" : "",
+              ].filter(Boolean);
               return (
                 <tr
                   key={r.id}
-                  className={`border-b last:border-0 cursor-pointer ${
-                    isSelected || isFocused
-                      ? "bg-green-100 ring-2 ring-inset ring-amber-400 dark:bg-green-950/30"
-                      : esDup
-                        ? "bg-pink-100 dark:bg-pink-950/40"
-                        : "hover:bg-accent/40"
-                  }`}
-                  title={esDup ? "Repetida: hay otro movimiento con los mismos datos" : undefined}
+                  className={`border-b last:border-0 cursor-pointer ${rowClass}`}
+                  title={titulos.length ? titulos.join(" · ") : undefined}
                   onClick={() =>
                     selectMode
                       ? toggleSelect(r.id)
@@ -1318,6 +1352,26 @@ export function TransactionsTab({
                         con más separación entre botones, y en escritorio
                         queda igual de compacto que antes. */}
                     <div className="flex gap-1 sm:gap-0.5">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={`h-9 w-9 sm:h-6 sm:w-6 ${tieneRevisar ? "text-blue-600 dark:text-blue-400" : ""}`}
+                        onClick={() => {
+                          if (tieneRevisar) {
+                            tx.replace(r.id, { ...r, revisar: "" });
+                          } else {
+                            const nota = window.prompt(
+                              "¿Qué hay que revisar de este movimiento?",
+                              "",
+                            );
+                            if (nota === null) return; // canceló, no marca nada
+                            tx.replace(r.id, { ...r, revisar: nota.trim() || "Revisar" });
+                          }
+                        }}
+                        title={tieneRevisar ? `Quitar marca: ${r.revisar}` : "Marcar para revisar"}
+                      >
+                        <Flag className={`h-4 w-4 sm:h-3.5 sm:w-3.5 ${tieneRevisar ? "fill-current" : ""}`} />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"

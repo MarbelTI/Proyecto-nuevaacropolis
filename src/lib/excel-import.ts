@@ -152,6 +152,11 @@ export function parseExcelToTransactions(file: File): Promise<Transaction[]> {
             tasa,
             montoUsd,
             banco: String(r.Banco || r.banco || ""),
+            // "Verificar" es el nombre que trae el Excel consolidado hecho
+            // fuera de la app; "Revisar" es el que escribe la propia app al
+            // exportar. Se aceptan los dos para no perder la marca según de
+            // dónde venga el archivo.
+            revisar: String(r.Revisar || r.revisar || r.Verificar || r.verificar || ""),
           };
         });
         resolve(mapped);

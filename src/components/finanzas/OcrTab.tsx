@@ -684,6 +684,7 @@ export function OcrTab({
         tasa: e.tasa ? aNumero(e.tasa) || null : null,
         montoUsd: aNumero(e.montoUsd),
         banco: "",
+        revisar: "",
       })),
     );
     const omitidas = entries.length - aGuardar.length;
