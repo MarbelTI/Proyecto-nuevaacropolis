@@ -1355,26 +1355,6 @@ export function TransactionsTab({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className={`h-9 w-9 sm:h-6 sm:w-6 ${tieneRevisar ? "text-blue-600 dark:text-blue-400" : ""}`}
-                        onClick={() => {
-                          if (tieneRevisar) {
-                            tx.replace(r.id, { ...r, revisar: "" });
-                          } else {
-                            const nota = window.prompt(
-                              "¿Qué hay que revisar de este movimiento?",
-                              "",
-                            );
-                            if (nota === null) return; // canceló, no marca nada
-                            tx.replace(r.id, { ...r, revisar: nota.trim() || "Revisar" });
-                          }
-                        }}
-                        title={tieneRevisar ? `Quitar marca: ${r.revisar}` : "Marcar para revisar"}
-                      >
-                        <Flag className={`h-4 w-4 sm:h-3.5 sm:w-3.5 ${tieneRevisar ? "fill-current" : ""}`} />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
                         className="h-9 w-9 sm:h-6 sm:w-6"
                         onClick={() => tx.duplicateAfter(r.id)}
                         title="Duplicar fila debajo"
@@ -1398,6 +1378,26 @@ export function TransactionsTab({
                         title="Eliminar"
                       >
                         <Trash2 className="h-4 w-4 text-destructive sm:h-3.5 sm:w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={`h-9 w-9 sm:h-6 sm:w-6 ${tieneRevisar ? "text-blue-600 dark:text-blue-400" : ""}`}
+                        onClick={() => {
+                          if (tieneRevisar) {
+                            tx.replace(r.id, { ...r, revisar: "" });
+                          } else {
+                            const nota = window.prompt(
+                              "¿Qué hay que revisar de este movimiento?",
+                              "",
+                            );
+                            if (nota === null) return; // canceló, no marca nada
+                            tx.replace(r.id, { ...r, revisar: nota.trim() || "Revisar" });
+                          }
+                        }}
+                        title={tieneRevisar ? `Quitar marca: ${r.revisar}` : "Marcar para revisar"}
+                      >
+                        <Flag className={`h-4 w-4 sm:h-3.5 sm:w-3.5 ${tieneRevisar ? "fill-current" : ""}`} />
                       </Button>
                     </div>
                   </td>
