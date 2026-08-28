@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { bcvRateFor } from "@/lib/lists-store";
+import { bcvRateFor, bcvRateSugerida, CORTE_TASA_BINANCE_ISO } from "@/lib/lists-store";
 import { aNumero } from "@/lib/formato";
 import { calcularMontoUsd, formatTasa, redondearTasa, TASA_PESOS_DEFAULT } from "@/lib/fees-logic";
 import { Button } from "@/components/ui/button";
@@ -100,6 +100,11 @@ function useCalculadoraState(
   bcvRates: Record<string, number>,
   bcvRatesEuro: Record<string, number>,
   fechaReferencia?: string,
+  /** Tipo (Ingreso/Gasto) de la transacción de referencia, para que el botón
+   * de tasa sugerida coincida con la que el propio formulario ya sugirió —
+   * si no se pasa (calculadora suelta, sin transacción), se comporta como
+   * un Gasto: siempre BCV, igual que antes de esta distinción. */
+  tipoReferencia: string = "",
 ) {
   const [pestana, setPestana] = useState("convertir");
 
@@ -140,16 +145,28 @@ function useCalculadoraState(
   const valorUsd = ladoActivo === "usd" ? usdStr : mostrar(usdCalculado);
   const resultado = ladoActivo === "local" ? usdCalculado : localCalculado;
 
-  // Atajo de tasa según la moneda: los bolívares se mueven todos los días y la
-  // referencia es el BCV; los pesos usan la tasa fija con la que ya trabaja el
-  // resto del sistema.
-  const tasaSugerida = moneda === "Pesos" ? TASA_PESOS_DEFAULT : bcvHoy;
+  // Atajo de tasa según la moneda: los pesos usan la tasa fija con la que ya
+  // trabaja el resto del sistema. Los bolívares usan la MISMA regla que el
+  // formulario de la transacción (bcvRateSugerida): BCV normalmente, o Euro
+  // para un Ingreso desde el 24/06/2026 — antes esto siempre traía la del
+  // BCV aunque el formulario, al lado, hubiera sugerido la del euro.
+  const tasaSugeridaBolivares = bcvRateSugerida(tipoReferencia, fechaRef, bcvRates, bcvRatesEuro);
+  const tasaSugerida = moneda === "Pesos" ? TASA_PESOS_DEFAULT : tasaSugeridaBolivares;
+  const sugeridaEsEuro =
+    tipoReferencia === "Ingreso" &&
+    fechaRef >= CORTE_TASA_BINANCE_ISO &&
+    bcvRefEuro != null &&
+    tasaSugeridaBolivares === bcvRefEuro;
   const etiquetaSugerida =
     moneda === "Pesos"
       ? "Tasa habitual"
-      : esHoy
-        ? "Tasa BCV de hoy"
-        : `Tasa BCV del ${isoToFecha(fechaRef)}`;
+      : sugeridaEsEuro
+        ? esHoy
+          ? "Tasa Euro de hoy"
+          : `Tasa Euro del ${isoToFecha(fechaRef)}`
+        : esHoy
+          ? "Tasa BCV de hoy"
+          : `Tasa BCV del ${isoToFecha(fechaRef)}`;
 
   const tasaDeducidaCruda = (() => {
     const monto = aNumero(tasaMontoStr);
@@ -456,14 +473,16 @@ export function CalculadoraDialog({
   bcvRates,
   bcvRatesEuro = {},
   fechaReferencia,
+  tipoReferencia,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   bcvRates: Record<string, number>;
   bcvRatesEuro?: Record<string, number>;
   fechaReferencia?: string;
+  tipoReferencia?: string;
 }) {
-  const state = useCalculadoraState(bcvRates, bcvRatesEuro, fechaReferencia);
+  const state = useCalculadoraState(bcvRates, bcvRatesEuro, fechaReferencia, tipoReferencia);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

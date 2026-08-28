@@ -181,6 +181,7 @@ function TransactionEditDialog({
     bcvRates,
     bcvRatesEuro,
     draft ? (fechaToIso(draft.fecha) ?? undefined) : undefined,
+    draft?.tipo,
   );
 
   // Los campos de dinero se editan como TEXTO y solo se interpretan como
