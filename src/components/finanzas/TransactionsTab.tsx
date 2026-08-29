@@ -1426,6 +1426,13 @@ export function TransactionsTab({
                         className="h-9 w-9 sm:h-6 sm:w-6"
                         disabled={readOnly}
                         onClick={() => {
+                          const concepto = r.descripcion?.trim() || "(sin descripción)";
+                          if (
+                            !confirm(
+                              `¿Eliminar el registro "${concepto}" por $${$(Number(r.montoUsd) || 0)}?`,
+                            )
+                          )
+                            return;
                           tx.remove(r.id);
                           enviarAPapelera(r, "fila");
                         }}
