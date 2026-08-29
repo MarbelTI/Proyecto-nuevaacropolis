@@ -542,16 +542,17 @@ function StudentTxDialog({
             </button>
           ))}
         </div>
-        {/* overflow-x-auto: 6 columnas no caben en un celular sin scroll
+        {/* overflow-x-auto: 7 columnas no caben en un celular sin scroll
             propio; sin esto se desbordaba el diálogo entero. */}
         <div className="max-h-80 overflow-auto">
-          <table className="w-full min-w-[480px] text-sm">
+          <table className="w-full min-w-[560px] text-sm">
             <thead>
               <tr className="border-b text-left text-muted-foreground text-xs">
                 <th className="p-1">Fecha</th>
                 <th className="p-1">I/G</th>
                 <th className="p-1">Categoría</th>
                 <th className="p-1">Descripción</th>
+                <th className="p-1">Mensualidad</th>
                 <th className="p-1 text-right">Monto</th>
                 <th className="p-1 text-right">USD</th>
               </tr>
@@ -576,6 +577,7 @@ function StudentTxDialog({
                   <td className="p-1 text-xs max-w-48 truncate" title={r.descripcion}>
                     {r.descripcion}
                   </td>
+                  <td className="p-1 text-xs">{r.mensualidad ? formatMes(r.mensualidad) : "—"}</td>
                   <td className="p-1 text-right text-xs tabular-nums">
                     {isNaN(Number(r.monto)) ? r.monto : $(Number(r.monto))}{" "}
                     {r.moneda === "Bolívares" ? "Bs" : r.moneda === "Pesos" ? "$COP" : "$"}
