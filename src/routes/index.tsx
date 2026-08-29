@@ -554,7 +554,9 @@ function Index() {
                 />
               </TabsContent>
 
-              <TabsContent value="resumen">
+              {/* forceMount: mismo motivo que en "tx" — sin esto, ir a Transacciones
+                  y volver reseteaba el mes elegido y la fila enfocada. */}
+              <TabsContent value="resumen" forceMount className="data-[state=inactive]:hidden">
                 <ResumenTab
                   tx={transactions}
                   ingresos={ingresos}

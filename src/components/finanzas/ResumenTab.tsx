@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TransactionEditDialog } from "./TransactionEditDialog";
-import { Edit2, Download } from "lucide-react";
+import { Edit2, Download, Flag } from "lucide-react";
 import { toast } from "sonner";
 
 const MESES_ES = [
@@ -86,11 +86,21 @@ export function ResumenTab({
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
   const [showAllCats, setShowAllCats] = useState(false);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  /** Igual que en Transacciones: clic en un movimiento del detalle lo marca en
+   *  verde para no perderse comparando renglón por renglón contra un Excel. */
+  const [focusedId, setFocusedId] = useState<string | null>(null);
 
   const data = useMemo(() => {
     const ingByCat: Record<string, number> = {};
     const gasByCat: Record<string, number> = {};
-    type Det = { id: string; desc: string; monto: number; fecha: string; mes?: string };
+    type Det = {
+      id: string;
+      desc: string;
+      monto: number;
+      fecha: string;
+      mes?: string;
+      revisar?: string;
+    };
     const ingDet: Record<string, Det[]> = {};
     const gasDet: Record<string, Det[]> = {};
     for (const c of ingresos) {
@@ -114,6 +124,7 @@ export function ResumenTab({
           monto: usd,
           fecha: t.fecha,
           mes: t.mensualidad,
+          revisar: t.revisar,
         });
       } else if (t.tipo === "Gasto") {
         gasByCat[c] = (gasByCat[c] || 0) + usd;
@@ -124,6 +135,7 @@ export function ResumenTab({
           monto: usd,
           fecha: t.fecha,
           mes: t.mensualidad,
+          revisar: t.revisar,
         });
       }
     }
@@ -359,29 +371,50 @@ export function ResumenTab({
                       <tr key={`${c}-det`}>
                         <td colSpan={3} className="p-0">
                           <div className="bg-muted/20 px-3 py-2 text-xs space-y-1">
-                            {det.map((d, i) => (
-                              <div key={i} className="flex justify-between gap-2 items-center">
-                                <span className="text-muted-foreground truncate min-w-0">
-                                  {d.fecha} <span className="font-medium">{d.mes || ""}</span>{" "}
-                                  {d.desc?.slice(0, 40) || "—"}
-                                  {d.desc && d.desc.length > 40 ? "…" : ""}
-                                </span>
-                                <span className="flex items-center gap-1 shrink-0">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const found = txObj.list.find((t) => t.id === d.id);
-                                      if (found) setEditingTx(found);
-                                    }}
-                                    className="text-muted-foreground hover:text-primary p-0.5"
-                                    title="Editar"
-                                  >
-                                    <Edit2 className="h-3 w-3" />
-                                  </button>
-                                  <span className="tabular-nums font-medium">${$(d.monto)}</span>
-                                </span>
-                              </div>
-                            ))}
+                            {det.map((d) => {
+                              const isFocused = focusedId === d.id;
+                              const tieneRevisar = !!d.revisar;
+                              return (
+                                <div
+                                  key={d.id}
+                                  onClick={() =>
+                                    setFocusedId((prev) => (prev === d.id ? null : d.id))
+                                  }
+                                  title={tieneRevisar ? `Por revisar: ${d.revisar}` : undefined}
+                                  className={
+                                    "flex cursor-pointer items-center justify-between gap-2 rounded px-1 -mx-1 " +
+                                    (isFocused
+                                      ? "bg-green-100 ring-2 ring-inset ring-amber-400 dark:bg-green-950/30"
+                                      : tieneRevisar
+                                        ? "bg-blue-50 dark:bg-blue-950/30"
+                                        : "")
+                                  }
+                                >
+                                  <span className="text-muted-foreground truncate min-w-0">
+                                    {tieneRevisar && (
+                                      <Flag className="mr-1 inline h-3 w-3 fill-current text-blue-600 dark:text-blue-400" />
+                                    )}
+                                    {d.fecha} <span className="font-medium">{d.mes || ""}</span>{" "}
+                                    {d.desc?.slice(0, 40) || "—"}
+                                    {d.desc && d.desc.length > 40 ? "…" : ""}
+                                  </span>
+                                  <span className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const found = txObj.list.find((t) => t.id === d.id);
+                                        if (found) setEditingTx(found);
+                                      }}
+                                      className="text-muted-foreground hover:text-primary p-0.5"
+                                      title="Editar"
+                                    >
+                                      <Edit2 className="h-3 w-3" />
+                                    </button>
+                                    <span className="tabular-nums font-medium">${$(d.monto)}</span>
+                                  </span>
+                                </div>
+                              );
+                            })}
                           </div>
                         </td>
                       </tr>
@@ -457,29 +490,50 @@ export function ResumenTab({
                       <tr key={`${c}-det`}>
                         <td colSpan={3} className="p-0">
                           <div className="bg-muted/20 px-3 py-2 text-xs space-y-1">
-                            {det.map((d, i) => (
-                              <div key={i} className="flex justify-between gap-2 items-center">
-                                <span className="text-muted-foreground truncate min-w-0">
-                                  {d.fecha} <span className="font-medium">{d.mes || ""}</span>{" "}
-                                  {d.desc?.slice(0, 40) || "—"}
-                                  {d.desc && d.desc.length > 40 ? "…" : ""}
-                                </span>
-                                <span className="flex items-center gap-1 shrink-0">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const found = txObj.list.find((t) => t.id === d.id);
-                                      if (found) setEditingTx(found);
-                                    }}
-                                    className="text-muted-foreground hover:text-primary p-0.5"
-                                    title="Editar"
-                                  >
-                                    <Edit2 className="h-3 w-3" />
-                                  </button>
-                                  <span className="tabular-nums font-medium">${$(d.monto)}</span>
-                                </span>
-                              </div>
-                            ))}
+                            {det.map((d) => {
+                              const isFocused = focusedId === d.id;
+                              const tieneRevisar = !!d.revisar;
+                              return (
+                                <div
+                                  key={d.id}
+                                  onClick={() =>
+                                    setFocusedId((prev) => (prev === d.id ? null : d.id))
+                                  }
+                                  title={tieneRevisar ? `Por revisar: ${d.revisar}` : undefined}
+                                  className={
+                                    "flex cursor-pointer items-center justify-between gap-2 rounded px-1 -mx-1 " +
+                                    (isFocused
+                                      ? "bg-green-100 ring-2 ring-inset ring-amber-400 dark:bg-green-950/30"
+                                      : tieneRevisar
+                                        ? "bg-blue-50 dark:bg-blue-950/30"
+                                        : "")
+                                  }
+                                >
+                                  <span className="text-muted-foreground truncate min-w-0">
+                                    {tieneRevisar && (
+                                      <Flag className="mr-1 inline h-3 w-3 fill-current text-blue-600 dark:text-blue-400" />
+                                    )}
+                                    {d.fecha} <span className="font-medium">{d.mes || ""}</span>{" "}
+                                    {d.desc?.slice(0, 40) || "—"}
+                                    {d.desc && d.desc.length > 40 ? "…" : ""}
+                                  </span>
+                                  <span className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const found = txObj.list.find((t) => t.id === d.id);
+                                        if (found) setEditingTx(found);
+                                      }}
+                                      className="text-muted-foreground hover:text-primary p-0.5"
+                                      title="Editar"
+                                    >
+                                      <Edit2 className="h-3 w-3" />
+                                    </button>
+                                    <span className="tabular-nums font-medium">${$(d.monto)}</span>
+                                  </span>
+                                </div>
+                              );
+                            })}
                           </div>
                         </td>
                       </tr>
