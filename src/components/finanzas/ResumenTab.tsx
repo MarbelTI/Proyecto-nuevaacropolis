@@ -391,14 +391,14 @@ export function ResumenTab({
                                   }
                                 >
                                   <span className="text-muted-foreground truncate min-w-0">
-                                    {tieneRevisar && (
-                                      <Flag className="mr-1 inline h-3 w-3 fill-current text-blue-600 dark:text-blue-400" />
-                                    )}
                                     {d.fecha} <span className="font-medium">{d.mes || ""}</span>{" "}
                                     {d.desc?.slice(0, 40) || "—"}
                                     {d.desc && d.desc.length > 40 ? "…" : ""}
                                   </span>
                                   <span className="flex items-center gap-1 shrink-0">
+                                    {tieneRevisar && (
+                                      <Flag className="h-3 w-3 fill-current text-blue-600 dark:text-blue-400" />
+                                    )}
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
@@ -510,14 +510,14 @@ export function ResumenTab({
                                   }
                                 >
                                   <span className="text-muted-foreground truncate min-w-0">
-                                    {tieneRevisar && (
-                                      <Flag className="mr-1 inline h-3 w-3 fill-current text-blue-600 dark:text-blue-400" />
-                                    )}
                                     {d.fecha} <span className="font-medium">{d.mes || ""}</span>{" "}
                                     {d.desc?.slice(0, 40) || "—"}
                                     {d.desc && d.desc.length > 40 ? "…" : ""}
                                   </span>
                                   <span className="flex items-center gap-1 shrink-0">
+                                    {tieneRevisar && (
+                                      <Flag className="h-3 w-3 fill-current text-blue-600 dark:text-blue-400" />
+                                    )}
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
