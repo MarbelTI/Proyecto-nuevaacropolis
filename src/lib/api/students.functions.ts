@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { canManageStudents, canReadStudents, getSessionUser } from "./auth-guard";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./env";
+import { registrarActividad } from "./activity-log";
 
 const StudentSchema = z.object({
   id: z.string(),
@@ -126,6 +127,7 @@ export const syncStudentsToSupabase = createServerFn({ method: "POST" })
     });
 
     if (error) return { ok: false, error: error.message };
+    await registrarActividad(supabase, session, "alumnos:subir", `${mapped.length} filas`);
     return { ok: true, count: mapped.length };
   });
 

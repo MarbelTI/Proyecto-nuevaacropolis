@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { canManageAsistencias, canReadAsistencias, getSessionUser } from "./auth-guard";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./env";
+import { registrarActividad } from "./activity-log";
 
 const AulaSchema = z.object({
   nombre: z.string(),
@@ -177,6 +178,12 @@ export const syncAttendanceToSupabase = createServerFn({ method: "POST" })
     }
 
     const r = (resumen ?? {}) as Record<string, number>;
+    await registrarActividad(
+      supabase,
+      session,
+      "asistencias:subir",
+      `${r.asistencias ?? asistRows.length} filas`,
+    );
     return {
       ok: true,
       aulas: r.aulas ?? aulasRows.length,

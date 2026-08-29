@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getSessionUser } from "./auth-guard";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./env";
+import { registrarActividad } from "./activity-log";
 
 export type UserRole =
   | "super_admin"
@@ -238,5 +239,112 @@ export const resolverCuentaPendiente = createServerFn({ method: "POST" })
       .update({ aprobado: data.aprobar, role: data.role })
       .eq("id", data.userId);
     if (error) return { ok: false, error: error.message };
+    await registrarActividad(
+      supabase,
+      session,
+      data.aprobar ? "cuenta:aprobar" : "cuenta:rechazar",
+      `${data.userId}${data.aprobar ? ` como ${data.role}` : ""}`,
+    );
     return { ok: true };
+  });
+
+// ---------------- Todas las cuentas (solo super_admin) ----------------
+
+const PerfilCompleto = z.object({
+  id: z.string(),
+  email: z.string(),
+  full_name: z.string(),
+  role: z.string(),
+  aprobado: z.boolean(),
+  created_at: z.string().optional(),
+  ultimo_acceso: z.string().nullable().optional(),
+});
+export type PerfilCompleto = z.infer<typeof PerfilCompleto>;
+
+/** Lista TODAS las cuentas (no solo las pendientes), para el panel de usuarios. */
+export const listarTodasLasCuentas = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ accessToken: z.string().optional() }))
+  .handler(async ({ data }) => {
+    const session = await getSessionUser(data.accessToken);
+    if (!session || session.role !== "super_admin") {
+      return { ok: false, error: "No autorizado", data: [] as PerfilCompleto[] };
+    }
+    const { createClient } = await import("@supabase/supabase-js");
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      return { ok: false, error: "Supabase not configured", data: [] as PerfilCompleto[] };
+    }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
+    });
+    const { data: rows, error } = await supabase
+      .from("profiles")
+      .select("id, email, full_name, role, aprobado, created_at, ultimo_acceso")
+      .order("email", { ascending: true });
+    if (error) return { ok: false, error: error.message, data: [] as PerfilCompleto[] };
+    return { ok: true, data: (rows ?? []) as PerfilCompleto[] };
+  });
+
+// ---------------- Inicio de sesión (para "última conexión" y el registro) ----------------
+
+/**
+ * Se llama UNA vez por inicio de sesión real (evento `SIGNED_IN` de
+ * Supabase), nunca en cada carga de página ni en cada refresco de token —
+ * eso pasa por `authCallback`, que no toca esta tabla. Si se enganchara ahí,
+ * "última conexión" cambiaría cada vez que alguien recarga la pestaña, y el
+ * registro de actividad se llenaría de "inicios de sesión" que no lo son.
+ */
+export const registrarInicioSesion = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ accessToken: z.string().optional() }))
+  .handler(async ({ data }) => {
+    const session = await getSessionUser(data.accessToken);
+    if (!session) return { ok: false, error: "No autorizado" };
+    const { createClient } = await import("@supabase/supabase-js");
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      return { ok: false, error: "Supabase not configured" };
+    }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
+    });
+    await supabase
+      .from("profiles")
+      .update({ ultimo_acceso: new Date().toISOString() })
+      .eq("id", session.userId);
+    await registrarActividad(supabase, session, "sesion:iniciar", "");
+    return { ok: true };
+  });
+
+// ---------------- Registro de actividad (solo super_admin) ----------------
+
+const ActivityLogRow = z.object({
+  id: z.string(),
+  actor_email: z.string(),
+  actor_role: z.string(),
+  accion: z.string(),
+  resumen: z.string(),
+  created_at: z.string(),
+});
+export type ActivityLogRow = z.infer<typeof ActivityLogRow>;
+
+/** Lista el registro de actividad, más reciente primero. Solo super_admin. */
+export const listarActividad = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ accessToken: z.string().optional() }))
+  .handler(async ({ data }) => {
+    const session = await getSessionUser(data.accessToken);
+    if (!session || session.role !== "super_admin") {
+      return { ok: false, error: "No autorizado", data: [] as ActivityLogRow[] };
+    }
+    const { createClient } = await import("@supabase/supabase-js");
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      return { ok: false, error: "Supabase not configured", data: [] as ActivityLogRow[] };
+    }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
+    });
+    const { data: rows, error } = await supabase
+      .from("activity_log")
+      .select("id, actor_email, actor_role, accion, resumen, created_at")
+      .order("created_at", { ascending: false })
+      .range(0, 999);
+    if (error) return { ok: false, error: error.message, data: [] as ActivityLogRow[] };
+    return { ok: true, data: (rows ?? []) as ActivityLogRow[] };
   });

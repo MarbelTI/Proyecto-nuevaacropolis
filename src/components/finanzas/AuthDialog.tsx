@@ -9,6 +9,7 @@ import {
   type UserRole,
   getPermsForRole,
   authCallback,
+  registrarInicioSesion,
 } from "@/lib/api/auth.functions";
 import { supabase, configError } from "@/lib/supabase";
 
@@ -27,6 +28,7 @@ const emptySession: Permissions = {
 
 export function useAuth() {
   const authCallbackFn = useServerFn(authCallback);
+  const registrarInicioSesionFn = useServerFn(registrarInicioSesion);
   const [session, setSession] = useState<Permissions>(emptySession);
   const [loading, setLoading] = useState(hasSupabaseConfig);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
@@ -83,6 +85,16 @@ export function useAuth() {
         return;
       }
       await validar(s.access_token);
+      // Solo aquí: SIGNED_IN es el inicio de sesión real (login o registro).
+      // INITIAL_SESSION (recargar la página) y TOKEN_REFRESHED son eventos
+      // distintos en Supabase v2 y no pasan por acá, así que "última
+      // conexión" y el registro de actividad no se ensucian con cada
+      // recarga de pestaña.
+      if (event === "SIGNED_IN") {
+        registrarInicioSesionFn({ data: { accessToken: s.access_token } }).catch(() => {
+          /* silencioso: no bloquea el inicio de sesión si falla */
+        });
+      }
     });
 
     supabase.auth.getSession().then(({ data }) => {
@@ -94,7 +106,7 @@ export function useAuth() {
       mounted = false;
       sub.subscription.unsubscribe();
     };
-  }, [authCallbackFn]);
+  }, [authCallbackFn, registrarInicioSesionFn]);
 
   const login = async (email: string, password: string) => {
     if (!hasSupabaseConfig) {

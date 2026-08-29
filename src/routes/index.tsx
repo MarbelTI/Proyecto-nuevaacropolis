@@ -27,7 +27,7 @@ import { SupabaseSync } from "@/components/finanzas/SupabaseSync";
 import { PrestamosTab } from "@/components/finanzas/PrestamosTab";
 import { TransactionEditDialog } from "@/components/finanzas/TransactionEditDialog";
 import { AuthDialog, useAuth } from "@/components/finanzas/AuthDialog";
-import { CuentasPendientes } from "@/components/finanzas/CuentasPendientes";
+import { PanelUsuarios } from "@/components/finanzas/PanelUsuarios";
 import { MINUTOS_INACTIVIDAD } from "@/lib/api/auth.functions";
 import { useIdleLogout } from "@/lib/use-idle-logout";
 import { Button } from "@/components/ui/button";
@@ -281,7 +281,7 @@ function Index() {
                   <MessageCircle className="mr-1 inline h-3.5 w-3.5" />
                   Log
                 </button>
-                {auth.role === "super_admin" && <CuentasPendientes />}
+                {auth.role === "super_admin" && <PanelUsuarios transactions={transactions} />}
                 <button
                   onClick={() => setAuthDialogOpen(true)}
                   className="rounded-lg bg-primary-foreground/10 px-2.5 py-1.5 text-left text-xs hover:bg-primary-foreground/20"

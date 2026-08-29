@@ -24,6 +24,9 @@ import {
 import { TransactionEditDialog } from "@/components/finanzas/TransactionEditDialog";
 import { CalculadoraDialog } from "@/components/finanzas/CalculadoraDialog";
 import { useEstaEnLinea } from "@/lib/conexion";
+import { useServerFn } from "@tanstack/react-start";
+import { moverTransaccionAPapelera } from "@/lib/api/transactions.functions";
+import { getAccessToken } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -713,6 +716,30 @@ export function TransactionsTab({
   const [calcOpen, setCalcOpen] = useState(false);
   const [plantillas, setPlantillas] = usePlantillas();
   const enLinea = useEstaEnLinea();
+  const moverAPapeleraFn = useServerFn(moverTransaccionAPapelera);
+
+  /**
+   * Copia la fila eliminada a la papelera compartida en la nube, para que
+   * super_admin pueda verla y restaurarla desde cualquier equipo. El borrado
+   * en pantalla ya pasó antes de llamar esto y nunca depende de su resultado
+   * — sin internet, o si falla, solo se avisa con un toast; no hay
+   * reintento automático (ver design.md de add-activity-log-and-tx-trash).
+   */
+  const enviarAPapelera = async (t: Transaction, accion: "fila" | "sobrantes" | "rango") => {
+    if (!enLinea) {
+      toast.warning("Sin internet: esa eliminación no quedó respaldada en la papelera de la nube.");
+      return;
+    }
+    try {
+      const accessToken = await getAccessToken();
+      const res = await moverAPapeleraFn({ data: { transaction: t, accion, accessToken } });
+      if (!res.ok) {
+        toast.warning(`No se pudo respaldar en la papelera: ${res.error ?? "error desconocido"}`);
+      }
+    } catch {
+      toast.warning("No se pudo respaldar en la papelera de la nube.");
+    }
+  };
 
   /**
    * Movimientos repetidos: los que coinciden en TODOS sus campos con otro.
@@ -938,7 +965,9 @@ export function TransactionsTab({
       : "TODAS las transacciones, porque no hay ningún filtro puesto";
     if (!confirm(`¿Eliminar ${filtered.length} transacciones ${label}?`)) return;
     const idsRemove = new Set(filtered.map((r) => r.id));
+    const borradas = [...filtered];
     tx.removeMany(idsRemove);
+    for (const t of borradas) enviarAPapelera(t, "rango");
     toast.success(`${idsRemove.size} eliminadas`);
   };
 
@@ -1080,8 +1109,10 @@ export function TransactionsTab({
                     if (vistas.has(firma)) aBorrar.add(t.id);
                     else vistas.add(firma);
                   }
+                  const borradas = tx.list.filter((t) => aBorrar.has(t.id));
                   tx.removeMany(aBorrar);
                   toast.success(`${aBorrar.size} fila(s) repetidas eliminadas`);
+                  for (const t of borradas) enviarAPapelera(t, "sobrantes");
                 }}
               >
                 Eliminar sobrantes
@@ -1394,7 +1425,10 @@ export function TransactionsTab({
                         size="icon"
                         className="h-9 w-9 sm:h-6 sm:w-6"
                         disabled={readOnly}
-                        onClick={() => tx.remove(r.id)}
+                        onClick={() => {
+                          tx.remove(r.id);
+                          enviarAPapelera(r, "fila");
+                        }}
                         title={readOnly ? TITULO_SOLO_LECTURA : "Eliminar"}
                       >
                         <Trash2 className="h-4 w-4 text-destructive sm:h-3.5 sm:w-3.5" />
