@@ -550,6 +550,7 @@ function Index() {
                   students={students}
                   aulas={aulas}
                   setStudents={setStudents}
+                  readOnly={userInfo.readOnly}
                 />
               </TabsContent>
 

@@ -674,6 +674,7 @@ export function TransactionsTab({
   setIngresos,
   setGastos,
   setBancos,
+  readOnly = false,
 }: {
   tx: ReturnType<typeof useTransactions>;
   ingresos: string[];
@@ -688,7 +689,11 @@ export function TransactionsTab({
   students: Student[];
   aulas: string[];
   setStudents: (n: Student[]) => void;
+  /** Rol de solo lectura (ej. director): ve todo, no puede crear, modificar
+   *  ni eliminar nada. */
+  readOnly?: boolean;
 }) {
+  const TITULO_SOLO_LECTURA = "Tu rol solo permite ver, no modificar";
   const [from, setFrom] = useState<string>("");
   const [to, setTo] = useState<string>("");
   const [editing, setEditing] = useState<Transaction | null>(null);
@@ -945,8 +950,8 @@ export function TransactionsTab({
           <Button
             variant="outline"
             size="sm"
-            disabled={!enLinea}
-            title={enLinea ? undefined : "Sin internet no se pueden crear registros"}
+            disabled={!enLinea || readOnly}
+            title={readOnly ? TITULO_SOLO_LECTURA : enLinea ? undefined : "Sin internet no se pueden crear registros"}
             onClick={() => {
               const d = new Date();
               const dd = String(d.getDate()).padStart(2, "0");
@@ -1058,7 +1063,9 @@ export function TransactionsTab({
               <span className="inline-block h-2.5 w-2.5 rounded-sm bg-pink-400" />
               {idsDuplicados.size} fila(s) repetidas · sobran {sobrantesDuplicados}
               <button
-                className="underline hover:no-underline"
+                className="underline hover:no-underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+                disabled={readOnly}
+                title={readOnly ? TITULO_SOLO_LECTURA : undefined}
                 onClick={() => {
                   if (
                     !confirm(
@@ -1085,6 +1092,8 @@ export function TransactionsTab({
             <Button
               variant="outline"
               size="sm"
+              disabled={readOnly}
+              title={readOnly ? TITULO_SOLO_LECTURA : undefined}
               onClick={() => {
                 if (
                   !confirm(
@@ -1163,10 +1172,16 @@ export function TransactionsTab({
               <DropdownMenuItem onClick={exportExcel}>
                 <Download className="mr-2 h-4 w-4" /> Exportar a Excel
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => document.getElementById("importExcel")?.click()}>
+              <DropdownMenuItem
+                disabled={readOnly}
+                title={readOnly ? TITULO_SOLO_LECTURA : undefined}
+                onClick={() => document.getElementById("importExcel")?.click()}
+              >
                 <Upload className="mr-2 h-4 w-4" /> Importar Excel
               </DropdownMenuItem>
               <DropdownMenuItem
+                disabled={readOnly}
+                title={readOnly ? TITULO_SOLO_LECTURA : undefined}
                 onClick={() => {
                   setSelectMode(!selectMode);
                   if (selectMode) setSelectedIds(new Set());
@@ -1180,6 +1195,8 @@ export function TransactionsTab({
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
+                disabled={readOnly}
+                title={readOnly ? TITULO_SOLO_LECTURA : undefined}
                 onClick={eliminarRango}
                 className="text-destructive focus:text-destructive"
               >
@@ -1356,8 +1373,9 @@ export function TransactionsTab({
                         variant="ghost"
                         size="icon"
                         className="h-9 w-9 sm:h-6 sm:w-6"
+                        disabled={readOnly}
                         onClick={() => tx.duplicateAfter(r.id)}
-                        title="Duplicar fila debajo"
+                        title={readOnly ? TITULO_SOLO_LECTURA : "Duplicar fila debajo"}
                       >
                         <Plus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                       </Button>
@@ -1365,8 +1383,9 @@ export function TransactionsTab({
                         variant="ghost"
                         size="icon"
                         className="h-9 w-9 sm:h-6 sm:w-6"
+                        disabled={readOnly}
                         onClick={() => setEditing(r)}
-                        title="Modificar"
+                        title={readOnly ? TITULO_SOLO_LECTURA : "Modificar"}
                       >
                         <Pencil className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                       </Button>
@@ -1374,8 +1393,9 @@ export function TransactionsTab({
                         variant="ghost"
                         size="icon"
                         className="h-9 w-9 sm:h-6 sm:w-6"
+                        disabled={readOnly}
                         onClick={() => tx.remove(r.id)}
-                        title="Eliminar"
+                        title={readOnly ? TITULO_SOLO_LECTURA : "Eliminar"}
                       >
                         <Trash2 className="h-4 w-4 text-destructive sm:h-3.5 sm:w-3.5" />
                       </Button>
@@ -1383,6 +1403,7 @@ export function TransactionsTab({
                         variant="ghost"
                         size="icon"
                         className={`h-9 w-9 sm:h-6 sm:w-6 ${tieneRevisar ? "text-blue-600 dark:text-blue-400" : ""}`}
+                        disabled={readOnly}
                         onClick={() => {
                           if (tieneRevisar) {
                             tx.replace(r.id, { ...r, revisar: "" });
@@ -1395,7 +1416,13 @@ export function TransactionsTab({
                             tx.replace(r.id, { ...r, revisar: nota.trim() || "Revisar" });
                           }
                         }}
-                        title={tieneRevisar ? `Quitar marca: ${r.revisar}` : "Marcar para revisar"}
+                        title={
+                          readOnly
+                            ? TITULO_SOLO_LECTURA
+                            : tieneRevisar
+                              ? `Quitar marca: ${r.revisar}`
+                              : "Marcar para revisar"
+                        }
                       >
                         <Flag className={`h-4 w-4 sm:h-3.5 sm:w-3.5 ${tieneRevisar ? "fill-current" : ""}`} />
                       </Button>
@@ -1553,7 +1580,7 @@ export function TransactionsTab({
         </table>
       </div>
 
-      {selectMode && selectedIds.size > 0 && (
+      {!readOnly && selectMode && selectedIds.size > 0 && (
         <div className="mt-3 flex items-center gap-3 rounded-lg border bg-accent/20 px-4 py-2">
           <span className="text-sm font-medium">{selectedIds.size} seleccionadas</span>
           <div className="flex gap-2 ml-auto">
