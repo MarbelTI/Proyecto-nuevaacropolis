@@ -457,6 +457,43 @@ function copyAndLog(msg: string, alumno: string) {
  */
 const CATEGORIAS_CUOTA = ["MIEMBROS", "PROBAS", "CLASE"];
 
+/**
+ * Palabras que aparecen junto al nombre en la descripción de un pago de
+ * cuota ("Margeli Santos Cuota Social de Julio") pero que no son parte del
+ * nombre de nadie. Se quitan antes de proponer un nombre nuevo o de comparar
+ * contra los ya conocidos — dejarlas metía "Cuota Social de Julio" dentro
+ * del nombre sugerido, y de paso impedía reconocer a alguien que YA existe
+ * en la lista, porque la descripción completa nunca calzaba con su ficha.
+ */
+const PALABRAS_NO_NOMBRE = new Set([
+  "cuota",
+  "cuotas",
+  "social",
+  "mensualidad",
+  "mensualidades",
+  "pago",
+  "pagos",
+  "abono",
+  "de",
+  "del",
+  "la",
+  "el",
+  "mes",
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "setiembre",
+  "octubre",
+  "noviembre",
+  "diciembre",
+]);
+
 function tokensDeNombre(s: string): string[] {
   return normalizeName(s)
     .replace(/[^a-z0-9\s]/g, " ")
@@ -918,19 +955,26 @@ export default function SolvenciasTab({
     for (const t of tx) {
       if (t.tipo !== "Ingreso") continue;
       if (!CATEGORIAS_CUOTA.includes(t.categoria)) continue;
-      // La descripción del libro diario suele ser el nombre del alumno.
-      // Se limpia lo que no es nombre (montos, "C/S abr-2026", etc.).
+      // La descripción del libro diario suele ser el nombre del alumno más
+      // el concepto ("Margeli Santos Cuota Social de Julio"). Se le quita lo
+      // que no es nombre: montos, "C/S abr-2026", y palabras de concepto
+      // como "Cuota", "Social" o el mes.
       const limpio = (t.descripcion || "")
         .replace(/c\/s\s+\S+/gi, "")
         .replace(/[0-9]+([.,][0-9]+)?/g, "")
-        .replace(/\s+/g, " ")
+        .split(/\s+/)
+        .filter((palabra) => palabra && !PALABRAS_NO_NOMBRE.has(normalizeName(palabra)))
+        .join(" ")
         .trim();
       if (limpio.length < 5) continue;
       const clave = normalizeName(limpio);
-      // mismoNombre en vez de comparar nombre y apellido: esa regla daba por
-      // conocida a "Milagro Elena Contreras" porque ya existía "Milagro
-      // Elizabeth Contreras Márquez", y se perdía a una de las dos.
-      if (conocidos.some((n) => mismoNombre(clave, n))) continue;
+      // nombreEnDescripcion (primera palabra del nombre + cualquier otra) en
+      // vez de exigir el nombre completo: con la descripción trayendo cada
+      // vez más texto de concepto, exigirlo entero hacía que alguien YA
+      // conocido nunca calzara y apareciera de nuevo como "detectado" —de
+      // ahí que saliera más de 200 "personas nuevas" que ya estaban en la
+      // lista.
+      if (conocidos.some((n) => nombreEnDescripcion(limpio, n))) continue;
       const prev = conteo.get(clave);
       if (prev) prev.pagos++;
       else conteo.set(clave, { nombre: limpio, pagos: 1 });
