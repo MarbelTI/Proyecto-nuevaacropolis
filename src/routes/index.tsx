@@ -530,7 +530,12 @@ function Index() {
                 />
               </TabsContent>
 
-              <TabsContent value="tx">
+              {/* forceMount: Radix desmonta el contenido de la pestaña inactiva
+                  por defecto, y con eso Transacciones perdía el filtro de
+                  fecha y la fila enfocada en verde cada vez que se iba a otra
+                  pestaña (ej. Solvencias) y se volvía. Con forceMount queda
+                  montada siempre y solo se oculta con CSS. */}
+              <TabsContent value="tx" forceMount className="data-[state=inactive]:hidden">
                 <TransactionsTab
                   tx={transactions}
                   ingresos={ingresos}
