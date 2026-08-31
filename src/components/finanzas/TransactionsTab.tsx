@@ -71,6 +71,8 @@ import {
   RotateCcw,
   Calculator,
   Flag,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -971,6 +973,25 @@ export function TransactionsTab({
     toast.success(`${idsRemove.size} eliminadas`);
   };
 
+  /**
+   * Cambia el orden entre dos transacciones del MISMO día, para que la tabla
+   * coincida con el orden real del libro manuscrito cuando varias comparten
+   * fecha.
+   *
+   * `persist()` (en lists-store.ts) reordena toda la lista por fecha con un
+   * sort estable en cada guardado, así que entre dos movimientos de un
+   * mismo día alcanza con invertir su posición en la lista completa: ese
+   * orden relativo se respeta y no hace falta nada más para "arrastrarlas".
+   */
+  const moverEnElDia = (idA: string, idB: string) => {
+    const arr = [...tx.list];
+    const iA = arr.findIndex((t) => t.id === idA);
+    const iB = arr.findIndex((t) => t.id === idB);
+    if (iA === -1 || iB === -1) return;
+    [arr[iA], arr[iB]] = [arr[iB], arr[iA]];
+    tx.replaceAll(arr);
+  };
+
   return (
     <Card className="p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -1251,6 +1272,7 @@ export function TransactionsTab({
         <table className="w-full text-xs [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
           <thead className="sticky top-0 z-20 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
             <tr className="border-b text-left text-muted-foreground">
+              <th className="w-6 py-0.5 px-1 font-medium" title="Orden dentro del mismo día" />
               <th className="py-0.5 px-2 font-medium">
                 <select
                   value={filterMes}
@@ -1337,11 +1359,17 @@ export function TransactionsTab({
             </tr>
           </thead>
           <tbody>
-            {filtered.map((r) => {
+            {filtered.map((r, idx) => {
               const isSelected = selectMode && selectedIds.has(r.id);
               const isFocused = !selectMode && focusedId === r.id;
               const esDup = idsDuplicados.has(r.id);
               const tieneRevisar = !!r.revisar;
+              // Solo se puede subir/bajar dentro del mismo día: el orden de
+              // fechas distintas no es negociable, lo decide la fecha.
+              const vecinoArriba = filtered[idx - 1];
+              const vecinoAbajo = filtered[idx + 1];
+              const puedeSubir = !!vecinoArriba && vecinoArriba.fecha === r.fecha;
+              const puedeBajar = !!vecinoAbajo && vecinoAbajo.fecha === r.fecha;
               // Prioridad cuando coinciden varios estados: el foco/selección
               // manda porque la persona lo activó a propósito en este
               // momento; "por revisar" pesa más que "repetida" porque
@@ -1371,6 +1399,28 @@ export function TransactionsTab({
                       : setFocusedId((prev) => (prev === r.id ? null : r.id))
                   }
                 >
+                  <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                    {(puedeSubir || puedeBajar) && (
+                      <div className="flex flex-col">
+                        <button
+                          disabled={!puedeSubir || readOnly}
+                          onClick={() => moverEnElDia(r.id, vecinoArriba!.id)}
+                          className="text-muted-foreground hover:text-primary disabled:opacity-20 disabled:hover:text-muted-foreground"
+                          title="Subir dentro del mismo día"
+                        >
+                          <ChevronUp className="h-3 w-3" />
+                        </button>
+                        <button
+                          disabled={!puedeBajar || readOnly}
+                          onClick={() => moverEnElDia(r.id, vecinoAbajo!.id)}
+                          className="text-muted-foreground hover:text-primary disabled:opacity-20 disabled:hover:text-muted-foreground"
+                          title="Bajar dentro del mismo día"
+                        >
+                          <ChevronDown className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )}
+                  </td>
                   <td className="px-2 py-0.5">{r.fecha}</td>
                   <td className="px-2 py-0.5">{r.tipo}</td>
                   <td className="max-w-[130px] truncate px-2 py-0.5" title={r.categoria}>
