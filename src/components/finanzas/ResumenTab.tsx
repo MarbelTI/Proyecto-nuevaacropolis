@@ -144,6 +144,28 @@ export function ResumenTab({
     return { ingByCat, gasByCat, ingDet, gasDet, totalIng, totalGas };
   }, [tx, ym, ingresos, gastos]);
 
+  /**
+   * Total de lo que realmente se está mostrando, no de todas las categorías
+   * que existan. Antes "Neto" y los totales de Ingresos/Egresos sumaban
+   * TODO sin importar qué píldoras estuvieran activas — si se quitaba o se
+   * dejaba una sola categoría, el detalle cambiaba pero el total seguía
+   * siendo el de siempre, así que no cuadraba con lo que se veía en pantalla.
+   */
+  const totalIngVisible = useMemo(
+    () =>
+      ingresos
+        .filter((c) => selectedIngCats.has(c))
+        .reduce((s, c) => s + (data.ingByCat[c] || 0), 0),
+    [ingresos, selectedIngCats, data.ingByCat],
+  );
+  const totalGasVisible = useMemo(
+    () =>
+      gastos
+        .filter((c) => selectedGasCats.has(c))
+        .reduce((s, c) => s + (data.gasByCat[c] || 0), 0),
+    [gastos, selectedGasCats, data.gasByCat],
+  );
+
   const [y, m] = ym.split("-").map(Number);
 
   const arbitrajeData = useMemo(() => {
@@ -300,10 +322,10 @@ export function ResumenTab({
               <div
                 className={
                   "text-xl font-bold " +
-                  (data.totalIng - data.totalGas < 0 ? "text-destructive" : "")
+                  (totalIngVisible - totalGasVisible < 0 ? "text-destructive" : "")
                 }
               >
-                ${$(data.totalIng - data.totalGas)}
+                ${$(totalIngVisible - totalGasVisible)}
               </div>
             </div>
           </div>
@@ -313,7 +335,7 @@ export function ResumenTab({
       <Card className="p-4">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-lg font-bold text-primary">Ingresos</h3>
-          <span className="text-base font-bold text-primary">${$(data.totalIng)}</span>
+          <span className="text-base font-bold text-primary">${$(totalIngVisible)}</span>
         </div>
         <div className="mb-2 flex flex-wrap items-center gap-1">
           <button
@@ -364,7 +386,7 @@ export function ResumenTab({
                       </td>
                       <td className="p-1 text-right tabular-nums">${$(v)}</td>
                       <td className="p-1 text-right text-xs text-muted-foreground">
-                        {data.totalIng > 0 ? ((v / data.totalIng) * 100).toFixed(0) : 0}%
+                        {totalIngVisible > 0 ? ((v / totalIngVisible) * 100).toFixed(0) : 0}%
                       </td>
                     </tr>
                     {expandedCat === c && det && (
@@ -424,7 +446,7 @@ export function ResumenTab({
               })}
             <tr className="border-t font-semibold">
               <td className="p-2">Total Ingresos</td>
-              <td className="p-2 text-right">${$(data.totalIng)}</td>
+              <td className="p-2 text-right">${$(totalIngVisible)}</td>
               <td />
             </tr>
           </tbody>
@@ -434,7 +456,7 @@ export function ResumenTab({
       <Card className="p-4">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-lg font-bold text-destructive">Egresos</h3>
-          <span className="text-base font-bold text-destructive">${$(data.totalGas)}</span>
+          <span className="text-base font-bold text-destructive">${$(totalGasVisible)}</span>
         </div>
         <div className="mb-2 flex flex-wrap items-center gap-1">
           <button
@@ -483,7 +505,7 @@ export function ResumenTab({
                       </td>
                       <td className="p-1 text-right tabular-nums">${$(v)}</td>
                       <td className="p-1 text-right text-xs text-muted-foreground">
-                        {data.totalGas > 0 ? ((v / data.totalGas) * 100).toFixed(0) : 0}%
+                        {totalGasVisible > 0 ? ((v / totalGasVisible) * 100).toFixed(0) : 0}%
                       </td>
                     </tr>
                     {expandedCat === `g-${c}` && det && (
@@ -543,7 +565,7 @@ export function ResumenTab({
               })}
             <tr className="border-t font-semibold">
               <td className="p-2">Total Egresos</td>
-              <td className="p-2 text-right">${$(data.totalGas)}</td>
+              <td className="p-2 text-right">${$(totalGasVisible)}</td>
               <td />
             </tr>
           </tbody>

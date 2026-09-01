@@ -992,6 +992,53 @@ export function TransactionsTab({
     tx.replaceAll(arr);
   };
 
+  /**
+   * Fila(s) de total al pie de la tabla, para un solo tipo (Ingresos o
+   * Gastos) a la vez. Antes se sumaban juntos ingresos y gastos en una sola
+   * fila de "Total en USD", así que ese número no decía nada — un ingreso y
+   * un gasto del mismo monto se cancelaban entre sí en vez de mostrarse por
+   * separado.
+   */
+  const renderTotalesPorTipo = (rows: Transaction[], etiqueta: string) => {
+    if (!rows.length) return null;
+    const porMoneda: Record<string, { count: number; total: number; usd: number }> = {};
+    let totalUsd = 0;
+    for (const r of rows) {
+      const mon = r.moneda || "USD";
+      const cur = porMoneda[mon] ?? { count: 0, total: 0, usd: 0 };
+      cur.count++;
+      cur.total += Number(r.monto) || 0;
+      cur.usd += Number(r.montoUsd) || 0;
+      porMoneda[mon] = cur;
+      totalUsd += Number(r.montoUsd) || 0;
+    }
+    const monedas = Object.entries(porMoneda);
+    return (
+      <>
+        {monedas.map(([mon, cur]) => (
+          <tr key={`${etiqueta}-${mon}`} className="border-t-2 font-semibold bg-accent/20">
+            <td className="py-0.5 px-2 text-xs" colSpan={7}>
+              {etiqueta} · Total {mon} ({cur.count} filas)
+            </td>
+            <td className="py-0.5 px-2 text-right tabular-nums">${$(cur.total)}</td>
+            <td className="py-0.5 px-2" />
+            <td className="py-0.5 px-2 text-right tabular-nums">${$(cur.usd)}</td>
+            <td colSpan={2} />
+          </tr>
+        ))}
+        <tr className="font-semibold bg-accent/10">
+          <td className="py-0.5 px-2 text-xs" colSpan={7}>
+            {etiqueta} · Total en USD ({rows.length} filas)
+          </td>
+          <td className="py-0.5 px-2" />
+          <td className="py-0.5 px-2" />
+          <td className="py-0.5 px-2 text-right tabular-nums">${$(totalUsd)}</td>
+          <td colSpan={2} />
+        </tr>
+      </>
+    );
+  };
+
   return (
     <Card className="p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -1587,86 +1634,16 @@ export function TransactionsTab({
             )}
             {anyFilterActive && filtered.length > 1 && (
               <>
-                {(() => {
-                  const porMoneda: Record<string, { count: number; total: number; usd: number }> =
-                    {};
-                  for (const r of filtered) {
-                    const mon = r.moneda || "USD";
-                    const cur = porMoneda[mon] ?? { count: 0, total: 0, usd: 0 };
-                    cur.count++;
-                    cur.total += Number(r.monto) || 0;
-                    cur.usd += Number(r.montoUsd) || 0;
-                    porMoneda[mon] = cur;
-                  }
-                  const monedas = Object.entries(porMoneda);
-                  const totalUsd = filtered.reduce((s, r) => s + (Number(r.montoUsd) || 0), 0);
-                  return (
-                    <>
-                      {monedas.map(([mon, cur]) => (
-                        <tr key={mon} className="border-t-2 font-semibold bg-accent/20">
-                          <td className="py-0.5 px-2 text-xs" colSpan={7}>
-                            Total {mon} ({cur.count} filas)
-                          </td>
-                          <td className="py-0.5 px-2 text-right tabular-nums">${$(cur.total)}</td>
-                          <td className="py-0.5 px-2" />
-                          <td className="py-0.5 px-2 text-right tabular-nums">${$(cur.usd)}</td>
-                          <td colSpan={2} />
-                        </tr>
-                      ))}
-                      <tr className="font-semibold bg-accent/10">
-                        <td className="py-0.5 px-2 text-xs" colSpan={7}>
-                          Total en USD ({filtered.length} filas)
-                        </td>
-                        <td className="py-0.5 px-2" />
-                        <td className="py-0.5 px-2" />
-                        <td className="py-0.5 px-2 text-right tabular-nums">${$(totalUsd)}</td>
-                        <td colSpan={2} />
-                      </tr>
-                    </>
-                  );
-                })()}
+                {renderTotalesPorTipo(filtered.filter((r) => r.tipo === "Ingreso"), "Ingresos")}
+                {renderTotalesPorTipo(filtered.filter((r) => r.tipo === "Gasto"), "Gastos")}
               </>
             )}
-            {!anyFilterActive &&
-              filtered.length > 0 &&
-              (() => {
-                const porMoneda: Record<string, { count: number; total: number; usd: number }> = {};
-                let totalUsd = 0;
-                for (const r of filtered) {
-                  const mon = r.moneda || "USD";
-                  const cur = porMoneda[mon] ?? { count: 0, total: 0, usd: 0 };
-                  cur.count++;
-                  cur.total += Number(r.monto) || 0;
-                  cur.usd += Number(r.montoUsd) || 0;
-                  porMoneda[mon] = cur;
-                  totalUsd += Number(r.montoUsd) || 0;
-                }
-                const monedas = Object.entries(porMoneda);
-                return (
-                  <>
-                    {monedas.map(([mon, cur]) => (
-                      <tr key={mon} className="border-t-2 font-semibold bg-accent/20">
-                        <td className="py-0.5 px-2 text-xs" colSpan={7}>
-                          Total {mon} ({cur.count} filas)
-                        </td>
-                        <td className="py-0.5 px-2 text-right tabular-nums">${$(cur.total)}</td>
-                        <td className="py-0.5 px-2" />
-                        <td className="py-0.5 px-2 text-right tabular-nums">${$(cur.usd)}</td>
-                        <td colSpan={2} />
-                      </tr>
-                    ))}
-                    <tr className="font-semibold bg-accent/10">
-                      <td className="py-0.5 px-2 text-xs" colSpan={7}>
-                        Total en USD ({filtered.length} filas)
-                      </td>
-                      <td className="py-0.5 px-2" />
-                      <td className="py-0.5 px-2" />
-                      <td className="py-0.5 px-2 text-right tabular-nums">${$(totalUsd)}</td>
-                      <td colSpan={2} />
-                    </tr>
-                  </>
-                );
-              })()}
+            {!anyFilterActive && filtered.length > 0 && (
+              <>
+                {renderTotalesPorTipo(filtered.filter((r) => r.tipo === "Ingreso"), "Ingresos")}
+                {renderTotalesPorTipo(filtered.filter((r) => r.tipo === "Gasto"), "Gastos")}
+              </>
+            )}
           </tbody>
         </table>
       </div>
