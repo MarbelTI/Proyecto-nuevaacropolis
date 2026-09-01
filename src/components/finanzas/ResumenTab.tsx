@@ -45,6 +45,17 @@ function fmtBs(v: number): string {
   return v < 0 ? `(${abs})` : abs;
 }
 
+/** "Bs ", "COP " o "$" según la moneda — con el espacio ya incluido. */
+function simboloMoneda(moneda: string): string {
+  if (moneda === "Bolívares") return "Bs ";
+  if (moneda === "Pesos") return "COP ";
+  return "$";
+}
+/** -$1,234.56 / Bs -1,234.56, sin paréntesis — para la tabla de bancos. */
+function fmtMonto(v: number, simbolo: string): string {
+  return `${v < 0 ? "-" : ""}${simbolo}${$(Math.abs(v))}`;
+}
+
 function fechaToIso(fecha: string): string | null {
   const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
   if (!m) return null;
@@ -216,17 +227,39 @@ export function ResumenTab({
     return { bsRecibidos, bsGastados, saldoBs, usdIng, usdGas, usdTotal, tasaInicio, tasaCierre };
   }, [tx, ym, y, m, bcvRates]);
 
+  // Una cuenta va casi siempre en una sola moneda, pero se agrupa por
+  // banco+moneda (no solo por banco) por si acaso: mezclar Bs y USD del mismo
+  // "Binance" en un solo saldo nativo no significaría nada.
+  type BancoRow = { banco: string; moneda: string; nativo: number; usd: number };
   const bancosData = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, BancoRow>();
     for (const t of tx) {
       const iso = fechaToIso(t.fecha);
       if (!iso || iso.slice(0, 7) !== ym) continue;
       const banco = t.banco || "(sin banco)";
-      const usd = Number(t.montoUsd) || 0;
-      map.set(banco, (map.get(banco) || 0) + (t.tipo === "Ingreso" ? usd : -usd));
+      const moneda = t.moneda || "USD";
+      const key = `${banco}${moneda}`;
+      const signo = t.tipo === "Ingreso" ? 1 : -1;
+      const row = map.get(key) ?? { banco, moneda, nativo: 0, usd: 0 };
+      row.nativo += signo * (Number(t.monto) || 0);
+      row.usd += signo * (Number(t.montoUsd) || 0);
+      map.set(key, row);
     }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+    return Array.from(map.values()).sort(
+      (a, b) => a.banco.localeCompare(b.banco) || a.moneda.localeCompare(b.moneda),
+    );
   }, [tx, ym]);
+
+  // Total consolidado en USD: la suma de TODAS las cuentas del mes, sin
+  // importar qué categorías estén activas con las píldoras — es dinero real
+  // en caja/banco, no debería desaparecer porque se filtró una categoría.
+  // Coincide con el "Neto" del encabezado solo cuando no hay ningún filtro de
+  // categoría puesto (el caso normal); si se filtra, cada número responde a
+  // una pregunta distinta a propósito.
+  const totalBancosUsd = useMemo(
+    () => bancosData.reduce((s, r) => s + r.usd, 0),
+    [bancosData],
+  );
 
   useEffect(() => {
     const catsConDatos = (cats: string[], byCat: Record<string, number>) =>
@@ -630,31 +663,58 @@ export function ResumenTab({
       )}
       {bancosData.length > 0 && (
         <Card className="p-4 lg:col-span-3">
-          <h3 className="mb-2 font-semibold text-sm">
-            🏦 Saldos por banco/cuenta al cierre del mes
-          </h3>
-          <div className="flex flex-wrap gap-3">
-            {bancosData.map(([banco, saldo]) => (
-              <div
-                key={banco}
-                className={
-                  "rounded-lg border px-3 py-2 min-w-[140px] flex-1 " +
-                  (saldo < 0
-                    ? "bg-red-50 dark:bg-red-950/30 border-red-200"
-                    : "bg-green-50 dark:bg-green-950/30 border-green-200")
-                }
-              >
-                <div className="text-xs text-muted-foreground">{banco}</div>
-                <div
-                  className={
-                    "text-lg font-bold tabular-nums " +
-                    (saldo < 0 ? "text-red-600" : "text-green-600")
-                  }
-                >
-                  {saldo < 0 ? "-" : ""}${$(Math.abs(saldo))}
-                </div>
-              </div>
-            ))}
+          <h3 className="mb-2 text-sm font-semibold">Disponibilidad en Caja y Bancos al Cierre</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs text-muted-foreground">
+                  <th className="py-1 font-medium">Cuenta/Banco</th>
+                  <th className="py-1 font-medium">Moneda Original</th>
+                  <th className="py-1 text-right font-medium">Saldo en Moneda Nativa</th>
+                  <th className="py-1 text-right font-medium">Saldo Equivalente (USD)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bancosData.map((r) => (
+                  <tr key={`${r.banco}-${r.moneda}`} className="border-b last:border-0">
+                    <td className="py-1.5">{r.banco}</td>
+                    <td className="py-1.5 text-muted-foreground">
+                      {r.moneda === "Bolívares" ? "Bs" : r.moneda === "Pesos" ? "COP" : "USD"}
+                    </td>
+                    <td
+                      className={
+                        "py-1.5 text-right tabular-nums " +
+                        (r.nativo < 0 ? "text-destructive" : "")
+                      }
+                    >
+                      {fmtMonto(r.nativo, simboloMoneda(r.moneda))}
+                    </td>
+                    <td
+                      className={
+                        "py-1.5 text-right tabular-nums " + (r.usd < 0 ? "text-destructive" : "")
+                      }
+                    >
+                      {fmtMonto(r.usd, "$")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="font-semibold">
+                  <td className="py-1.5" colSpan={3}>
+                    Total consolidado
+                  </td>
+                  <td
+                    className={
+                      "py-1.5 text-right tabular-nums " +
+                      (totalBancosUsd < 0 ? "text-destructive" : "")
+                    }
+                  >
+                    {fmtMonto(totalBancosUsd, "$")}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </Card>
       )}
