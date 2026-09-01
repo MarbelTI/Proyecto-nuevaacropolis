@@ -234,9 +234,7 @@ export function ResumenTab({
     banco: string;
     moneda: string;
     ingresoNativo: number;
-    ingresoUsd: number;
     gastoNativo: number;
-    gastoUsd: number;
     nativo: number;
     usd: number;
   };
@@ -254,20 +252,16 @@ export function ResumenTab({
         banco,
         moneda,
         ingresoNativo: 0,
-        ingresoUsd: 0,
         gastoNativo: 0,
-        gastoUsd: 0,
         nativo: 0,
         usd: 0,
       };
       if (t.tipo === "Ingreso") {
         row.ingresoNativo += nativoAbs;
-        row.ingresoUsd += usdAbs;
         row.nativo += nativoAbs;
         row.usd += usdAbs;
       } else {
         row.gastoNativo += nativoAbs;
-        row.gastoUsd += usdAbs;
         row.nativo -= nativoAbs;
         row.usd -= usdAbs;
       }
@@ -286,14 +280,6 @@ export function ResumenTab({
   // una pregunta distinta a propósito.
   const totalBancosUsd = useMemo(
     () => bancosData.reduce((s, r) => s + r.usd, 0),
-    [bancosData],
-  );
-  const totalIngresosBancosUsd = useMemo(
-    () => bancosData.reduce((s, r) => s + r.ingresoUsd, 0),
-    [bancosData],
-  );
-  const totalGastosBancosUsd = useMemo(
-    () => bancosData.reduce((s, r) => s + r.gastoUsd, 0),
     [bancosData],
   );
 
@@ -715,11 +701,9 @@ export function ResumenTab({
                 <tr className="border-b text-left text-xs text-muted-foreground">
                   <th className="py-1 font-medium">Cuenta/Banco</th>
                   <th className="py-1 font-medium">Moneda</th>
-                  <th className="py-1 text-right font-medium">Ingresos (Nativo)</th>
-                  <th className="py-1 text-right font-medium">Ingresos (USD)</th>
-                  <th className="py-1 text-right font-medium">Gastos (Nativo)</th>
-                  <th className="py-1 text-right font-medium">Gastos (USD)</th>
-                  <th className="py-1 text-right font-medium">Saldo (Nativo)</th>
+                  <th className="py-1 text-right font-medium">Ingresos</th>
+                  <th className="py-1 text-right font-medium">Gastos</th>
+                  <th className="py-1 text-right font-medium">Saldo</th>
                   <th className="py-1 text-right font-medium">Saldo (USD)</th>
                 </tr>
               </thead>
@@ -734,12 +718,8 @@ export function ResumenTab({
                       {fmtMonto(r.ingresoNativo, simboloMoneda(r.moneda))}
                     </td>
                     <td className="py-1.5 text-right tabular-nums">
-                      {fmtMonto(r.ingresoUsd, "$")}
-                    </td>
-                    <td className="py-1.5 text-right tabular-nums">
                       {fmtMonto(r.gastoNativo, simboloMoneda(r.moneda))}
                     </td>
-                    <td className="py-1.5 text-right tabular-nums">{fmtMonto(r.gastoUsd, "$")}</td>
                     <td
                       className={
                         "py-1.5 text-right tabular-nums font-medium " +
@@ -761,16 +741,8 @@ export function ResumenTab({
               </tbody>
               <tfoot>
                 <tr className="font-semibold">
-                  <td className="py-1.5" colSpan={2}>
+                  <td className="py-1.5" colSpan={4}>
                     Total consolidado
-                  </td>
-                  <td className="py-1.5" />
-                  <td className="py-1.5 text-right tabular-nums">
-                    {fmtMonto(totalIngresosBancosUsd, "$")}
-                  </td>
-                  <td className="py-1.5" />
-                  <td className="py-1.5 text-right tabular-nums">
-                    {fmtMonto(totalGastosBancosUsd, "$")}
                   </td>
                   <td className="py-1.5" />
                   <td
