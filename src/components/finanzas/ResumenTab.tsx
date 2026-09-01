@@ -34,6 +34,17 @@ const MESES_ES = [
 
 const $ = usd;
 
+/** $1,234.56 · negativo como ($1,234.56), sintaxis financiera estándar. */
+function fmtUsd(v: number): string {
+  const abs = `$${$(Math.abs(v))}`;
+  return v < 0 ? `(${abs})` : abs;
+}
+/** Bs 1,234.56, sin signo $ — negativo como (Bs 1,234.56). */
+function fmtBs(v: number): string {
+  const abs = `Bs ${$(Math.abs(v))}`;
+  return v < 0 ? `(${abs})` : abs;
+}
+
 function fechaToIso(fecha: string): string | null {
   const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
   if (!m) return null;
@@ -202,29 +213,7 @@ export function ResumenTab({
       tasaCierre = bcvRates[li] ?? 0;
       if (tasaCierre > 0) break;
     }
-    const saldoConvertido = tasaCierre > 0 ? saldoBs / tasaCierre : 0;
-    // El efecto cambiario solo tiene sentido sobre bolívares que QUEDARON en
-    // mano (saldo positivo): se recibieron valiendo `usdTotal` y hoy, a la tasa
-    // de cierre, valen `saldoConvertido`. Si el bolívar se devaluó, el resultado
-    // es negativo = pérdida.
-    // Con saldo negativo (se gastaron más Bs de los que entraron, usando saldo
-    // de meses anteriores) la resta daría un número positivo que NO es una
-    // ganancia real, así que no se calcula.
-    const aplicaCambiario = tasaCierre > 0 && saldoBs > 0;
-    const ganancia = aplicaCambiario ? saldoConvertido - usdTotal : 0;
-    return {
-      bsRecibidos,
-      bsGastados,
-      saldoBs,
-      usdIng,
-      usdGas,
-      usdTotal,
-      tasaInicio,
-      tasaCierre,
-      saldoConvertido,
-      ganancia,
-      aplicaCambiario,
-    };
+    return { bsRecibidos, bsGastados, saldoBs, usdIng, usdGas, usdTotal, tasaInicio, tasaCierre };
   }, [tx, ym, y, m, bcvRates]);
 
   const bancosData = useMemo(() => {
@@ -574,153 +563,69 @@ export function ResumenTab({
 
       {(arbitrajeData.bsRecibidos > 0 || arbitrajeData.bsGastados > 0) && (
         <Card className="p-4">
-          <h3 className="mb-2 font-semibold text-sm">💱 Análisis de Bolívares del mes</h3>
+          <h3 className="mb-2 text-sm font-semibold">Análisis de Bolívares del mes</h3>
 
-          <div className="mb-3 grid grid-cols-2 gap-2 text-xs">
-            <div className="rounded bg-blue-50 dark:bg-blue-950/30 p-2 text-center">
-              <span className="text-muted-foreground">Tasa al iniciar el mes</span>
-              <div className="font-bold text-lg">{$(arbitrajeData.tasaInicio)}</div>
-              <span className="text-muted-foreground">🇻🇪 BCV</span>
-            </div>
-            <div className="rounded bg-amber-50 dark:bg-amber-950/30 p-2 text-center">
-              <span className="text-muted-foreground">Tasa al cerrar el mes</span>
-              <div className="font-bold text-lg">{$(arbitrajeData.tasaCierre)}</div>
-              <span className="text-muted-foreground">🇻🇪 BCV</span>
-            </div>
+          {/* Cinta compacta: solo las dos tasas de referencia. */}
+          <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md bg-muted/50 px-3 py-1.5 text-xs">
+            <span className="text-muted-foreground">Tasa BCV</span>
+            <span>
+              Inicio <span className="font-medium tabular-nums">{fmtBs(arbitrajeData.tasaInicio)}</span>
+            </span>
+            <span>
+              Cierre <span className="font-medium tabular-nums">{fmtBs(arbitrajeData.tasaCierre)}</span>
+            </span>
           </div>
 
-          <div className="space-y-3 text-sm">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">
-                1️⃣ Tus movimientos del mes en Bolívares
-              </p>
-              <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1">
-                <span className="text-muted-foreground">Recibiste en Bs</span>
-                <span className="tabular-nums text-right">{$(arbitrajeData.bsRecibidos)}</span>
-                <span className="text-xs text-muted-foreground">Bs</span>
-
-                <span className="text-muted-foreground">Gastaste en Bs</span>
-                <span className="tabular-nums text-right">{$(arbitrajeData.bsGastados)}</span>
-                <span className="text-xs text-muted-foreground">Bs</span>
-
-                <span className="font-medium border-t pt-0.5">💼 Saldo de este mes</span>
-                <span
-                  className={
-                    "tabular-nums text-right font-medium border-t pt-0.5 " +
-                    (arbitrajeData.saldoBs < 0 ? "text-destructive" : "")
-                  }
-                >
-                  {$(arbitrajeData.saldoBs)}
-                </span>
-                <span className="text-xs text-muted-foreground border-t pt-0.5">
-                  Bs {arbitrajeData.saldoBs < 0 ? "(gastaste más de lo que entró)" : "(quedaron)"}
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">
-                2️⃣ Cuánto valían esos bolívares en dólares
-                <span className="ml-1 font-normal">(a la tasa del día de cada movimiento)</span>
-              </p>
-              <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1">
-                <span className="text-muted-foreground">Lo que recibiste, en dólares</span>
-                <span className="tabular-nums text-right">${$(arbitrajeData.usdIng)}</span>
-                <span></span>
-
-                <span className="text-muted-foreground">Lo que gastaste, en dólares</span>
-                <span className="tabular-nums text-right">${$(arbitrajeData.usdGas)}</span>
-                <span></span>
-
-                <span className="font-medium border-t pt-0.5">📝 Diferencia en dólares</span>
-                <span
-                  className={
-                    "tabular-nums text-right font-medium border-t pt-0.5 " +
-                    (arbitrajeData.usdTotal < 0 ? "text-destructive" : "")
-                  }
-                >
-                  {arbitrajeData.usdTotal < 0 ? "−" : ""}${$(Math.abs(arbitrajeData.usdTotal))}
-                </span>
-                <span className="text-xs text-muted-foreground border-t pt-0.5">
-                  {arbitrajeData.usdTotal < 0
-                    ? "gastaste más de lo que recibiste"
-                    : "recibiste más de lo que gastaste"}
-                </span>
-              </div>
-            </div>
-
-            {arbitrajeData.aplicaCambiario && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-1">
-                  3️⃣ ¿Cuánto valen hoy los Bs que te quedaron?
-                </p>
-                <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1">
-                  <span className="text-muted-foreground">
-                    Tus Bs ÷ tasa cierre ({$(arbitrajeData.tasaCierre)})
-                  </span>
-                  <span className="tabular-nums text-right">
-                    ${$(arbitrajeData.saldoConvertido)}
-                  </span>
-                  <span className="text-xs text-muted-foreground">valor actual en $</span>
-                </div>
-              </div>
-            )}
-
-            {!arbitrajeData.aplicaCambiario ? (
-              <div className="rounded bg-muted p-3">
-                <div className="flex items-start gap-2">
-                  <span className="text-lg">ℹ️</span>
-                  <div>
-                    <div className="font-semibold text-sm">Sin efecto cambiario este mes</div>
-                    <p className="text-xs text-muted-foreground">
-                      {arbitrajeData.saldoBs < 0
-                        ? `Este mes gastaste ${$(Math.abs(arbitrajeData.saldoBs))} Bs más de los que recibiste (usaste bolívares que ya tenías de meses anteriores). Como no quedó saldo en bolívares del mes, no hay ganancia ni pérdida por tipo de cambio que calcular sobre él.`
-                        : "No quedaron bolívares en caja al cierre del mes, así que no hay efecto cambiario que calcular."}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div
-                className={
-                  "rounded p-3 " +
-                  (arbitrajeData.ganancia >= 0
-                    ? "bg-green-50 dark:bg-green-950/30"
-                    : "bg-red-50 dark:bg-red-950/30")
-                }
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">{arbitrajeData.ganancia >= 0 ? "✅" : "❌"}</span>
-                    <div>
-                      <div className="font-semibold text-sm">
-                        {arbitrajeData.ganancia >= 0
-                          ? "El bolívar se mantuvo"
-                          : "Pérdida por devaluación 💸"}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {arbitrajeData.ganancia >= 0
-                          ? `Los ${$(arbitrajeData.saldoBs)} Bs que te quedaron valían $${$(arbitrajeData.usdTotal)} cuando los recibiste, y a la tasa de cierre valen $${$(arbitrajeData.saldoConvertido)}. No perdiste valor en dólares.`
-                          : `Los ${$(arbitrajeData.saldoBs)} Bs que te quedaron valían $${$(arbitrajeData.usdTotal)} cuando los recibiste, pero a la tasa de cierre (${$(arbitrajeData.tasaCierre)}) valen $${$(arbitrajeData.saldoConvertido)}. Guardar bolívares mientras se devalúan cuesta dinero.`}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs text-muted-foreground">Resultado cambiario</div>
-                    <div
-                      className={
-                        "text-xl font-bold " +
-                        (arbitrajeData.ganancia >= 0 ? "text-green-600" : "text-red-600")
-                      }
-                    >
-                      {arbitrajeData.ganancia >= 0 ? "+" : "−"}$
-                      {$(Math.abs(arbitrajeData.ganancia))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs text-muted-foreground">
+                  <th className="py-1 font-medium">Concepto</th>
+                  <th className="py-1 text-right font-medium">Monto (Bs)</th>
+                  <th className="py-1 text-right font-medium">Equivalencia (USD)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b">
+                  <td className="py-1.5">(+) Ingresos en Bs</td>
+                  <td className="py-1.5 text-right tabular-nums">
+                    {fmtBs(arbitrajeData.bsRecibidos)}
+                  </td>
+                  <td className="py-1.5 text-right tabular-nums">{fmtUsd(arbitrajeData.usdIng)}</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="py-1.5">(-) Gastos en Bs</td>
+                  <td className="py-1.5 text-right tabular-nums">
+                    {fmtBs(arbitrajeData.bsGastados)}
+                  </td>
+                  <td className="py-1.5 text-right tabular-nums">{fmtUsd(arbitrajeData.usdGas)}</td>
+                </tr>
+                <tr className="font-semibold">
+                  <td className="py-1.5">(=) Saldo del mes</td>
+                  <td
+                    className={
+                      "py-1.5 text-right tabular-nums " +
+                      (arbitrajeData.saldoBs < 0 ? "text-destructive" : "")
+                    }
+                  >
+                    {fmtBs(arbitrajeData.saldoBs)}
+                  </td>
+                  <td
+                    className={
+                      "py-1.5 text-right tabular-nums " +
+                      (arbitrajeData.usdTotal < 0 ? "text-destructive" : "")
+                    }
+                  >
+                    {fmtUsd(arbitrajeData.usdTotal)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
+
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Nota: conversión acumulada a la tasa oficial del día de cada registro.
+          </p>
         </Card>
       )}
       {bancosData.length > 0 && (
