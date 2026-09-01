@@ -213,25 +213,42 @@ export function exportResumenExcel(
     return iso && iso.slice(0, 7) === ym;
   });
 
-  const allCats = [...ingresos, ...gastos];
+  // Una misma categoría puede existir en las dos listas (ej. "MTC" como
+  // ingreso de las consultas y como gasto de sus materiales). Antes eso
+  // generaba dos columnas con el mismo nombre "MTC" que además leían del
+  // mismo `catData["MTC"]" — la misma mezcla de datos duplicada en las dos.
+  // Aquí se distingue con "(Ingreso)"/"(Gasto)" SOLO cuando el nombre choca;
+  // el resto de categorías conserva su columna tal como antes.
+  const nombresRepetidos = new Set(ingresos.filter((c) => gastos.includes(c)));
+  const colKey = (cat: string, tipo: "Ingreso" | "Gasto") =>
+    nombresRepetidos.has(cat) ? `${cat} (${tipo})` : cat;
 
   type Entry = { monto: number; desc: string; fecha: string; mes: string };
   const catData: Record<string, Entry[]> = {};
-  for (const cat of allCats) catData[cat] = [];
 
-  for (const t of monthTx) {
-    const cat = t.categoria || "(sin categoría)";
-    if (cat === "CONVERSIÓN") continue;
-    if (!catData[cat]) continue;
-    const monto = Number(t.montoUsd) || 0;
-    const isGasto = t.tipo === "Gasto";
-    catData[cat].push({
-      monto: isGasto ? -Math.abs(monto) : Math.abs(monto),
-      desc: t.descripcion || "",
-      fecha: t.fecha,
-      mes: t.mensualidad || "",
-    });
-  }
+  const cargarCategoria = (cat: string, tipo: "Ingreso" | "Gasto") => {
+    const entries: Entry[] = [];
+    for (const t of monthTx) {
+      if (t.tipo !== tipo) continue;
+      const tcat = t.categoria || "(sin categoría)";
+      if (tcat === "CONVERSIÓN" || tcat !== cat) continue;
+      const monto = Number(t.montoUsd) || 0;
+      entries.push({
+        monto: tipo === "Gasto" ? -Math.abs(monto) : Math.abs(monto),
+        desc: t.descripcion || "",
+        fecha: t.fecha,
+        mes: t.mensualidad || "",
+      });
+    }
+    catData[colKey(cat, tipo)] = entries;
+  };
+  for (const cat of ingresos) cargarCategoria(cat, "Ingreso");
+  for (const cat of gastos) cargarCategoria(cat, "Gasto");
+
+  const allCats = [
+    ...ingresos.map((c) => colKey(c, "Ingreso")),
+    ...gastos.map((c) => colKey(c, "Gasto")),
+  ];
 
   // Una categoría sin movimientos no tiene entrada en catData. Antes se leía
   // `catData[cat].length` a pelo y bastaba una categoría nueva sin usar para
@@ -270,11 +287,11 @@ export function exportResumenExcel(
 
   // Gran total: ingresos en col E, egresos en col F
   const totalIngMes = ingresos.reduce((s, cat) => {
-    const t = filas(cat).reduce((s2, e) => s2 + e.monto, 0);
+    const t = filas(colKey(cat, "Ingreso")).reduce((s2, e) => s2 + e.monto, 0);
     return s + (t > 0 ? t : 0);
   }, 0);
   const totalGasMes = gastos.reduce((s, cat) => {
-    const t = filas(cat).reduce((s2, e) => s2 + e.monto, 0);
+    const t = filas(colKey(cat, "Gasto")).reduce((s2, e) => s2 + e.monto, 0);
     return s + (t < 0 ? Math.abs(t) : 0);
   }, 0);
   rm.push([]);
