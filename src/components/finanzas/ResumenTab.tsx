@@ -230,7 +230,16 @@ export function ResumenTab({
   // Una cuenta va casi siempre en una sola moneda, pero se agrupa por
   // banco+moneda (no solo por banco) por si acaso: mezclar Bs y USD del mismo
   // "Binance" en un solo saldo nativo no significaría nada.
-  type BancoRow = { banco: string; moneda: string; nativo: number; usd: number };
+  type BancoRow = {
+    banco: string;
+    moneda: string;
+    ingresoNativo: number;
+    ingresoUsd: number;
+    gastoNativo: number;
+    gastoUsd: number;
+    nativo: number;
+    usd: number;
+  };
   const bancosData = useMemo(() => {
     const map = new Map<string, BancoRow>();
     for (const t of tx) {
@@ -239,10 +248,29 @@ export function ResumenTab({
       const banco = t.banco || "(sin banco)";
       const moneda = t.moneda || "USD";
       const key = `${banco}${moneda}`;
-      const signo = t.tipo === "Ingreso" ? 1 : -1;
-      const row = map.get(key) ?? { banco, moneda, nativo: 0, usd: 0 };
-      row.nativo += signo * (Number(t.monto) || 0);
-      row.usd += signo * (Number(t.montoUsd) || 0);
+      const nativoAbs = Number(t.monto) || 0;
+      const usdAbs = Number(t.montoUsd) || 0;
+      const row: BancoRow = map.get(key) ?? {
+        banco,
+        moneda,
+        ingresoNativo: 0,
+        ingresoUsd: 0,
+        gastoNativo: 0,
+        gastoUsd: 0,
+        nativo: 0,
+        usd: 0,
+      };
+      if (t.tipo === "Ingreso") {
+        row.ingresoNativo += nativoAbs;
+        row.ingresoUsd += usdAbs;
+        row.nativo += nativoAbs;
+        row.usd += usdAbs;
+      } else {
+        row.gastoNativo += nativoAbs;
+        row.gastoUsd += usdAbs;
+        row.nativo -= nativoAbs;
+        row.usd -= usdAbs;
+      }
       map.set(key, row);
     }
     return Array.from(map.values()).sort(
@@ -258,6 +286,14 @@ export function ResumenTab({
   // una pregunta distinta a propósito.
   const totalBancosUsd = useMemo(
     () => bancosData.reduce((s, r) => s + r.usd, 0),
+    [bancosData],
+  );
+  const totalIngresosBancosUsd = useMemo(
+    () => bancosData.reduce((s, r) => s + r.ingresoUsd, 0),
+    [bancosData],
+  );
+  const totalGastosBancosUsd = useMemo(
+    () => bancosData.reduce((s, r) => s + r.gastoUsd, 0),
     [bancosData],
   );
 
@@ -304,6 +340,9 @@ export function ResumenTab({
     exportInformeOina(tx, y, m, ingresos, gastos);
     toast.success("Informe OINA descargado");
   };
+
+  const mostrarBolivares = arbitrajeData.bsRecibidos > 0 || arbitrajeData.bsGastados > 0;
+  const mostrarBancos = bancosData.length > 0;
 
   return (
     <div className="grid gap-4 lg:grid-cols-3">
@@ -354,6 +393,7 @@ export function ResumenTab({
         </div>
       </Card>
 
+      <div className="grid gap-4 lg:col-span-3 lg:grid-cols-2">
       <Card className="p-4">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-lg font-bold text-primary">Ingresos</h3>
@@ -593,9 +633,14 @@ export function ResumenTab({
           </tbody>
         </table>
       </Card>
+      </div>
 
-      {(arbitrajeData.bsRecibidos > 0 || arbitrajeData.bsGastados > 0) && (
-        <Card className="p-4">
+      {/* Bolívares y disponibilidad de caja/bancos van juntas, más
+          compactas, separadas del resumen de categorías de arriba. */}
+      {(mostrarBolivares || mostrarBancos) && (
+      <div className="grid gap-4 lg:col-span-3 lg:grid-cols-3">
+      {mostrarBolivares && (
+        <Card className={"p-4 " + (mostrarBancos ? "" : "lg:col-span-3")}>
           <h3 className="mb-2 text-sm font-semibold">Análisis de Bolívares del mes</h3>
 
           {/* Cinta compacta: solo las dos tasas de referencia. */}
@@ -661,17 +706,21 @@ export function ResumenTab({
           </p>
         </Card>
       )}
-      {bancosData.length > 0 && (
-        <Card className="p-4 lg:col-span-3">
+      {mostrarBancos && (
+        <Card className={"p-4 " + (mostrarBolivares ? "lg:col-span-2" : "lg:col-span-3")}>
           <h3 className="mb-2 text-sm font-semibold">Disponibilidad en Caja y Bancos al Cierre</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
                   <th className="py-1 font-medium">Cuenta/Banco</th>
-                  <th className="py-1 font-medium">Moneda Original</th>
-                  <th className="py-1 text-right font-medium">Saldo en Moneda Nativa</th>
-                  <th className="py-1 text-right font-medium">Saldo Equivalente (USD)</th>
+                  <th className="py-1 font-medium">Moneda</th>
+                  <th className="py-1 text-right font-medium">Ingresos (Nativo)</th>
+                  <th className="py-1 text-right font-medium">Ingresos (USD)</th>
+                  <th className="py-1 text-right font-medium">Gastos (Nativo)</th>
+                  <th className="py-1 text-right font-medium">Gastos (USD)</th>
+                  <th className="py-1 text-right font-medium">Saldo (Nativo)</th>
+                  <th className="py-1 text-right font-medium">Saldo (USD)</th>
                 </tr>
               </thead>
               <tbody>
@@ -681,9 +730,19 @@ export function ResumenTab({
                     <td className="py-1.5 text-muted-foreground">
                       {r.moneda === "Bolívares" ? "Bs" : r.moneda === "Pesos" ? "COP" : "USD"}
                     </td>
+                    <td className="py-1.5 text-right tabular-nums">
+                      {fmtMonto(r.ingresoNativo, simboloMoneda(r.moneda))}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums">
+                      {fmtMonto(r.ingresoUsd, "$")}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums">
+                      {fmtMonto(r.gastoNativo, simboloMoneda(r.moneda))}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums">{fmtMonto(r.gastoUsd, "$")}</td>
                     <td
                       className={
-                        "py-1.5 text-right tabular-nums " +
+                        "py-1.5 text-right tabular-nums font-medium " +
                         (r.nativo < 0 ? "text-destructive" : "")
                       }
                     >
@@ -691,7 +750,8 @@ export function ResumenTab({
                     </td>
                     <td
                       className={
-                        "py-1.5 text-right tabular-nums " + (r.usd < 0 ? "text-destructive" : "")
+                        "py-1.5 text-right tabular-nums font-medium " +
+                        (r.usd < 0 ? "text-destructive" : "")
                       }
                     >
                       {fmtMonto(r.usd, "$")}
@@ -701,9 +761,18 @@ export function ResumenTab({
               </tbody>
               <tfoot>
                 <tr className="font-semibold">
-                  <td className="py-1.5" colSpan={3}>
+                  <td className="py-1.5" colSpan={2}>
                     Total consolidado
                   </td>
+                  <td className="py-1.5" />
+                  <td className="py-1.5 text-right tabular-nums">
+                    {fmtMonto(totalIngresosBancosUsd, "$")}
+                  </td>
+                  <td className="py-1.5" />
+                  <td className="py-1.5 text-right tabular-nums">
+                    {fmtMonto(totalGastosBancosUsd, "$")}
+                  </td>
+                  <td className="py-1.5" />
                   <td
                     className={
                       "py-1.5 text-right tabular-nums " +
@@ -717,6 +786,8 @@ export function ResumenTab({
             </table>
           </div>
         </Card>
+      )}
+      </div>
       )}
       <TransactionEditDialog
         editing={editingTx}
