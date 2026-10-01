@@ -1,6 +1,13 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Cloud, CloudOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
@@ -25,6 +32,38 @@ async function getAccessToken(): Promise<string | undefined> {
 }
 
 import { nuevoId as newId } from "@/lib/utils";
+
+// Mismo patrón que ResumenTab.tsx / SolvenciasTab.tsx: no hay un fechaToIso
+// compartido en el proyecto, cada archivo tiene el suyo.
+function fechaToIso(fecha: string): string | null {
+  const m = fecha.trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
+  if (!m) return null;
+  const dd = m[1].padStart(2, "0");
+  const mm = m[2].padStart(2, "0");
+  let yy = m[3] ?? String(new Date().getFullYear());
+  if (yy.length === 2) yy = "20" + yy;
+  return `${yy}-${mm}-${dd}`;
+}
+
+const MESES_NOMBRE = [
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "octubre",
+  "noviembre",
+  "diciembre",
+];
+function mesLabel(ym: string): string {
+  const [yy, mm] = ym.split("-");
+  const name = MESES_NOMBRE[Number(mm) - 1] ?? mm;
+  return `${name[0].toUpperCase()}${name.slice(1)} ${yy}`;
+}
 
 export function SupabaseSync({
   transactions,
@@ -107,6 +146,70 @@ export function SupabaseSync({
       toast.error("Error de conexión al sincronizar");
     } finally {
       setSyncing(false);
+    }
+  };
+
+  // Meses que de verdad tienen transacciones locales, más reciente primero —
+  // mismo criterio que `mesOptions` en TransactionsTab.tsx. Así no se puede
+  // "elegir" por error un mes vacío.
+  const mesesConDatos = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of transactions.list) {
+      const iso = fechaToIso(t.fecha);
+      if (iso) set.add(iso.slice(0, 7));
+    }
+    return [...set].sort().reverse();
+  }, [transactions.list]);
+
+  const [mesElegido, setMesElegido] = useState<string>("");
+  const mesActivo = mesElegido || mesesConDatos[0] || "";
+
+  const [syncingMes, setSyncingMes] = useState(false);
+
+  /**
+   * Sube SOLO las transacciones y tasas BCV de un mes calendario (la fecha
+   * real del movimiento, no `mensualidad` — ver design.md de
+   * add-monthly-cloud-sync). El resto del libro local no se toca. No es una
+   * rama de `handleSync`: son dos flujos con mensajes distintos, más claros
+   * separados que con un parámetro opcional metido en uno solo.
+   */
+  const handleSyncMes = async () => {
+    if (!mesActivo) return;
+    const txDelMes = transactions.list.filter((t) => fechaToIso(t.fecha)?.slice(0, 7) === mesActivo);
+    if (!txDelMes.length) {
+      toast.error(`No hay transacciones en ${mesLabel(mesActivo)} para subir`);
+      return;
+    }
+    setSyncingMes(true);
+    try {
+      const accessToken = await getAccessToken();
+      const txResult = await syncTx({ data: { transactions: txDelMes, accessToken } });
+      if (!txResult.ok) {
+        toast.error(`Error subiendo ${mesLabel(mesActivo)}: ${txResult.error}`);
+        return;
+      }
+
+      // Mismo filtro que handleSync: la columna `rate` (dólar) es NOT NULL.
+      const ratesDelMes = Object.entries(bcvRates.rates)
+        .filter(([isoDate, r]) => isoDate.slice(0, 7) === mesActivo && r.dolar != null)
+        .map(([isoDate, r]) => ({
+          isoDate,
+          rate: r.dolar as number,
+          rateEuro: r.euro,
+        }));
+      const bcvResult = await syncBcv({ data: { rates: ratesDelMes, accessToken } });
+      if (!bcvResult.ok) {
+        toast.error(`Error subiendo tasas de ${mesLabel(mesActivo)}: ${bcvResult.error}`);
+        return;
+      }
+
+      toast.success(
+        `${mesLabel(mesActivo)}: ${txResult.count} transacciones, ${bcvResult.count} tasas subidas`,
+      );
+    } catch (e) {
+      toast.error("Error de conexión al sincronizar el mes");
+    } finally {
+      setSyncingMes(false);
     }
   };
 
@@ -236,6 +339,40 @@ export function SupabaseSync({
           </Button>
         </div>
       </div>
+      {/* Subir solo un mes: para ir publicando el libro poco a poco en vez
+          de todo de una vez. No reemplaza al botón de arriba. */}
+      {mesesConDatos.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
+          <span className="text-xs text-muted-foreground">Subir solo un mes</span>
+          <Select value={mesActivo} onValueChange={setMesElegido}>
+            <SelectTrigger className="h-8 w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {mesesConDatos.map((ym) => (
+                <SelectItem key={ym} value={ym}>
+                  {mesLabel(ym)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSyncMes}
+            disabled={syncingMes || syncing || loading || !enLinea || !mesActivo}
+          >
+            {syncingMes ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Cloud className="h-3.5 w-3.5" />
+            )}
+            {syncingMes
+              ? "Sincronizando..."
+              : `Subir ${mesActivo ? mesLabel(mesActivo) : "mes"} a la nube`}
+          </Button>
+        </div>
+      )}
     </Card>
   );
 }
