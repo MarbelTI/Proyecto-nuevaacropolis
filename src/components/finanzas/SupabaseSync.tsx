@@ -76,6 +76,10 @@ export function SupabaseSync({
     // replaceAll y no clear+append: append reasigna ids nuevos, y encadenar las
     // dos operaciones no reemplaza nada (ver el comentario en handleLoad).
     replaceAll: (rows: Transaction[]) => void;
+    // Para que el aviso de "cambios pendientes" (cloud-source-of-truth) se entere de que este
+    // botón masivo ya los subió — si no, el aviso se queda mintiendo aunque ya no haya nada
+    // pendiente de verdad.
+    limpiarPendientes?: (ids: Iterable<string>) => void;
   };
   bcvRates: { rates: BcvRates; merge: (next: BcvRates) => void };
   students?: { list: Student[]; setAll: (next: Student[]) => void };
@@ -102,6 +106,8 @@ export function SupabaseSync({
         toast.error(`Error syncing transactions: ${txResult.error}`);
         return;
       }
+      // Este botón sube TODA la lista local, pendientes incluidos — ya quedaron subidos.
+      transactions.limpiarPendientes?.(transactions.list.map((t) => t.id));
 
       // La columna `rate` (dólar) es NOT NULL en Supabase: una fecha cargada
       // a mano con SOLO tasa euro (sin dólar) no tiene cómo subirse todavía,
@@ -188,6 +194,7 @@ export function SupabaseSync({
         toast.error(`Error subiendo ${mesLabel(mesActivo)}: ${txResult.error}`);
         return;
       }
+      transactions.limpiarPendientes?.(txDelMes.map((t) => t.id));
 
       // Mismo filtro que handleSync: la columna `rate` (dólar) es NOT NULL.
       const ratesDelMes = Object.entries(bcvRates.rates)

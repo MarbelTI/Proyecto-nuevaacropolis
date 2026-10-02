@@ -378,6 +378,12 @@ export function useTransactions(): {
   /** Cambios que no se pudieron confirmar en Supabase todavía (ver "Copia en la nube"). */
   pendientesDeSubir: number;
   /**
+   * Quita ids del contador de pendientes sin pasar por `guardarEnNube` — para cuando "Subir a
+   * nube" (el botón masivo de `SupabaseSync.tsx`) ya los subió por su cuenta y el contador de
+   * pendientes quedaría mintiendo si nadie se lo avisa.
+   */
+  limpiarPendientes: (ids: Iterable<string>) => void;
+  /**
    * Cambios que NO se guardaron porque alguien más modificó esa misma fila primero. A propósito
    * separado de `pendientesDeSubir`: ese otro contador invita a "Subir a nube", que pisaría sin
    * preguntar lo que la otra persona ya guardó — aquí la salida correcta es recargar, no reintentar.
@@ -413,6 +419,18 @@ export function useTransactions(): {
       if (!prev.has(id)) return prev;
       const next = new Set(prev);
       next.delete(id);
+      save(K_TX_PENDIENTES, [...next]);
+      return next;
+    });
+  };
+  const limpiarPendientes = (ids: Iterable<string>) => {
+    setPendientes((prev) => {
+      const next = new Set(prev);
+      let cambio = false;
+      for (const id of ids) {
+        if (next.delete(id)) cambio = true;
+      }
+      if (!cambio) return prev;
       save(K_TX_PENDIENTES, [...next]);
       return next;
     });
@@ -625,6 +643,7 @@ export function useTransactions(): {
     },
     clear: () => persist([]),
     pendientesDeSubir: pendientes.size,
+    limpiarPendientes,
     conflictosSinGuardar: conflictos.size,
     cargandoDeNube,
   };
