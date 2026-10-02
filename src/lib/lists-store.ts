@@ -377,11 +377,18 @@ export function useTransactions(): {
   clear: () => void;
   /** Cambios que no se pudieron confirmar en Supabase todavía (ver "Copia en la nube"). */
   pendientesDeSubir: number;
+  /**
+   * Cambios que NO se guardaron porque alguien más modificó esa misma fila primero. A propósito
+   * separado de `pendientesDeSubir`: ese otro contador invita a "Subir a nube", que pisaría sin
+   * preguntar lo que la otra persona ya guardó — aquí la salida correcta es recargar, no reintentar.
+   */
+  conflictosSinGuardar: number;
   /** Cargando la lista desde Supabase al abrir — ver design.md de cloud-source-of-truth. */
   cargandoDeNube: boolean;
 } {
   const [list, setList] = useState<Transaction[]>([]);
   const [pendientes, setPendientes] = useState<Set<string>>(() => new Set());
+  const [conflictos, setConflictos] = useState<Set<string>>(() => new Set());
   const [cargandoDeNube, setCargandoDeNube] = useState(false);
   // `updated_at` conocido por transacción, para el bloqueo optimista. No es estado de React
   // porque no necesita volver a renderizar nada por sí solo — solo lo leen los mutadores.
@@ -424,15 +431,25 @@ export function useTransactions(): {
         metaRef.current[t.id] = res.updatedAt;
         save(K_TX_META, metaRef.current);
         quitarPendiente(t.id);
+        setConflictos((prev) => {
+          if (!prev.has(t.id)) return prev;
+          const next = new Set(prev);
+          next.delete(t.id);
+          return next;
+        });
         return;
       }
       if ("conflict" in res && res.conflict) {
+        // A propósito NO se marca pendiente: "pendiente" invita a "Subir a nube", que pisaría
+        // sin preguntar el cambio que la otra persona ya guardó. La única salida correcta acá es
+        // recargar la página (vuelve a traer la versión real de Supabase) y rehacer el cambio.
         toast.error(
-          `"${t.descripcion || "esa transacción"}" fue modificada por otra persona — recárgala antes de volver a intentar tu cambio.`,
+          `"${t.descripcion || "esa transacción"}" fue modificada por otra persona — recarga la página y repite tu cambio ahí.`,
         );
-      } else {
-        toast.error(`No se pudo guardar en la nube: ${"error" in res ? res.error : ""}`);
+        setConflictos((prev) => (prev.has(t.id) ? prev : new Set(prev).add(t.id)));
+        return;
       }
+      toast.error(`No se pudo guardar en la nube: ${"error" in res ? res.error : ""}`);
       marcarPendiente(t.id);
     } catch {
       toast.error("Sin conexión con la nube — el cambio quedó solo en este dispositivo.");
@@ -608,6 +625,7 @@ export function useTransactions(): {
     },
     clear: () => persist([]),
     pendientesDeSubir: pendientes.size,
+    conflictosSinGuardar: conflictos.size,
     cargandoDeNube,
   };
 }
