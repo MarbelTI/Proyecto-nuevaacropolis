@@ -73,6 +73,8 @@ import {
   Flag,
   ChevronUp,
   ChevronDown,
+  Loader2,
+  CloudOff,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -1041,6 +1043,21 @@ export function TransactionsTab({
 
   return (
     <Card className="p-6">
+      {tx.cargandoDeNube && (
+        <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Cargando transacciones desde la nube...
+        </div>
+      )}
+      {tx.pendientesDeSubir > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400">
+          <CloudOff className="h-3.5 w-3.5 shrink-0" />
+          {tx.pendientesDeSubir === 1
+            ? "Hay 1 cambio que no se pudo compartir con la nube todavía."
+            : `Hay ${tx.pendientesDeSubir} cambios que no se pudieron compartir con la nube todavía.`}{" "}
+          Usa "Subir a nube" en "Copia en la nube" cuando tengas conexión.
+        </div>
+      )}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">Histórico de transacciones</h2>
         <div className="flex flex-wrap items-center gap-2">

@@ -215,6 +215,155 @@ export const loadBcvRatesFromSupabase = createServerFn({ method: "POST" })
     return { ok: true, data: rates };
   });
 
+// ---------------- Escritura fila por fila (fuente de verdad en vivo) ----------------
+//
+// Separadas de syncTransactionsToSupabase/loadTransactionsFromSupabase (que siguen existiendo
+// tal cual, para "Subir/Cargar a nube" en bloque): esas son una subida masiva deliberada, estas
+// son una escritura por fila con bloqueo optimista. Ver design.md de cloud-source-of-truth,
+// decisión 1.
+
+function transactionToRow(t: ServerTransaction) {
+  return {
+    id: t.id,
+    fecha: t.fecha,
+    mes: t.mes,
+    tipo: t.tipo,
+    categoria: t.categoria,
+    descripcion: t.descripcion,
+    mensualidad: t.mensualidad,
+    moneda: t.moneda,
+    monto: t.monto,
+    tasa: t.tasa,
+    monto_usd: t.montoUsd,
+    banco: t.banco,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function rowToTransaction(r: any): ServerTransaction {
+  return {
+    id: r.id,
+    fecha: r.fecha,
+    mes: r.mes,
+    tipo: r.tipo,
+    categoria: r.categoria,
+    descripcion: r.descripcion,
+    mensualidad: r.mensualidad,
+    moneda: r.moneda,
+    monto: Number(r.monto),
+    tasa: r.tasa != null ? Number(r.tasa) : null,
+    montoUsd: Number(r.monto_usd),
+    banco: r.banco,
+  };
+}
+
+/** Crea una transacción nueva directamente en Supabase (escritura en vivo, una sola fila). */
+export const crearTransaccionEnNube = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      transaction: TransactionSchema,
+      accessToken: accessTokenField,
+    }),
+  )
+  .handler(async ({ data }) => {
+    const session = await getSessionUser(data.accessToken);
+    if (!session || !canManageFinanzas(session.role)) {
+      return { ok: false as const, error: "No autorizado" };
+    }
+    const { createClient } = await import("@supabase/supabase-js");
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      return { ok: false as const, error: "Supabase not configured" };
+    }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
+    });
+
+    const { data: row, error } = await supabase
+      .from("transactions")
+      .insert(transactionToRow(data.transaction))
+      .select("*")
+      .single();
+
+    if (error) return { ok: false as const, error: error.message };
+    await registrarActividad(supabase, session, "transacciones:crear", "1 fila");
+    return {
+      ok: true as const,
+      transaction: rowToTransaction(row),
+      updatedAt: row.updated_at as string,
+    };
+  });
+
+/**
+ * Actualiza una transacción existente en Supabase, con bloqueo optimista: solo aplica si
+ * `updated_at` en la base sigue siendo el mismo que se tenía al cargar la fila. Si alguien más
+ * la modificó desde entonces, devuelve `conflict: true` en vez de pisar ese cambio.
+ */
+export const actualizarTransaccionEnNube = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      transaction: TransactionSchema,
+      expectedUpdatedAt: z.string(),
+      accessToken: accessTokenField,
+    }),
+  )
+  .handler(async ({ data }) => {
+    const session = await getSessionUser(data.accessToken);
+    if (!session || !canManageFinanzas(session.role)) {
+      return { ok: false as const, error: "No autorizado" };
+    }
+    const { createClient } = await import("@supabase/supabase-js");
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      return { ok: false as const, error: "Supabase not configured" };
+    }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
+    });
+
+    const { data: row, error } = await supabase
+      .from("transactions")
+      .update(transactionToRow(data.transaction))
+      .eq("id", data.transaction.id)
+      .eq("updated_at", data.expectedUpdatedAt)
+      .select("*")
+      .maybeSingle();
+
+    if (error) return { ok: false as const, error: error.message };
+    if (!row) return { ok: false as const, conflict: true as const };
+    await registrarActividad(supabase, session, "transacciones:actualizar", "1 fila");
+    return {
+      ok: true as const,
+      transaction: rowToTransaction(row),
+      updatedAt: row.updated_at as string,
+    };
+  });
+
+/** Elimina una transacción en Supabase. No chequea `updated_at` — borrar gana (ver design.md, Risks). */
+export const eliminarTransaccionEnNube = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      id: z.string(),
+      accessToken: accessTokenField,
+    }),
+  )
+  .handler(async ({ data }) => {
+    const session = await getSessionUser(data.accessToken);
+    if (!session || !canManageFinanzas(session.role)) {
+      return { ok: false as const, error: "No autorizado" };
+    }
+    const { createClient } = await import("@supabase/supabase-js");
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      return { ok: false as const, error: "Supabase not configured" };
+    }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
+    });
+
+    const { error } = await supabase.from("transactions").delete().eq("id", data.id);
+    if (error) return { ok: false as const, error: error.message };
+    await registrarActividad(supabase, session, "transacciones:eliminar", "1 fila");
+    return { ok: true as const };
+  });
+
 // ---------------- Papelera de transacciones (solo super_admin la ve) ----------------
 
 const PapeleraAccion = z.enum(["fila", "sobrantes", "rango"]);

@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
+import { supabase } from "./supabase";
+import {
+  loadTransactionsFromSupabase,
+  crearTransaccionEnNube,
+  actualizarTransaccionEnNube,
+  eliminarTransaccionEnNube,
+} from "./api/transactions.functions";
 import {
   AULAS_DEFAULT,
   CATEGORIAS_GASTO,
@@ -17,6 +26,12 @@ const K_STU_V2 = "lector_ocr_alumnos_v2";
 const K_STU_V1 = "lector_ocr_alumnos";
 const K_AULAS = "lector_ocr_aulas";
 const K_TX = "lector_ocr_transacciones_v1";
+// `updated_at` que trajo Supabase por transacción — hace falta para el bloqueo optimista
+// (cloud-source-of-truth, design.md decisión 2). Aparte del tipo `Transaction` a propósito: no
+// hace falta que lo cargue cada pantalla que usa `Transaction`.
+const K_TX_META = "lector_ocr_transacciones_meta_v1";
+// Ids con un cambio que no se confirmó en Supabase (falló la llamada de red).
+const K_TX_PENDIENTES = "lector_ocr_transacciones_pendientes_v1";
 const K_BCV = "lector_ocr_bcv_v1";
 const K_SEED = "lector_ocr_seed_v4";
 
@@ -336,6 +351,19 @@ export function useEditableStudents(): [Student[], (next: Student[]) => void] {
 
 // ==================== Transacciones (persistidas) ====================
 
+async function getAccessToken(): Promise<string | undefined> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function enLinea(): boolean {
+  return typeof navigator === "undefined" || navigator.onLine;
+}
+
 export function useTransactions(): {
   list: Transaction[];
   append: (rows: Omit<Transaction, "id">[]) => void;
@@ -347,8 +375,89 @@ export function useTransactions(): {
   removeMany: (ids: Set<string>) => void;
   duplicateAfter: (id: string) => void;
   clear: () => void;
+  /** Cambios que no se pudieron confirmar en Supabase todavía (ver "Copia en la nube"). */
+  pendientesDeSubir: number;
+  /** Cargando la lista desde Supabase al abrir — ver design.md de cloud-source-of-truth. */
+  cargandoDeNube: boolean;
 } {
   const [list, setList] = useState<Transaction[]>([]);
+  const [pendientes, setPendientes] = useState<Set<string>>(() => new Set());
+  const [cargandoDeNube, setCargandoDeNube] = useState(false);
+  // `updated_at` conocido por transacción, para el bloqueo optimista. No es estado de React
+  // porque no necesita volver a renderizar nada por sí solo — solo lo leen los mutadores.
+  const metaRef = useRef<Record<string, string>>({});
+
+  const loadTx = useServerFn(loadTransactionsFromSupabase);
+  const crearTx = useServerFn(crearTransaccionEnNube);
+  const actualizarTx = useServerFn(actualizarTransaccionEnNube);
+  const eliminarTx = useServerFn(eliminarTransaccionEnNube);
+
+  const marcarPendiente = (id: string) => {
+    setPendientes((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      save(K_TX_PENDIENTES, [...next]);
+      return next;
+    });
+  };
+  const quitarPendiente = (id: string) => {
+    setPendientes((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      save(K_TX_PENDIENTES, [...next]);
+      return next;
+    });
+  };
+
+  // Guarda una transacción en Supabase fila por fila: crea si nunca se sincronizó (no hay
+  // `updated_at` conocido), actualiza con bloqueo optimista si ya existía.
+  const guardarEnNube = async (t: Transaction) => {
+    const accessToken = await getAccessToken();
+    const expected = metaRef.current[t.id];
+    try {
+      const res = expected
+        ? await actualizarTx({ data: { transaction: t, expectedUpdatedAt: expected, accessToken } })
+        : await crearTx({ data: { transaction: t, accessToken } });
+      if (res.ok) {
+        metaRef.current[t.id] = res.updatedAt;
+        save(K_TX_META, metaRef.current);
+        quitarPendiente(t.id);
+        return;
+      }
+      if ("conflict" in res && res.conflict) {
+        toast.error(
+          `"${t.descripcion || "esa transacción"}" fue modificada por otra persona — recárgala antes de volver a intentar tu cambio.`,
+        );
+      } else {
+        toast.error(`No se pudo guardar en la nube: ${"error" in res ? res.error : ""}`);
+      }
+      marcarPendiente(t.id);
+    } catch {
+      toast.error("Sin conexión con la nube — el cambio quedó solo en este dispositivo.");
+      marcarPendiente(t.id);
+    }
+  };
+
+  const eliminarEnNube = async (id: string) => {
+    const accessToken = await getAccessToken();
+    try {
+      const res = await eliminarTx({ data: { id, accessToken } });
+      if (res.ok) {
+        delete metaRef.current[id];
+        save(K_TX_META, metaRef.current);
+        quitarPendiente(id);
+      } else {
+        toast.error(`No se pudo eliminar en la nube: ${"error" in res ? res.error : ""}`);
+        marcarPendiente(id);
+      }
+    } catch {
+      toast.error("Sin conexión con la nube — la eliminación quedó solo en este dispositivo.");
+      marcarPendiente(id);
+    }
+  };
+
   useEffect(() => {
     // Aquí `any` es lo honesto: esto sale de localStorage, escrito por
     // versiones anteriores de la app cuando los montos eran texto y el OCR
@@ -386,6 +495,54 @@ export function useTransactions(): {
     });
     if (changed) save(K_TX, data as Transaction[]);
     setList(data as Transaction[]);
+
+    const pend = new Set(load<string[]>(K_TX_PENDIENTES, []));
+    setPendientes(pend);
+    metaRef.current = load<Record<string, string>>(K_TX_META, {});
+
+    // Carga desde la nube al abrir (cloud-source-of-truth): se omite si hay cambios locales sin
+    // confirmar todavía, para no pisarlos con una copia de Supabase más vieja (design.md, riesgo
+    // de la decisión 4), o si no hay conexión.
+    if (pend.size > 0 || !enLinea()) return;
+
+    let cancelado = false;
+    (async () => {
+      const accessToken = await getAccessToken();
+      if (!accessToken) return;
+      setCargandoDeNube(true);
+      try {
+        const res = await loadTx({ data: { accessToken } });
+        if (cancelado || !res.ok || res.data.length === 0) return;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mapped = (res.data as any[]).map((r) => ({
+          id: r.id,
+          fecha: r.fecha,
+          mes: r.mes,
+          tipo: r.tipo,
+          categoria: r.categoria,
+          descripcion: r.descripcion,
+          mensualidad: r.mensualidad,
+          moneda: r.moneda,
+          monto: Number(r.monto),
+          tasa: r.tasa != null ? Number(r.tasa) : null,
+          montoUsd: Number(r.monto_usd),
+          banco: r.banco,
+          revisar: r.revisar ?? "",
+        })) as Transaction[];
+        persist(mapped);
+        const meta: Record<string, string> = {};
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const r of res.data as any[]) meta[r.id] = r.updated_at;
+        metaRef.current = meta;
+        save(K_TX_META, meta);
+      } finally {
+        if (!cancelado) setCargandoDeNube(false);
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const fechaSortKey = (t: Transaction) => {
     const [d, m, y] = t.fecha.split("/");
@@ -404,16 +561,36 @@ export function useTransactions(): {
         id: nuevoId(),
       }));
       persist([...list, ...withIds]);
+      if (enLinea()) withIds.forEach((t) => void guardarEnNube(t));
+      else withIds.forEach((t) => marcarPendiente(t.id));
     },
     update: (id, field, value) => {
-      persist(list.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+      const next = list.map((r) => (r.id === id ? { ...r, [field]: value } : r));
+      persist(next);
+      const actualizado = next.find((r) => r.id === id);
+      if (!actualizado) return;
+      if (enLinea()) void guardarEnNube(actualizado);
+      else marcarPendiente(id);
     },
     replace: (id, transaction) => {
       persist(list.map((r) => (r.id === id ? transaction : r)));
+      if (enLinea()) void guardarEnNube(transaction);
+      else marcarPendiente(id);
     },
+    // Reemplazo masivo (cargar desde nube, restaurar de papelera): no dispara red fila por fila
+    // a propósito — ya es resultado de una operación de red o una decisión explícita de
+    // reemplazo total, no una edición puntual (design.md, decisión 3).
     replaceAll: (rows) => persist([...rows]),
-    remove: (id) => persist(list.filter((r) => r.id !== id)),
-    removeMany: (ids) => persist(list.filter((r) => !ids.has(r.id))),
+    remove: (id) => {
+      persist(list.filter((r) => r.id !== id));
+      if (enLinea()) void eliminarEnNube(id);
+      else marcarPendiente(id);
+    },
+    removeMany: (ids) => {
+      persist(list.filter((r) => !ids.has(r.id)));
+      if (enLinea()) ids.forEach((id) => void eliminarEnNube(id));
+      else ids.forEach((id) => marcarPendiente(id));
+    },
     duplicateAfter: (id) => {
       const idx = list.findIndex((r) => r.id === id);
       if (idx === -1) return;
@@ -426,8 +603,12 @@ export function useTransactions(): {
       const next = [...list];
       next.splice(idx + 1, 0, copy);
       persist(next);
+      if (enLinea()) void guardarEnNube(copy);
+      else marcarPendiente(copy.id);
     },
     clear: () => persist([]),
+    pendientesDeSubir: pendientes.size,
+    cargandoDeNube,
   };
 }
 
